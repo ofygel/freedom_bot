@@ -11,7 +11,7 @@ import {
   resolveDispute,
   getModerationInfo,
 } from '../services/moderation';
-import { getCourierMetrics } from '../services/couriers';
+import { getCourierMetrics, getCourierAudit } from '../services/couriers';
 import { addDisputeMessage, resolveDispute } from '../services/orders';
 
 function isAdmin(ctx: Context): boolean {
@@ -178,6 +178,19 @@ export default function adminCommands(bot: Telegraf) {
         `completed_count: ${metrics.completed_count}\n` +
         `reserve_count: ${metrics.reserve_count}`
     );
+  });
+
+  bot.command('courier_audit', (ctx) => {
+    if (!ensureAdmin(ctx)) return;
+    const parts = ((ctx.message as any)?.text ?? '').split(' ');
+    const id = Number(parts[1]);
+    if (!id) return ctx.reply('Укажите ID курьера');
+    const audit = getCourierAudit(id);
+    if (!audit.length) return ctx.reply('Записей не найдено');
+    const text = audit
+      .map((r) => `${r.timestamp} ${r.type}${r.details ? ': ' + r.details : ''}`)
+      .join('\n');
+    ctx.reply(text);
   });
 
   bot.command('dispute_reply', async (ctx) => {

@@ -340,7 +340,7 @@ export function expireMovementTimers(): void {
       order.status === 'going_to_pickup' ||
       order.status === 'going_to_dropoff'
     ) {
-      openDispute(order.id);
+      openDispute(order.id, false);
       if (order.courier_id)
         logCourierIssue({ courier_id: order.courier_id, type: 'no_movement' });
       updateOrder(order.id, { movement_deadline: null });
@@ -389,6 +389,7 @@ export function updateOrderStatus(
   if (status === 'open' && prevCourier) {
     const { count, warned } = incrementCourierCancel(prevCourier);
     recordCourierMetric(prevCourier, 'cancel');
+    logCourierIssue({ courier_id: prevCourier, type: 'cancel' });
     if (warned) {
       if (botRef)
         botRef.telegram
@@ -424,7 +425,7 @@ export function addDeliveryProof(id: number, proof: string): Order | undefined {
   return order;
 }
 
-export function openDispute(id: number): Order | undefined {
+export function openDispute(id: number, logIssue = true): Order | undefined {
   const list = readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
@@ -440,6 +441,8 @@ export function openDispute(id: number): Order | undefined {
   writeAll(list);
   notifyDispute(order, `Открыт спор по заказу #${order.id}`);
   logEvent(order.id, 'dispute_opened', null, {});
+  if (order.courier_id && logIssue)
+    logCourierIssue({ courier_id: order.courier_id, type: 'complaint' });
   return order;
 }
 
