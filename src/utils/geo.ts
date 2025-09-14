@@ -1,12 +1,6 @@
 import type { Point } from './twoGis';
+import { getSettings } from '../services/settings.js';
 const R = 6371;
-
-const ALMATY_POLYGON: Point[] = [
-  { lat: 43.0, lon: 76.6 },
-  { lat: 43.6, lon: 76.6 },
-  { lat: 43.6, lon: 77.3 },
-  { lat: 43.0, lon: 77.3 },
-];
 export function distanceKm(a: Point, b: Point): number {
   const dLat = toRad(b.lat - a.lat);
   const dLon = toRad(b.lon - a.lon);
@@ -19,7 +13,8 @@ export function etaMinutes(distanceKmVal: number): number {
   return Math.max(5, Math.round((distanceKmVal / speedKmH) * 60));
 }
 export function isInAlmaty(p: Point): boolean {
-  return pointInPolygon(p, ALMATY_POLYGON);
+  const poly = getSettings().city_polygon;
+  return poly ? pointInPolygon(p, poly) : true;
 }
 
 export function pointInPolygon(p: Point, poly: Point[]): boolean {
