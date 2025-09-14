@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { Telegraf, Markup } from 'telegraf';
 import { pointInPolygon } from '../utils/geo.js';
 import { calcPrice } from '../utils/pricing.js';
@@ -26,6 +27,24 @@ import {
   isNight
 } from '../utils/geo.js';
 import type { Coord } from '../utils/geo.js';
+=======
+import type { Context, Telegraf } from 'telegraf';
+import { Markup } from 'telegraf';
+import {
+  parse2GisLink,
+  reverseGeocode,
+  normalizeAddress,
+  pointDeeplink,
+  routeDeeplink,
+  routeToDeeplink,
+  Point,
+} from '../utils/twoGis.js';
+import { getSettings } from '../services/settings.js';
+import { createOrder } from '../services/orders.js';
+import { getUser } from '../services/users.js';
+import { distanceKm, etaMinutes, isInAlmaty, isNight } from '../utils/geo.js';
+import { calcPrice } from '../utils/pricing.js';
+>>>>>>> 7534cf0 (feat: add night coefficient)
 
 type Step =
   | 'idle'
@@ -43,18 +62,21 @@ type Step =
   | 'size'
   | 'fragile'
   | 'thermobox'
-  | 'change'
-  | 'pay'
   | 'comment'
   | 'confirm';
 >>>>>>> 0fd3a32 (feat: driver availability and order hide)
 
 interface WizardState {
+<<<<<<< HEAD
   step: 'from' | 'to' | 'size' | 'confirm';
+=======
+  step: Step;
+>>>>>>> 7534cf0 (feat: add night coefficient)
   data: any;
 }
 
 const states = new Map<number, WizardState>();
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 const pendingP2P = new Map<number, number>();
@@ -77,17 +99,41 @@ function publishOrder(order: any, bot: Telegraf) {
     }).catch(() => {});
   }
 }
+=======
+>>>>>>> 7534cf0 (feat: add night coefficient)
 
 function startWizard(ctx: Context) {
-  const uid = ctx.from!.id;
-  states.set(uid, { step: 'type', data: {} });
+  states.set(ctx.from!.id, { step: 'type', data: {} });
   ctx.reply(
     'Что доставляем?',
     Markup.keyboard([
       ['Документы', 'Посылка'],
       ['Еда', 'Другое'],
-      ['Отмена']
-    ]).resize()
+      ['Отмена'],
+    ]).resize(),
+  );
+}
+
+async function sendPointInfo(
+  ctx: Context,
+  point: Point,
+  label: 'from' | 'to',
+  state: WizardState,
+) {
+  const addrRaw = await reverseGeocode(point);
+  const addr = addrRaw ? normalizeAddress(addrRaw) : '2ГИС точка';
+  state.data[label] = { addr, ...point };
+  const buttons = [
+    Markup.button.url('Открыть в 2ГИС', pointDeeplink(point)),
+    Markup.button.url('До точки B', routeToDeeplink(point)),
+  ];
+  if (state.data.from && state.data.to) {
+    const routeLink = routeDeeplink({ from: state.data.from, to: state.data.to });
+    buttons.push(Markup.button.url('Маршрут', routeLink));
+  }
+  await ctx.reply(
+    `${label === 'from' ? 'Откуда' : 'Куда'}: ${addr}`,
+    Markup.inlineKeyboard(buttons, { columns: 1 }),
   );
 }
 >>>>>>> 0fd3a32 (feat: driver availability and order hide)
@@ -102,12 +148,19 @@ export default function orderCommands(bot: Telegraf) {
       return ctx.reply(`Заказы принимаются с ${start.toString().padStart(2,'0')}:00 до ${end.toString().padStart(2,'0')}:00 по времени Алматы.`);
     }
     const user = getUser(ctx.from!.id);
+<<<<<<< HEAD
     if (!user || !user.agreed) return ctx.reply('Сначала поделитесь контактом и согласитесь с правилами через /start');
     states.set(ctx.from!.id, { step: 'from', data: {} });
     ctx.reply(
       'Отправьте геолокацию точки отправления',
       Markup.keyboard([[Markup.button.locationRequest('Отправить гео')], ['Отмена']]).resize()
     );
+=======
+    if (!user || !user.agreed) {
+      return ctx.reply('Сначала поделитесь контактом и согласитесь с правилами через /start');
+    }
+    startWizard(ctx);
+>>>>>>> 7534cf0 (feat: add night coefficient)
   });
 
   bot.hears('Отмена', (ctx) => {
@@ -115,10 +168,11 @@ export default function orderCommands(bot: Telegraf) {
     ctx.reply('Заказ отменён', Markup.removeKeyboard());
   });
 
-  bot.on('location', (ctx) => {
+  bot.on('location', async (ctx) => {
     const uid = ctx.from!.id;
     const state = states.get(uid);
     if (!state) return;
+<<<<<<< HEAD
     const { latitude: lat, longitude: lon } = ctx.message.location;
     const settings = getSettings();
     if (settings.city_polygon && !pointInPolygon({ lat, lon }, settings.city_polygon)) {
@@ -136,6 +190,36 @@ export default function orderCommands(bot: Telegraf) {
       state.data.to = { lat, lon };
       state.step = 'size';
       return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
+=======
+    const point: Point = {
+      lat: ctx.message.location.latitude,
+      lon: ctx.message.location.longitude,
+    };
+    if (!isInAlmaty(point)) {
+      return ctx.reply('Точка вне Алматы. Отправьте другую.');
+    }
+    if (state.step === 'from_geo_wait') {
+      await sendPointInfo(ctx, point, 'from', state);
+      state.step = 'to_method';
+      return ctx.reply(
+        'Куда? Выберите способ ввода.',
+        Markup.keyboard([
+          ['Гео', 'Адрес', '2ГИС‑ссылка'],
+          ['Отмена'],
+        ]).resize(),
+      );
+    }
+    if (state.step === 'to_geo_wait') {
+      await sendPointInfo(ctx, point, 'to', state);
+      state.step = 'time';
+      return ctx.reply(
+        'Когда доставить?',
+        Markup.keyboard([
+          ['Сейчас', 'К времени'],
+          ['Отмена'],
+        ]).resize(),
+      );
+>>>>>>> 7534cf0 (feat: add night coefficient)
     }
   });
 
@@ -145,6 +229,7 @@ export default function orderCommands(bot: Telegraf) {
     const text = ctx.message.text.trim();
     if (!state) return;
     switch (state.step) {
+<<<<<<< HEAD
       case 'size': {
         if (!['S', 'M', 'L'].includes(text)) return ctx.reply('Выберите S, M или L.');
         state.data.size = text;
@@ -188,9 +273,209 @@ export default function orderCommands(bot: Telegraf) {
           }
         const user = getUser(uid);
         if (!user) {
-          states.delete(uid);
-          return ctx.reply('Не найден пользователь.');
+=======
+      case 'type': {
+        const map: Record<string, string> = {
+          'Документы': 'docs',
+          'Посылка': 'parcel',
+          'Еда': 'food',
+          'Другое': 'other',
+        };
+        const cargo = map[text];
+        if (!cargo) return ctx.reply('Выберите вариант из клавиатуры.');
+        state.data.cargo_type = cargo;
+        state.step = 'from_method';
+        return ctx.reply(
+          'Откуда? Выберите способ ввода.',
+          Markup.keyboard([
+            ['Гео', 'Адрес', '2ГИС‑ссылка'],
+            ['Отмена'],
+          ]).resize(),
+        );
+      }
+      case 'from_method': {
+        if (text === 'Гео') {
+          state.step = 'from_geo_wait';
+          return ctx.reply(
+            'Отправьте геолокацию.',
+            Markup.keyboard([[Markup.button.locationRequest('Отправить гео')], ['Отмена']]).resize(),
+          );
         }
+        if (text === 'Адрес') {
+          state.step = 'from_address_wait';
+          return ctx.reply('Введите адрес.');
+        }
+        if (text === '2ГИС‑ссылка') {
+          state.step = 'from_link_wait';
+          return ctx.reply('Инструкция: в 2ГИС нажмите «Поделиться» → «Скопировать ссылку» и отправьте её сюда.');
+        }
+        return ctx.reply('Выберите вариант из клавиатуры.');
+      }
+      case 'from_address_wait': {
+        state.data.from = { addr: text };
+        state.step = 'to_method';
+        return ctx.reply(
+          'Куда? Выберите способ ввода.',
+          Markup.keyboard([
+            ['Гео', 'Адрес', '2ГИС‑ссылка'],
+            ['Отмена'],
+          ]).resize(),
+        );
+      }
+      case 'from_link_wait': {
+        const parsed = await parse2GisLink(text);
+        if (!parsed) return ctx.reply('Не удалось разобрать ссылку.');
+        if ('from' in parsed) {
+          if (!isInAlmaty(parsed.from) || !isInAlmaty(parsed.to)) {
+            return ctx.reply('Точки вне Алматы. Отправьте другую ссылку.');
+          }
+          await sendPointInfo(ctx, parsed.from, 'from', state);
+          await sendPointInfo(ctx, parsed.to, 'to', state);
+          state.step = 'time';
+          return ctx.reply(
+            'Когда доставить?',
+            Markup.keyboard([
+              ['Сейчас', 'К времени'],
+              ['Отмена'],
+            ]).resize(),
+          );
+        }
+        if (!isInAlmaty(parsed)) {
+          return ctx.reply('Точка вне Алматы. Отправьте другую ссылку.');
+        }
+        await sendPointInfo(ctx, parsed, 'from', state);
+        state.step = 'to_method';
+        return ctx.reply(
+          'Куда? Выберите способ ввода.',
+          Markup.keyboard([
+            ['Гео', 'Адрес', '2ГИС‑ссылка'],
+            ['Отмена'],
+          ]).resize(),
+        );
+      }
+      case 'to_method': {
+        if (text === 'Гео') {
+          state.step = 'to_geo_wait';
+          return ctx.reply(
+            'Отправьте геолокацию.',
+            Markup.keyboard([[Markup.button.locationRequest('Отправить гео')], ['Отмена']]).resize(),
+          );
+        }
+        if (text === 'Адрес') {
+          state.step = 'to_address_wait';
+          return ctx.reply('Введите адрес.');
+        }
+        if (text === '2ГИС‑ссылка') {
+          state.step = 'to_link_wait';
+          return ctx.reply('Инструкция: в 2ГИС нажмите «Поделиться» → «Скопировать ссылку» и отправьте её сюда.');
+        }
+        return ctx.reply('Выберите вариант из клавиатуры.');
+      }
+      case 'to_address_wait': {
+        state.data.to = { addr: text };
+        state.step = 'time';
+        return ctx.reply(
+          'Когда доставить?',
+          Markup.keyboard([
+            ['Сейчас', 'К времени'],
+            ['Отмена'],
+          ]).resize(),
+        );
+      }
+      case 'to_link_wait': {
+        const parsed = await parse2GisLink(text);
+        if (!parsed) return ctx.reply('Не удалось разобрать ссылку.');
+        if ('from' in parsed) {
+          if (!isInAlmaty(parsed.from) || !isInAlmaty(parsed.to)) {
+            return ctx.reply('Точки вне Алматы. Отправьте другую ссылку.');
+          }
+          await sendPointInfo(ctx, parsed.from, 'from', state);
+          await sendPointInfo(ctx, parsed.to, 'to', state);
+        } else {
+          if (!isInAlmaty(parsed)) {
+            return ctx.reply('Точка вне Алматы. Отправьте другую ссылку.');
+          }
+          await sendPointInfo(ctx, parsed, 'to', state);
+        }
+        state.step = 'time';
+        return ctx.reply(
+          'Когда доставить?',
+          Markup.keyboard([
+            ['Сейчас', 'К времени'],
+            ['Отмена'],
+          ]).resize(),
+        );
+      }
+      case 'time': {
+        if (text === 'Сейчас') {
+          state.data.delivery_time = new Date().toISOString();
+        } else if (text === 'К времени') {
+          state.step = 'time_input';
+          return ctx.reply('Введите время в формате ЧЧ:ММ.');
+        } else {
+          return ctx.reply('Выберите вариант из клавиатуры.');
+        }
+        state.step = 'size';
+        return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
+      }
+      case 'time_input': {
+        const [hStr, mStr] = text.split(':');
+        const h = Number(hStr);
+        const m = Number(mStr);
+        if (isNaN(h) || isNaN(m)) return ctx.reply('Неверный формат.');
+        const now = new Date();
+        const dt = new Date();
+        dt.setHours(h, m, 0, 0);
+        if (dt < now) return ctx.reply('Время уже прошло.');
+        state.data.delivery_time = dt.toISOString();
+        state.step = 'size';
+        return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
+      }
+      case 'size': {
+        if (!['S', 'M', 'L'].includes(text)) return ctx.reply('Выберите вариант из клавиатуры.');
+        state.data.size = text;
+        state.step = 'fragile';
+        return ctx.reply('Хрупкое?', Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize());
+      }
+      case 'fragile': {
+        if (!['Да', 'Нет'].includes(text)) return ctx.reply('Выберите вариант из клавиатуры.');
+        state.data.fragile = text === 'Да';
+        state.step = 'thermobox';
+        return ctx.reply('Нужен термобокс?', Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize());
+      }
+      case 'thermobox': {
+        if (!['Да', 'Нет'].includes(text)) return ctx.reply('Выберите вариант из клавиатуры.');
+        state.data.thermobox = text === 'Да';
+        state.step = 'comment';
+        return ctx.reply('Комментарий к заказу? Если нет, отправьте "-".');
+      }
+      case 'comment': {
+        if (text !== '-') state.data.comment = text;
+        const base = getSettings();
+        const settings = { ...base, night_active: base.night_active ?? isNight(new Date()) };
+        const { distance, price } = calcPrice(
+          state.data.from,
+          state.data.to,
+          0,
+          state.data.size,
+          settings,
+        );
+        const eta = etaMinutes(distance);
+        state.data.summary = { distance, price, eta };
+        state.step = 'confirm';
+        return ctx.reply(
+          `Дистанция: ${distance.toFixed(2)} км\nЦена: ${price} ₸\nВремя в пути: ~${eta} мин\nПодтвердить заказ?`,
+          Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize(),
+        );
+      }
+      case 'confirm': {
+        if (text === 'Да') {
+          await createOrder(uid, state.data);
+>>>>>>> 7534cf0 (feat: add night coefficient)
+          states.delete(uid);
+          return ctx.reply('Заказ создан.', Markup.removeKeyboard());
+        }
+<<<<<<< HEAD
 <<<<<<< HEAD
         const payment_status = state.data.pay_type === 'cash' ? 'pending' : 'awaiting_confirm';
         const order = createOrder({
@@ -339,4 +624,15 @@ export default function orderCommands(bot: Telegraf) {
 >>>>>>> bcad4d7 (feat: add payment fields and flows)
   });
 >>>>>>> 0fd3a32 (feat: driver availability and order hide)
+=======
+        if (text === 'Нет') {
+          states.delete(uid);
+          return ctx.reply('Заказ отменён.', Markup.removeKeyboard());
+        }
+        return ctx.reply('Выберите вариант из клавиатуры.');
+      }
+    }
+  });
+>>>>>>> 7534cf0 (feat: add night coefficient)
 }
+
