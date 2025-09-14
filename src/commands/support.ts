@@ -97,10 +97,14 @@ export default function supportCommands(bot: Telegraf) {
         states.delete(uid);
         await ctx.reply(`Тикет #${ticket.id} создан`, Markup.removeKeyboard());
         const settings = getSettings();
-        if (settings.verify_channel_id) {
+        if (settings.moderators_channel_id) {
           await ctx.telegram.sendMessage(
-            settings.verify_channel_id,
+            settings.moderators_channel_id,
             `Тикет #${ticket.id} по заказу #${ticket.order_id}\nТема: ${ticket.topic}\nТекст: ${ticket.text ?? ''}`
+          );
+        } else {
+          await ctx.reply(
+            'Канал модераторов не привязан, модераторы пока не уведомлены.'
           );
         }
         return;
@@ -126,11 +130,15 @@ export default function supportCommands(bot: Telegraf) {
     states.delete(uid);
     await ctx.reply(`Тикет #${ticket.id} создан`, Markup.removeKeyboard());
     const settings = getSettings();
-    if (settings.verify_channel_id) {
+    if (settings.moderators_channel_id) {
       await ctx.telegram.sendPhoto(
-        settings.verify_channel_id,
+        settings.moderators_channel_id,
         photo.file_id,
         { caption: `Тикет #${ticket.id} по заказу #${ticket.order_id}\nТема: ${ticket.topic}` }
+      );
+    } else {
+      await ctx.reply(
+        'Канал модераторов не привязан, модераторы пока не уведомлены.'
       );
     }
   });
