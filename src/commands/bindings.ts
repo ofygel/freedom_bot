@@ -27,6 +27,14 @@ async function bindChannel(ctx: Context, key: BindingKey) {
     await ctx.reply('Нужны права администратора канала');
     return;
   }
+  const botMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.botInfo.id);
+  if (
+    !['administrator', 'creator'].includes(botMember.status) ||
+    (botMember.status === 'administrator' && botMember.can_post_messages === false)
+  ) {
+    await ctx.reply('У бота нет прав на публикацию сообщений');
+    return;
+  }
   updateSetting(key, ctx.chat.id);
   const title = ctx.chat.title ?? '—';
   const label = key === 'verify_channel_id' ? 'verify-канал' : 'drivers-канал';

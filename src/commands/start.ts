@@ -1,16 +1,10 @@
 import { Telegraf, Markup, Context } from 'telegraf';
-<<<<<<< HEAD
-import { upsertUser } from '../services/users.js';
-
-export default function startCommand(bot: Telegraf) {
-  const pendingRoles = new Map<number, 'client' | 'courier'>();
-=======
 import { upsertUser, getUser } from '../services/users.js';
 
 export default function startCommand(bot: Telegraf) {
   const pendingRoles = new Map<number, 'client' | 'courier'>();
   const pendingAgreement = new Map<number, 'client' | 'courier'>();
->>>>>>> ee717cc (feat: add rules agreement during onboarding)
+  const pendingCity = new Map<number, true>();
 
   bot.start(async (ctx) => {
     await ctx.reply(
@@ -42,30 +36,47 @@ export default function startCommand(bot: Telegraf) {
       await ctx.reply('Сначала выберите роль.');
       return;
     }
-<<<<<<< HEAD
     const phone = ctx.message.contact?.phone_number;
     if (!phone) {
       await ctx.reply('Не удалось получить номер. Нажмите кнопку «Поделиться номером».');
       return;
     }
-    upsertUser({ id: uid, phone, role });
+    upsertUser({ id: uid, phone, role, city: 'Алматы', agreed: false });
     pendingRoles.delete(uid);
-=======
-      const phone = ctx.message.contact?.phone_number;
-      if (!phone) {
-        await ctx.reply('Не удалось получить номер. Нажмите кнопку «Поделиться номером».');
-        return;
-      }
-      upsertUser({ id: uid, phone, role, city: 'Алматы', agreed: false });
-      pendingRoles.delete(uid);
+    if (role === 'client') {
+      pendingCity.set(uid, true);
+      await ctx.reply('Введите ваш город (по умолчанию Алматы).');
+    } else {
       pendingAgreement.set(uid, role);
       await ctx.reply(
-        'Город: Алматы. Согласны с правилами сервиса?',
+        'Согласны с правилами сервиса?',
         Markup.keyboard([
           ['Согласен']
         ]).oneTime().resize()
       );
-    });
+    }
+  });
+
+  bot.on('text', async (ctx, next: () => Promise<void>) => {
+    const uid = ctx.from!.id;
+    if (pendingCity.has(uid)) {
+      const city = ctx.message.text?.trim() || 'Алматы';
+      const user = getUser(uid);
+      if (user) {
+        upsertUser({ ...user, city });
+      }
+      pendingCity.delete(uid);
+      pendingAgreement.set(uid, 'client');
+      await ctx.reply(
+        'Согласны с правилами сервиса?',
+        Markup.keyboard([
+          ['Согласен']
+        ]).oneTime().resize()
+      );
+      return;
+    }
+    return next();
+  });
 
   bot.hears('Согласен', async (ctx) => {
     const uid = ctx.from!.id;
@@ -79,7 +90,6 @@ export default function startCommand(bot: Telegraf) {
       upsertUser({ ...user, agreed: true });
     }
     pendingAgreement.delete(uid);
->>>>>>> ee717cc (feat: add rules agreement during onboarding)
     if (role === 'client') {
       await ctx.reply(
         'Спасибо! Контакт получен.',
@@ -92,14 +102,19 @@ export default function startCommand(bot: Telegraf) {
       await ctx.reply(
         'Спасибо! Контакт получен.',
         Markup.keyboard([
-          ['Профиль'],
-          ['Поддержка']
+          ['Онлайн/Оффлайн', 'Лента заказов'],
+          ['Мои заказы', 'Баланс/Выплаты'],
+          ['Профиль', 'Поддержка']
         ]).resize()
       );
     }
   });
 
+  bot.hears('Создать заказ', (ctx) => ctx.reply('Создание заказа в разработке.'));
   bot.hears('Мои заказы', (ctx) => ctx.reply('Здесь будут ваши заказы.'));
   bot.hears('Профиль', (ctx) => ctx.reply('Профиль в разработке.'));
   bot.hears('Поддержка', (ctx) => ctx.reply('Поддержка в разработке.'));
+  bot.hears('Онлайн/Оффлайн', (ctx) => ctx.reply('Режим курьера переключен.'));
+  bot.hears('Лента заказов', (ctx) => ctx.reply('Лента заказов в разработке.'));
+  bot.hears('Баланс/Выплаты', (ctx) => ctx.reply('Информация о балансе в разработке.'));
 }
