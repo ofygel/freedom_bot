@@ -11,18 +11,19 @@ import { getSettings } from '../services/settings.js';
 interface ProfileState {
   step: 'transport' | 'fullname' | 'id_photo' | 'selfie' | 'card';
   data: Partial<CourierProfile>;
+  msgId?: number;
 }
 
 const states = new Map<number, ProfileState>();
 
-function startWizard(ctx: Context) {
+async function startWizard(ctx: Context) {
   const uid = ctx.from!.id;
-  states.set(uid, { step: 'transport', data: {} });
-  ctx.reply('Какой у вас транспорт?');
+  const msg = await ctx.reply('Какой у вас транспорт?');
+  states.set(uid, { step: 'transport', data: {}, msgId: msg.message_id });
 }
 
-export function startProfileWizard(ctx: Context) {
-  startWizard(ctx);
+export async function startProfileWizard(ctx: Context) {
+  await startWizard(ctx);
 }
 
 export default function profileCommands(bot: Telegraf) {
@@ -42,7 +43,7 @@ export default function profileCommands(bot: Telegraf) {
       await ctx.reply('Вы уже прошли верификацию.');
       return;
     }
-    startWizard(ctx);
+    await startWizard(ctx);
   });
 
   bot.on('text', async (ctx) => {
@@ -52,16 +53,28 @@ export default function profileCommands(bot: Telegraf) {
     const text = ctx.message.text.trim();
     switch (state.step) {
       case 'transport':
+        if (state.msgId)
+          await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
         state.data.transport = text;
         state.step = 'fullname';
-        await ctx.reply('Ваши ФИО?');
+        {
+          const msg = await ctx.reply('Ваши ФИО?');
+          state.msgId = msg.message_id;
+        }
         break;
       case 'fullname':
+        if (state.msgId)
+          await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
         state.data.fullName = text;
         state.step = 'id_photo';
-        await ctx.reply('Отправьте фото удостоверения.');
+        {
+          const msg = await ctx.reply('Отправьте фото удостоверения.');
+          state.msgId = msg.message_id;
+        }
         break;
       case 'card':
+        if (state.msgId)
+          await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
         state.data.card = text;
         await finalize(ctx, uid, state.data as Required<CourierProfile>);
         states.delete(uid);
@@ -79,14 +92,24 @@ export default function profileCommands(bot: Telegraf) {
     const fileId = photos[photos.length - 1]!.file_id;
     switch (state.step) {
       case 'id_photo':
+        if (state.msgId)
+          await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
         state.data.idPhoto = fileId;
         state.step = 'selfie';
-        await ctx.reply('Теперь отправьте селфи.');
+        {
+          const msg = await ctx.reply('Теперь отправьте селфи.');
+          state.msgId = msg.message_id;
+        }
         break;
       case 'selfie':
+        if (state.msgId)
+          await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
         state.data.selfie = fileId;
         state.step = 'card';
-        await ctx.reply('Укажите карту для выплат.');
+        {
+          const msg = await ctx.reply('Укажите карту для выплат.');
+          state.msgId = msg.message_id;
+        }
         break;
       default:
         await ctx.reply('Пожалуйста, отправьте текст.');
@@ -129,14 +152,28 @@ export default function profileCommands(bot: Telegraf) {
     await ctx.editMessageCaption(caption);
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
     if (status === 'verified') {
-      await ctx.telegram.sendMessage(uid, 'Ваша анкета одобрена!');
+      await ctx.telegram.sendMessage(
+        uid,
+        'Ваша анкета одобрена!',
+        Markup.keyboard([
+          ['Онлайн/Оффлайн'],
+          ['Лента заказов'],
+          ['Мои заказы'],
+          ['Баланс/Выплаты'],
+          ['Профиль'],
+          ['Поддержка'],
+        ]).resize()
+      );
       const settings = getSettings();
       if (settings.drivers_channel_id) {
         try {
           const link = await ctx.telegram.exportChatInviteLink(settings.drivers_channel_id);
           await ctx.telegram.sendMessage(uid, `Лента заказов: ${link}`);
         } catch {
-          await ctx.telegram.sendMessage(uid, 'Не удалось получить ссылку на канал заказов.');
+          await ctx.telegram.sendMessage(
+            uid,
+            'Не удалось получить ссылку на канал заказов.'
+          );
         }
       }
     } else if (status === 'rejected') {
