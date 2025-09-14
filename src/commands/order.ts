@@ -1,5 +1,6 @@
 import { Telegraf, Markup, Context } from 'telegraf';
 <<<<<<< HEAD
+<<<<<<< HEAD
 import {
   parse2GisLink,
   reverseGeocode,
@@ -18,6 +19,10 @@ import {
   assignOrder
 } from '../services/orders.js';
 >>>>>>> 0cb5d4a (feat: add order reservation workflow)
+=======
+import { parse2GisLink } from '../utils/twoGis.js';
+import { createOrder, updateOrder } from '../services/orders.js';
+>>>>>>> bcad4d7 (feat: add payment fields and flows)
 import { getSettings } from '../services/settings.js';
 import { getUser } from '../services/users.js';
 import {
@@ -66,6 +71,8 @@ interface WizardState {
     | 'thermobox'
     | 'change'
     | 'pay'
+    | 'amount_total'
+    | 'amount_courier'
     | 'comment'
     | 'confirm';
 >>>>>>> 3c7234d (feat: improve 2gis integration)
@@ -73,6 +80,7 @@ interface WizardState {
 }
 
 const states = new Map<number, WizardState>();
+const pendingP2P = new Map<number, number>();
 
 function startWizard(ctx: Context) {
   const uid = ctx.from!.id;
@@ -137,8 +145,22 @@ export default function orderCommands(bot: Telegraf) {
   bot.on('text', async (ctx) => {
     const uid = ctx.from!.id;
     const state = states.get(uid);
-    if (!state) return;
     const text = ctx.message.text.trim();
+    if (!state) {
+      const orderId = pendingP2P.get(uid);
+      if (orderId) {
+        const settings = getSettings();
+        if (settings.drivers_channel_id) {
+          await ctx.telegram.sendMessage(
+            settings.drivers_channel_id,
+            `Платёж по заказу #${orderId}: ${text}`
+          );
+        }
+        pendingP2P.delete(uid);
+        await ctx.reply('Спасибо, ожидайте подтверждения курьера.');
+      }
+      return;
+    }
     switch (state.step) {
       case 'type': {
         const map: Record<string, string> = {
@@ -443,6 +465,24 @@ export default function orderCommands(bot: Telegraf) {
         const pay = map[text];
         if (!pay) return ctx.reply('Выберите вариант из клавиатуры.');
         state.data.pay_type = pay;
+        state.step = 'amount_total';
+        return ctx.reply('Введите общую стоимость заказа, ₸');
+      }
+      case 'amount_total': {
+        const amt = parseFloat(text.replace(',', '.'));
+        if (isNaN(amt)) {
+          return ctx.reply('Введите число.');
+        }
+        state.data.amount_total = amt;
+        state.step = 'amount_courier';
+        return ctx.reply('Сумма курьеру, ₸');
+      }
+      case 'amount_courier': {
+        const amt = parseFloat(text.replace(',', '.'));
+        if (isNaN(amt)) {
+          return ctx.reply('Введите число.');
+        }
+        state.data.amount_to_courier = amt;
         state.step = 'comment';
         return ctx.reply('Комментарий? Если нет, отправьте "Пропустить".');
       }
@@ -469,6 +509,10 @@ export default function orderCommands(bot: Telegraf) {
         }
         state.step = 'confirm';
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+        const summary = `Тип: ${state.data.cargo_type}\nОткуда: ${state.data.from.addr}\nКуда: ${state.data.to.addr}\nРазмер: ${state.data.size}\nОплата: ${state.data.pay_type}\nСтоимость: ${state.data.amount_total}\nКурьеру: ${state.data.amount_to_courier}`;
+>>>>>>> bcad4d7 (feat: add payment fields and flows)
         return ctx.reply(summary, Markup.keyboard([['Подтвердить заказ'], ['Отмена']]).resize());
 =======
         const summary = `Тип: ${state.data.cargo_type}\nОткуда: ${state.data.from.addr}\nКуда: ${state.data.to.addr}\nРазмер: ${state.data.size}\nОплата: ${state.data.pay_type}`;
@@ -496,6 +540,7 @@ export default function orderCommands(bot: Telegraf) {
           states.delete(uid);
           return ctx.reply('Не найден пользователь.');
         }
+        const payment_status = state.data.pay_type === 'p2p' ? 'awaiting_confirm' : 'pending';
         const order = createOrder({
           client_id: uid,
           cargo_type: state.data.cargo_type,
@@ -506,13 +551,24 @@ export default function orderCommands(bot: Telegraf) {
           thermobox: state.data.thermobox,
           cash_change_needed: state.data.cash_change_needed,
           pay_type: state.data.pay_type,
+          amount_total: state.data.amount_total,
+          amount_to_courier: state.data.amount_to_courier,
+          payment_status,
           comment: state.data.comment
         });
         states.delete(uid);
         await ctx.reply(`Заказ #${order.id} создан.`, Markup.removeKeyboard());
+        if (order.pay_type === 'p2p') {
+          const msg = await ctx.reply('Реквизиты для оплаты: 1234567890\nПосле перевода отправьте скрин или ID.');
+          setTimeout(() => {
+            ctx.telegram.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
+          }, 2 * 60 * 60 * 1000);
+          pendingP2P.set(uid, order.id);
+        }
         const settings = getSettings();
         if (settings.drivers_channel_id) {
           const text = `Новый заказ #${order.id}\nОткуда: ${order.from.addr}\nКуда: ${order.to.addr}`;
+<<<<<<< HEAD
 <<<<<<< HEAD
           const extra =
             order.from.lat && order.to.lat
@@ -533,12 +589,26 @@ export default function orderCommands(bot: Telegraf) {
           );
           updateOrder(order.id, { message_id: msg.message_id });
 >>>>>>> 0cb5d4a (feat: add order reservation workflow)
+=======
+          const buttons: any[] = [];
+          if (order.pay_type === 'cash') {
+            buttons.push(Markup.button.callback('Нал получены', `cash_paid:${order.id}`));
+          }
+          if (order.pay_type === 'p2p') {
+            buttons.push(Markup.button.callback('Поступление проверил', `p2p_confirm:${order.id}`));
+          }
+          const extra = buttons.length
+            ? { reply_markup: { inline_keyboard: [buttons] } }
+            : undefined;
+          await ctx.telegram.sendMessage(settings.drivers_channel_id, text, extra);
+>>>>>>> bcad4d7 (feat: add payment fields and flows)
         }
         return;
       }
     }
   });
 
+<<<<<<< HEAD
   bot.action(/accept_(\d+)/, async (ctx) => {
     const orderId = Number(ctx.match[1]);
     const reserved = reserveOrder(orderId, ctx.from!.id);
@@ -572,5 +642,34 @@ export default function orderCommands(bot: Telegraf) {
       `Заказ #${assigned.id}\nОткуда: ${assigned.from.addr}\nКуда: ${assigned.to.addr}\nВыполняет: ${username}`
     );
     return ctx.answerCbQuery('Старт подтверждён');
+=======
+  bot.on('photo', async (ctx) => {
+    const uid = ctx.from!.id;
+    const orderId = pendingP2P.get(uid);
+    if (!orderId) return;
+    const settings = getSettings();
+    if (settings.drivers_channel_id) {
+      const photo = ctx.message.photo![ctx.message.photo!.length - 1]!;
+      await ctx.telegram.sendPhoto(settings.drivers_channel_id, photo.file_id, {
+        caption: `Платёж по заказу #${orderId}`
+      });
+    }
+    pendingP2P.delete(uid);
+    await ctx.reply('Спасибо, ожидайте подтверждения курьера.');
+  });
+
+  bot.action(/cash_paid:(\d+)/, async (ctx) => {
+    const id = Number((ctx.match as RegExpExecArray)[1]);
+    updateOrder(id, { payment_status: 'paid' });
+    await ctx.answerCbQuery('Оплата подтверждена');
+    await ctx.editMessageReplyMarkup(undefined);
+  });
+
+  bot.action(/p2p_confirm:(\d+)/, async (ctx) => {
+    const id = Number((ctx.match as RegExpExecArray)[1]);
+    updateOrder(id, { payment_status: 'paid' });
+    await ctx.answerCbQuery('Поступление подтверждено');
+    await ctx.editMessageReplyMarkup(undefined);
+>>>>>>> bcad4d7 (feat: add payment fields and flows)
   });
 }

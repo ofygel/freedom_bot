@@ -1,5 +1,6 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { Telegraf, Markup, Context } from 'telegraf';
 =======
 import { Telegraf, Context, Markup } from 'telegraf';
@@ -7,11 +8,15 @@ import { Telegraf, Context, Markup } from 'telegraf';
 =======
 import { Telegraf, Markup, Context } from 'telegraf';
 >>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
+=======
+import { Telegraf, Markup, Context } from 'telegraf';
+>>>>>>> bcad4d7 (feat: add payment fields and flows)
 import { upsertUser, getUser } from '../services/users.js';
 
 export default function startCommand(bot: Telegraf) {
   const pendingRoles = new Map<number, 'client' | 'courier'>();
   const pendingAgreement = new Map<number, 'client' | 'courier'>();
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -25,6 +30,8 @@ export default function startCommand(bot: Telegraf) {
 >>>>>>> 0cb5d4a (feat: add order reservation workflow)
 =======
 >>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
+=======
+>>>>>>> bcad4d7 (feat: add payment fields and flows)
 
   bot.start(async (ctx) => {
     await ctx.reply(
@@ -63,6 +70,7 @@ export default function startCommand(bot: Telegraf) {
     }
     upsertUser({ id: uid, phone, role, city: 'Алматы', agreed: false });
     pendingRoles.delete(uid);
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -122,6 +130,15 @@ export default function startCommand(bot: Telegraf) {
 >>>>>>> 0cb5d4a (feat: add order reservation workflow)
 =======
 >>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
+=======
+    pendingAgreement.set(uid, role);
+    await ctx.reply(
+      'Город: Алматы. Согласны с правилами сервиса?',
+      Markup.keyboard([
+        ['Согласен']
+      ]).oneTime().resize()
+    );
+>>>>>>> bcad4d7 (feat: add payment fields and flows)
   });
 
   bot.hears('Согласен', async (ctx) => {
