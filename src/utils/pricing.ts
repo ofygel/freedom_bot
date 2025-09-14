@@ -3,7 +3,8 @@ import { getSettings } from '../services/settings';
 export function calcPrice(
   distanceKm: number,
   size: 'S' | 'M' | 'L' = 'M',
-  now = new Date()
+  now = new Date(),
+  type: 'docs' | 'parcel' | 'food' | 'other' = 'other'
 ): number {
   const settings = getSettings();
   const base = settings.base_price ?? 500;
@@ -14,7 +15,17 @@ export function calcPrice(
   }
   const surcharge =
     (settings as any)[`surcharge_${size}` as const] ?? 0;
-  let price = base + perKm * Math.max(1, distanceKm) + surcharge;
+  const typeSurcharge: Record<typeof type, number> = {
+    docs: 0,
+    parcel: 200,
+    food: 150,
+    other: 0,
+  };
+  let price =
+    base +
+    perKm * Math.max(1, distanceKm) +
+    surcharge +
+    typeSurcharge[type];
   price = Math.round(price / 10) * 10;
   return price;
 }

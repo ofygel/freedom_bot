@@ -42,7 +42,7 @@ test('geofence rejects points outside city', async () => {
         from: { id: 1, is_bot: false, first_name: 'A' },
         chat: { id: 1, type: 'private' },
         date: 0,
-        text: 'Доставка',
+        text: 'Документы',
       } as any,
     });
     await sendUpdate(bot, {
