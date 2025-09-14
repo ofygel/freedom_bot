@@ -13,13 +13,37 @@ interface OrderSession {
   type?: string;
   from?: Point;
   to?: Point;
-  time?: string;
-  options?: string;
+  time?: string; // formatted for display
+  timeAt?: string; // ISO string for calculations
+  size?: 'S' | 'M' | 'L';
+  options?: string[];
   payment?: string;
   comment?: string;
 }
 
 const sessions = new Map<number, OrderSession>();
+
+const optionLabels = ['Хрупкое', 'Опломбировать'];
+
+function dimsKeyboard(s: OrderSession) {
+  const sizeRow = ['S', 'M', 'L'].map((v) =>
+    Markup.button.callback(
+      s.size === v ? `\u2714\ufe0f ${v}` : v,
+      `size:${v}`
+    )
+  );
+  const optionRow = optionLabels.map((o) =>
+    Markup.button.callback(
+      (s.options?.includes(o) ? '\u2611\ufe0f ' : '\u2610 ') + o,
+      `opt:${o}`
+    )
+  );
+  return Markup.inlineKeyboard([
+    sizeRow,
+    optionRow,
+    [Markup.button.callback('Далее', 'dims:done')],
+  ]);
+}
 
 async function parsePoint(input: string): Promise<Point | null> {
   if (/2gis\./i.test(input)) {
@@ -88,26 +112,48 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           [Markup.button.url('Открыть в 2ГИС', `https://2gis.kz/almaty?m=${point.lon},${point.lat}`)]
         ]));
         s.step = 4;
-        await ctx.reply('Когда? (время)');
+        await ctx.reply(
+          'Когда?',
+          Markup.keyboard(['Сейчас', 'К времени']).oneTime().resize()
+        );
         break;
       }
       case 4:
         if (!text) return;
-        s.time = text;
+        if (text === 'Сейчас') {
+          s.time = 'Сейчас';
+          s.timeAt = new Date().toISOString();
+          s.step = 5;
+          await ctx.reply('Габариты/Опции?', dimsKeyboard(s));
+        } else if (text === 'К времени') {
+          s.step = 41;
+          await ctx.reply('Укажите дату и время (YYYY-MM-DD HH:mm)');
+        } else {
+          const dt = new Date(text.replace(' ', 'T'));
+          if (isNaN(dt.getTime()) || dt.getTime() < Date.now()) {
+            await ctx.reply('Введите будущую дату и время в формате YYYY-MM-DD HH:mm');
+            return;
+          }
+          s.time = dt.toLocaleString('ru-RU');
+          s.timeAt = dt.toISOString();
+          s.step = 5;
+          await ctx.reply('Габариты/Опции?', dimsKeyboard(s));
+        }
+        break;
+      case 41:
+        if (!text) return;
+        const dt = new Date(text.replace(' ', 'T'));
+        if (isNaN(dt.getTime()) || dt.getTime() < Date.now()) {
+          await ctx.reply('Введите будущую дату и время в формате YYYY-MM-DD HH:mm');
+          return;
+        }
+        s.time = dt.toLocaleString('ru-RU');
+        s.timeAt = dt.toISOString();
         s.step = 5;
-        await ctx.reply('Габариты/Опции?');
+        await ctx.reply('Габариты/Опции?', dimsKeyboard(s));
         break;
       case 5:
-        if (!text) return;
-        s.options = text;
-        s.step = 6;
-        await ctx.reply(
-          'Оплата? (наличные/карта/получатель платит)',
-          Markup.keyboard(['Наличные', 'Карта', 'Получатель платит'])
-            .oneTime()
-            .resize()
-        );
-        break;
+        return; // waiting for button callbacks
       case 6:
         if (!text) return;
         s.payment = text;
@@ -120,9 +166,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         const from = s.from!, to = s.to!;
         const dist = distanceKm(from, to);
         const eta = etaMinutes(dist);
-        const sizeMatch = s.options?.match(/\b([SML])\b/i);
-        const size = (sizeMatch ? sizeMatch[1].toUpperCase() : 'M') as 'S' | 'M' | 'L';
-        const price = calcPrice(dist, size, new Date());
+        const price = calcPrice(dist, s.size || 'M', new Date(s.timeAt!));
         const fromAddr = await reverseGeocode(from);
         const toAddr = await reverseGeocode(to);
         await ctx.reply([
@@ -131,7 +175,8 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           `Куда: ${toAddr}`,
           `Время: ${s.time}`,
           `Оплата: ${s.payment}`,
-          `Габариты/Опции: ${s.options}`,
+          `Габариты: ${s.size}`,
+          `Опции: ${s.options?.join(', ') || 'нет'}`,
           `Комментарий: ${s.comment}`,
           `Расстояние: ${dist.toFixed(1)} км`,
           `Оценка времени: ~${eta} мин`,
@@ -155,8 +200,8 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           to,
           type: s.type!,
           time: s.time!,
-          options: s.options || null,
-          size,
+          options: s.options?.join(', ') || null,
+          size: s.size || 'M',
           pay_type: payType,
           comment: s.comment,
           price,
@@ -170,7 +215,8 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
             `Куда: ${toAddr}`,
             `Время: ${s.time}`,
             `Оплата: ${s.payment}`,
-            `Габариты/Опции: ${s.options}`,
+            `Габариты: ${s.size}`,
+            `Опции: ${s.options?.join(', ') || 'нет'}`,
             `Комментарий: ${s.comment}`,
             `Цена: ~${price} ₸`,
           ].join('\n');
@@ -199,5 +245,45 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         sessions.delete(ctx.from!.id);
         break;
     }
+  });
+
+  bot.action(/size:(S|M|L)/, async (ctx) => {
+    const s = sessions.get(ctx.from!.id);
+    if (!s || s.step !== 5) return;
+    s.size = ctx.match[1] as 'S' | 'M' | 'L';
+    await ctx.editMessageReplyMarkup(dimsKeyboard(s).reply_markup);
+    await ctx.answerCbQuery();
+  });
+
+  bot.action(/opt:(.+)/, async (ctx) => {
+    const s = sessions.get(ctx.from!.id);
+    if (!s || s.step !== 5) return;
+    const opt = ctx.match[1];
+    s.options = s.options ?? [];
+    if (s.options.includes(opt)) {
+      s.options = s.options.filter((o) => o !== opt);
+    } else {
+      s.options.push(opt);
+    }
+    await ctx.editMessageReplyMarkup(dimsKeyboard(s).reply_markup);
+    await ctx.answerCbQuery();
+  });
+
+  bot.action('dims:done', async (ctx) => {
+    const s = sessions.get(ctx.from!.id);
+    if (!s || s.step !== 5) return;
+    if (!s.size) {
+      await ctx.answerCbQuery('Выберите габариты');
+      return;
+    }
+    s.step = 6;
+    await ctx.editMessageReplyMarkup(undefined);
+    await ctx.reply(
+      'Оплата? (наличные/карта/получатель платит)',
+      Markup.keyboard(['Наличные', 'Карта', 'Получатель платит'])
+        .oneTime()
+        .resize()
+    );
+    await ctx.answerCbQuery();
   });
 }
