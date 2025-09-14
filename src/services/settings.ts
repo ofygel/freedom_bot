@@ -1,53 +1,30 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import fs from 'fs';
+import path from 'path';
 
-const FILE_PATH = 'data/settings.json';
+const file = path.join(process.cwd(), 'data', 'settings.json');
 
 export interface Settings {
-  verify_channel_id?: number;
-  drivers_channel_id?: number;
-  moderators_channel_id?: number;
-<<<<<<< HEAD
-  base_price?: number;
-  per_km?: number;
-  min_price?: number;
-  wait_free?: number;
-  wait_per_min?: number;
-  surcharge_S?: number;
-  surcharge_M?: number;
-  surcharge_L?: number;
-  night_multiplier?: number;
-  night_active?: boolean;
-  city_polygon?: { lat: number; lon: number }[];
-<<<<<<< HEAD
-  order_hours_start?: number;
-  order_hours_end?: number;
-=======
->>>>>>> de14bbc (feat: add order chat and notifications)
-=======
->>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
+  drivers_channel_id?: string;
+  moderators_channel_id?: string;
+  city?: 'almaty';
 }
 
-function load(): Settings {
-  if (existsSync(FILE_PATH)) {
-    const raw = readFileSync(FILE_PATH, 'utf-8');
-    return JSON.parse(raw) as Settings;
-  }
-  return {};
-}
-
-function save(settings: Settings) {
-  if (!existsSync('data')) {
-    mkdirSync('data');
-  }
-  writeFileSync(FILE_PATH, JSON.stringify(settings, null, 2));
-}
-
-export function updateSetting(key: keyof Settings, value: number) {
-  const current = load();
-  current[key] = value;
-  save(current);
-}
+const defaults: Settings = {
+  drivers_channel_id: process.env.DRIVERS_CHANNEL_ID || undefined,
+  moderators_channel_id: process.env.MODERATORS_CHANNEL_ID || undefined,
+  city: (process.env.CITY as any) || 'almaty',
+};
 
 export function getSettings(): Settings {
-  return load();
+  try {
+    const raw = fs.readFileSync(file, 'utf-8');
+    return { ...defaults, ...(JSON.parse(raw) as Settings) };
+  } catch {
+    return { ...defaults };
+  }
+}
+
+export function saveSettings(s: Settings) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(s, null, 2));
 }

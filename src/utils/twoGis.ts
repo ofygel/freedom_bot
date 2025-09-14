@@ -1,83 +1,34 @@
-export interface Point { lon: number; lat: number; }
-export interface Route { from: Point; to: Point; }
+export interface Point { lat: number; lon: number }
 
-/**
- * Try to expand short go.2gis.com links and parse coordinates or routes
- * from regular 2GIS links.
- */
-export async function parse2GisLink(link: string): Promise<Point | Route | null> {
-  let finalUrl = link.trim();
-  try {
-    // follow short links like go.2gis.com/XXXX
-    if (/go\.2gis\.com/.test(finalUrl)) {
-      const res = await fetch(finalUrl, { redirect: 'follow' });
-      finalUrl = res.url;
+// Try to parse common 2GIS link forms by extracting float pairs and guessing (lat, lon)
+export function parse2GisLink(url: string): Point | null {
+  // collect all floats in the url
+  const nums = (url.match(/-?\d+\.\d+/g) || []).map(Number);
+  // Examine consecutive pairs
+  for (let i = 0; i + 1 < nums.length; i++) {
+    const a = nums[i], b = nums[i+1];
+    // Try as (lon, lat)
+    if (inLat(b) && inLon(a)) {
+      const pt = { lat: b, lon: a };
+      if (inAlmatyBox(pt)) return pt;
     }
-    const url = new URL(finalUrl);
-    if (!/2gis\./.test(url.hostname)) return null;
-
-    // routes like https://2gis.kz/directions/points/<from>|<to>
-    if (url.pathname.includes('/directions/points/')) {
-      const part = url.pathname.split('/directions/points/')[1];
-      if (!part) return null;
-      const [fromRaw, toRaw] = part.split('|');
-      if (!fromRaw || !toRaw) return null;
-      const [fromLonStr, fromLatStr] = fromRaw.split(',');
-      const [toLonStr, toLatStr] = toRaw.split(',');
-      const fromLon = Number(fromLonStr);
-      const fromLat = Number(fromLatStr);
-      const toLon = Number(toLonStr);
-      const toLat = Number(toLatStr);
-      if ([fromLon, fromLat, toLon, toLat].some((n) => isNaN(n))) return null;
-      return { from: { lon: fromLon, lat: fromLat }, to: { lon: toLon, lat: toLat } };
+    // Try as (lat, lon)
+    if (inLat(a) && inLon(b)) {
+      const pt = { lat: a, lon: b };
+      if (inAlmatyBox(pt)) return pt;
     }
-
-    // point coordinates either in "m" query parameter or in /geo/ path
-    const m = url.searchParams.get('m');
-    let pointPart = m;
-    if (!pointPart && url.pathname.includes('/geo/')) {
-      pointPart = url.pathname.split('/geo/')[1] ?? null;
-    }
-    if (pointPart) {
-      const [lonStr, latStr] = pointPart.split(',');
-      const lon = Number(lonStr);
-      const lat = Number(latStr);
-      if ([lon, lat].some((n) => isNaN(n))) return null;
-      return { lon, lat };
-    }
-  } catch {
-    return null;
   }
   return null;
 }
 
-/** Reverse geocode using open Nominatim service */
-export async function reverseGeocode(point: Point): Promise<string | null> {
-  try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${point.lat}&lon=${point.lon}`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'freedom-bot' } });
-    if (!res.ok) return null;
-    const data = (await res.json()) as any;
-    return typeof data.display_name === 'string' ? data.display_name : null;
-  } catch {
-    return null;
-  }
+function inLat(v: number) { return v >= -90 && v <= 90 }
+function inLon(v: number) { return v >= -180 && v <= 180 }
+function inAlmatyBox(p: Point) {
+  return p.lat >= 43.0 && p.lat <= 43.6 && p.lon >= 76.6 && p.lon <= 77.3;
 }
 
-/** Simple address normalisation */
-export function normalizeAddress(addr: string): string {
-  return addr.replace(/\s+/g, ' ').trim();
+// Build a 2GIS directions deeplink (approximate)
+export function routeToDeeplink(from: Point, to: Point): string {
+  // 2GIS directions scheme is flexible; this will open route between two coordinates
+  return `https://2gis.kz/almaty/routeSearch/points/${from.lon},${from.lat};${to.lon},${to.lat}`;
 }
-
-export function pointDeeplink(p: Point): string {
-  return `https://2gis.kz/?m=${p.lon},${p.lat}`;
-}
-
-export function routeDeeplink(r: Route): string {
-  return `https://2gis.kz/directions/points/${r.from.lon},${r.from.lat}|${r.to.lon},${r.to.lat}`;
-}
-
-export function routeToDeeplink(p: Point): string {
-  return `https://2gis.kz/directions/points/${p.lon},${p.lat}`;
-}
-
