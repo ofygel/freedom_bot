@@ -2,6 +2,7 @@ import { Telegraf } from 'telegraf';
 import dotenv from 'dotenv';
 import startCommand from './commands/start.js';
 import { handleBindingCommands, pingBindingsCommand } from './commands/bindings.js';
+import orderCommands from './commands/order.js';
 
 dotenv.config();
 
@@ -15,6 +16,7 @@ const bot = new Telegraf(token);
 startCommand(bot);
 handleBindingCommands(bot);
 pingBindingsCommand(bot);
+orderCommands(bot);
 
 bot.launch().then(() => {
   console.log('Bot started');
