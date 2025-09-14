@@ -1,4 +1,27 @@
+<<<<<<< HEAD
 import type { Point } from './twoGis.js';
+=======
+export interface Point {
+  lat: number;
+  lon: number;
+}
+
+const ALMATY_BOUNDS = {
+  minLat: 43.0,
+  maxLat: 43.4,
+  minLon: 76.7,
+  maxLon: 77.1,
+};
+
+export function isInAlmaty({ lat, lon }: Point): boolean {
+  return (
+    lat >= ALMATY_BOUNDS.minLat &&
+    lat <= ALMATY_BOUNDS.maxLat &&
+    lon >= ALMATY_BOUNDS.minLon &&
+    lon <= ALMATY_BOUNDS.maxLon
+  );
+}
+>>>>>>> de14bbc (feat: add order chat and notifications)
 
 function deg2rad(deg: number): number {
   return (deg * Math.PI) / 180;
@@ -16,6 +39,16 @@ export function distanceKm(a: Point, b: Point): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
+export function etaMinutes(distance: number): number {
+  const speedKmh = 30;
+  return Math.round((distance / speedKmh) * 60);
+}
+
+export function isNight(date: Date): boolean {
+  const h = date.getHours();
+  return h < 7 || h >= 22;
+}
+
 export function pointInPolygon(point: Point, polygon: Point[]): boolean {
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -27,9 +60,13 @@ export function pointInPolygon(point: Point, polygon: Point[]): boolean {
     if (intersect) inside = !inside;
   }
   return inside;
+<<<<<<< HEAD
 }
 
 export function isNight(date: Date): boolean {
   const h = date.getHours();
   return h < 8 || h >= 23;
+=======
+>>>>>>> de14bbc (feat: add order chat and notifications)
 }
+
