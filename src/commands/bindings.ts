@@ -1,7 +1,5 @@
 import type { Telegraf, Context } from 'telegraf';
-import { getSettings, saveSettings, type Settings } from '../services/settings';
-
-type BindingKey = keyof Pick<Settings,'drivers_channel_id'|'moderators_channel_id'>;
+import { saveBinding, type BindingKey } from '../services/settings';
 
 export function registerBindingCommands(bot: Telegraf<Context>) {
   bot.on('channel_post', async (ctx) => {
@@ -9,9 +7,11 @@ export function registerBindingCommands(bot: Telegraf<Context>) {
     if (!text) return;
     if (text === '/bind_drivers_channel') return bindChannel(ctx, 'drivers_channel_id');
     if (text === '/bind_moderators_channel') return bindChannel(ctx, 'moderators_channel_id');
+    if (text === '/bind_verify_channel') return bindChannel(ctx, 'verify_channel_id');
   });
   bot.command('bind_drivers_channel', async (ctx) => bindChannel(ctx, 'drivers_channel_id'));
   bot.command('bind_moderators_channel', async (ctx) => bindChannel(ctx, 'moderators_channel_id'));
+  bot.command('bind_verify_channel', async (ctx) => bindChannel(ctx, 'verify_channel_id'));
 }
 
 async function bindChannel(ctx: Context, key: BindingKey) {
@@ -21,10 +21,12 @@ async function bindChannel(ctx: Context, key: BindingKey) {
       await ctx.reply('Нужно быть администратором канала.');
       return;
     }
-    const s = getSettings();
-    (s as any)[key] = String(ctx.chat.id);
-    saveSettings(s);
-    await ctx.reply(`Привязал канал: ${ctx.chat.title} (${ctx.chat.id})`);
+    saveBinding(key, String(ctx.chat.id));
+    const msg =
+      key === 'verify_channel_id'
+        ? `✅ Привязан verify-канал: ${ctx.chat.title} (id: ${ctx.chat.id})`
+        : `Привязал канал: ${ctx.chat.title} (${ctx.chat.id})`;
+    await ctx.reply(msg);
     return;
   }
   const arg = (ctx.message as any)?.text?.split(' ')[1];
@@ -32,8 +34,6 @@ async function bindChannel(ctx: Context, key: BindingKey) {
     await ctx.reply('Отправьте команду из канала (как админ) ИЛИ укажите числовой ID канала аргументом.');
     return;
   }
-  const s = getSettings();
-  (s as any)[key] = arg;
-  saveSettings(s);
+  saveBinding(key, arg);
   await ctx.reply(`Сохранил ${key} = ${arg}`);
 }
