@@ -2,6 +2,7 @@ import { Telegraf, Context } from 'telegraf';
 import { updateSetting, getSettings } from '../services/settings.js';
 import type { Settings } from '../services/settings.js';
 import { getAllUsers } from '../services/users.js';
+<<<<<<< HEAD
 import {
   warnUser,
   suspendUser,
@@ -11,6 +12,9 @@ import {
   getModerationInfo,
 } from '../services/moderation.js';
 import { getCourierMetrics } from '../services/couriers.js';
+=======
+import { addDisputeMessage, resolveDispute } from '../services/orders.js';
+>>>>>>> 55a7169 (feat: extend courier workflow and disputes)
 
 function isAdmin(ctx: Context): boolean {
   const adminId = Number(process.env.ADMIN_ID);
@@ -105,6 +109,7 @@ export default function adminCommands(bot: Telegraf) {
     ctx.reply('Рассылка отправлена');
   });
 
+<<<<<<< HEAD
   bot.command('warn', async (ctx) => {
     if (!ensureAdmin(ctx)) return;
     const parts = ((ctx.message as any)?.text ?? '').split(' ');
@@ -172,5 +177,54 @@ export default function adminCommands(bot: Telegraf) {
     const metrics = getCourierMetrics(id);
     if (!metrics) return ctx.reply('Данные не найдены');
     ctx.reply(`cancel_rate: ${metrics.cancel_rate.toFixed(2)}\ncompleted_count: ${metrics.completed_count}`);
+=======
+  bot.command('dispute_reply', async (ctx) => {
+    if (!ensureAdmin(ctx)) return;
+    const parts = ((ctx.message as any)?.text ?? '').split(' ');
+    if (parts.length < 3) {
+      return ctx.reply('Usage: /dispute_reply <id> <text>');
+    }
+    const id = Number(parts[1]);
+    const text = parts.slice(2).join(' ');
+    const order = addDisputeMessage(id, 'moderator', text);
+    if (!order) return ctx.reply('Order not found or no dispute');
+    await ctx.reply('Ответ отправлен');
+    try {
+      await ctx.telegram.sendMessage(
+        order.courier_id!,
+        `Ответ по спору заказа #${order.id}: ${text}`
+      );
+    } catch {}
+    try {
+      await ctx.telegram.sendMessage(
+        order.client_id,
+        `Ответ по спору заказа #${order.id}: ${text}`
+      );
+    } catch {}
+  });
+
+  bot.command('dispute_close', async (ctx) => {
+    if (!ensureAdmin(ctx)) return;
+    const parts = ((ctx.message as any)?.text ?? '').split(' ');
+    const id = Number(parts[1]);
+    if (!id) {
+      return ctx.reply('Usage: /dispute_close <id>');
+    }
+    const order = resolveDispute(id);
+    if (!order) return ctx.reply('Order not found');
+    await ctx.reply('Спор закрыт');
+    try {
+      await ctx.telegram.sendMessage(
+        order.courier_id!,
+        `Спор по заказу #${order.id} закрыт`
+      );
+    } catch {}
+    try {
+      await ctx.telegram.sendMessage(
+        order.client_id,
+        `Спор по заказу #${order.id} закрыт`
+      );
+    } catch {}
+>>>>>>> 55a7169 (feat: extend courier workflow and disputes)
   });
 }
