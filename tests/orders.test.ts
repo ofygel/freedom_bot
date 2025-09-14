@@ -15,6 +15,7 @@ import {
   assignOrder,
   getOrder,
   expireReservations,
+  expireMovementTimers,
   getOrderEvents,
 } from '../src/services/orders';
 
@@ -162,6 +163,82 @@ test('expired reservations are released and notify users', () => {
       { id: 100, text: `Заказ #${order.id} возвращён в ленту` },
       { id: 200, text: `Бронь заказа #${order.id} истекла` },
     ]);
+  } finally {
+    teardown(dir, prev);
+  }
+});
+
+test('inactive assigned order returns to open and notifies users', () => {
+  const { dir, prev, messages } = setup();
+  try {
+    const order = createOrder({
+      customer_id: 100,
+      from: { lat: 0, lon: 0 },
+      to: { lat: 1, lon: 1 },
+      type: 'delivery',
+      time: 'now',
+      options: null,
+      size: 'S',
+      pay_type: 'cash',
+      comment: null,
+      price: 10,
+    });
+    updateOrderStatus(order.id, 'assigned', 200);
+    updateOrder(order.id, {
+      movement_deadline: new Date(Date.now() - 1000).toISOString(),
+    });
+    messages.splice(0);
+    expireMovementTimers();
+    const updated = getOrder(order.id)!;
+    assert.equal(updated.status, 'open');
+    assert.equal(updated.courier_id, null);
+    assert.equal(updated.movement_deadline, null);
+    assert.deepEqual(messages, [
+      { id: 100, text: `Заказ #${order.id} возвращён в ленту` },
+      { id: 200, text: `Вы сняты с заказа #${order.id} из-за отсутствия движения` },
+    ]);
+  } finally {
+    teardown(dir, prev);
+  }
+});
+
+test('inactive delivery opens dispute and logs issue', () => {
+  const { dir, prev, messages } = setup();
+  try {
+    const order = createOrder({
+      customer_id: 100,
+      from: { lat: 0, lon: 0 },
+      to: { lat: 1, lon: 1 },
+      type: 'delivery',
+      time: 'now',
+      options: null,
+      size: 'S',
+      pay_type: 'cash',
+      comment: null,
+      price: 10,
+    });
+    updateOrderStatus(order.id, 'assigned', 200);
+    updateOrderStatus(order.id, 'going_to_pickup');
+    updateOrder(order.id, {
+      movement_deadline: new Date(Date.now() - 1000).toISOString(),
+    });
+    messages.splice(0);
+    expireMovementTimers();
+    const updated = getOrder(order.id)!;
+    assert.equal(updated.dispute?.status, 'open');
+    assert.equal(updated.movement_deadline, null);
+    assert.deepEqual(messages, [
+      { id: 100, text: `Открыт спор по заказу #${order.id}` },
+      { id: 200, text: `Открыт спор по заказу #${order.id}` },
+    ]);
+    const audit = fs
+      .readFileSync('data/courier_audit.log', 'utf-8')
+      .trim()
+      .split('\n')
+      .map(l => JSON.parse(l));
+    assert.equal(audit.length, 1);
+    assert.equal(audit[0].courier_id, 200);
+    assert.equal(audit[0].type, 'no_movement');
   } finally {
     teardown(dir, prev);
   }

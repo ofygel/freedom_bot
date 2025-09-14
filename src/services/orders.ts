@@ -3,13 +3,19 @@ import path from 'path';
 import type { Telegraf, Context } from 'telegraf';
 import type { Point } from '../utils/twoGis';
 import { incrementCourierReserve, incrementCourierCancel } from './courierState';
-import { recordCourierMetric } from './couriers';
+import { recordCourierMetric, logCourierIssue } from './couriers';
 
 let botRef: Telegraf<Context> | null = null;
 export function setOrdersBot(bot: Telegraf<Context>) { botRef = bot; }
 
 const file = path.join(process.cwd(), 'data', 'orders.json');
 const eventsFile = path.join(process.cwd(), 'data', 'order_events.json');
+
+const MOVEMENT_TIMEOUTS: Record<'assigned' | 'going_to_pickup' | 'going_to_dropoff', number> = {
+  assigned: 10 * 60 * 1000,
+  going_to_pickup: 30 * 60 * 1000,
+  going_to_dropoff: 60 * 60 * 1000,
+};
 
 export interface OrderEvent {
   order_id: number;
@@ -91,6 +97,7 @@ export interface Order {
   status: OrderStatus;
   reserved_by: number | null;
   reserved_until: string | null;
+  movement_deadline: string | null;
   pickup_proof?: string | null;
   delivery_proof?: string | null;
   payment_status?: 'pending' | 'paid';
@@ -188,6 +195,7 @@ export function createOrder(input: CreateOrderInput): Order {
     status: 'open',
     reserved_by: null,
     reserved_until: null,
+    movement_deadline: null,
     pickup_proof: null,
     delivery_proof: null,
     dispute: undefined,
@@ -268,6 +276,7 @@ export function assignOrder(id: number, courierId: number): Order | undefined {
   order.courier_id = courierId;
   order.reserved_by = null;
   order.reserved_until = null;
+  order.movement_deadline = new Date(now + MOVEMENT_TIMEOUTS.assigned).toISOString();
   order.transitions.push({ status: 'assigned', at: new Date(now).toISOString() });
   list[index] = order;
   writeAll(list);
@@ -308,6 +317,42 @@ export function expireReservations(): void {
   if (changed) writeAll(list);
 }
 
+export function expireMovementTimers(): void {
+  const list = readAll();
+  const now = Date.now();
+  for (const order of list) {
+    if (!order.movement_deadline) continue;
+    if (new Date(order.movement_deadline).getTime() > now) continue;
+    if (order.status === 'assigned') {
+      const prevCourier = order.courier_id;
+      updateOrderStatus(order.id, 'open');
+      logEvent(order.id, 'movement_timeout', prevCourier ?? null, { status: order.status });
+      if (botRef) {
+        botRef.telegram
+          .sendMessage(order.customer_id, `Заказ #${order.id} возвращён в ленту`)
+          .catch(() => {});
+        if (prevCourier)
+          botRef.telegram
+            .sendMessage(prevCourier, `Вы сняты с заказа #${order.id} из-за отсутствия движения`)
+            .catch(() => {});
+      }
+    } else if (
+      order.status === 'going_to_pickup' ||
+      order.status === 'going_to_dropoff'
+    ) {
+      openDispute(order.id);
+      if (order.courier_id)
+        logCourierIssue({ courier_id: order.courier_id, type: 'no_movement' });
+      updateOrder(order.id, { movement_deadline: null });
+      logEvent(order.id, 'movement_timeout', order.courier_id ?? null, {
+        status: order.status,
+      });
+    } else {
+      updateOrder(order.id, { movement_deadline: null });
+    }
+  }
+}
+
 export function updateOrderStatus(
   id: number,
   status: OrderStatus,
@@ -324,6 +369,17 @@ export function updateOrderStatus(
   }
   if (status === 'open') {
     order.courier_id = null;
+    order.movement_deadline = null;
+  } else if (
+    status === 'assigned' ||
+    status === 'going_to_pickup' ||
+    status === 'going_to_dropoff'
+  ) {
+    order.movement_deadline = new Date(
+      Date.now() + MOVEMENT_TIMEOUTS[status]
+    ).toISOString();
+  } else {
+    order.movement_deadline = null;
   }
   order.transitions.push({ status, at: new Date().toISOString() });
   list[index] = order;
