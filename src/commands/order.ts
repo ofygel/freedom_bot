@@ -1,5 +1,12 @@
 import { Telegraf, Markup, Context } from 'telegraf';
-import { parse2GisLink } from '../utils/twoGis.js';
+import {
+  parse2GisLink,
+  reverseGeocode,
+  normalizeAddress,
+  pointDeeplink,
+  routeDeeplink,
+  routeToDeeplink
+} from '../utils/twoGis.js';
 import { createOrder } from '../services/orders.js';
 import { getSettings } from '../services/settings.js';
 import { getUser } from '../services/users.js';
@@ -34,7 +41,24 @@ type Step =
   | 'confirm';
 
 interface WizardState {
+<<<<<<< HEAD
   step: Step;
+=======
+  step:
+    | 'idle'
+    | 'type'
+    | 'from'
+    | 'from_confirm'
+    | 'to'
+    | 'to_confirm'
+    | 'size'
+    | 'fragile'
+    | 'thermobox'
+    | 'change'
+    | 'pay'
+    | 'comment'
+    | 'confirm';
+>>>>>>> 3c7234d (feat: improve 2gis integration)
   data: any;
 }
 
@@ -163,6 +187,7 @@ export default function orderCommands(bot: Telegraf) {
       }
       case 'from_link_wait': {
         const parsed = await parse2GisLink(text);
+<<<<<<< HEAD
         if (!parsed) return ctx.reply('Не удалось разобрать ссылку.');
         if ('from' in parsed) {
           if (!isInAlmaty(parsed.from) || !isInAlmaty(parsed.to)) {
@@ -257,9 +282,25 @@ export default function orderCommands(bot: Telegraf) {
       case 'time': {
         if (text === 'Сейчас') {
           state.data.delivery_time = 'now';
+=======
+        if (parsed && 'from' in parsed) {
+          const fromAddr = await reverseGeocode(parsed.from);
+          const toAddr = await reverseGeocode(parsed.to);
+          state.data.from = {
+            addr: fromAddr ? normalizeAddress(fromAddr) : '2ГИС точка',
+            lat: parsed.from.lat,
+            lon: parsed.from.lon
+          };
+          state.data.to = {
+            addr: toAddr ? normalizeAddress(toAddr) : '2ГИС точка',
+            lat: parsed.to.lat,
+            lon: parsed.to.lon
+          };
+>>>>>>> 3c7234d (feat: improve 2gis integration)
           state.step = 'size';
           return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
         }
+<<<<<<< HEAD
         if (text === 'К времени') {
           state.step = 'time_input';
           return ctx.reply('Введите время в формате ЧЧ:ММ.');
@@ -276,8 +317,84 @@ export default function orderCommands(bot: Telegraf) {
         dt.setHours(h, m, 0, 0);
         if (dt < now) return ctx.reply('Время уже прошло.');
         state.data.delivery_time = dt.toISOString();
+=======
+        if (parsed) {
+          const addr = await reverseGeocode(parsed);
+          if (addr) {
+            state.data.from = { addr: normalizeAddress(addr), lat: parsed.lat, lon: parsed.lon };
+            state.step = 'to';
+            return ctx.reply('Куда? Отправьте адрес или ссылку 2ГИС.');
+          }
+          state.data.tmp = { point: parsed, text };
+          state.step = 'from_confirm';
+          return ctx.reply(
+            'Не удалось определить адрес, использовать введённый? (Да/Нет)',
+            Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize()
+          );
+        }
+        state.data.from = { addr: normalizeAddress(text) };
+        state.step = 'to';
+        return ctx.reply('Куда? Отправьте адрес или ссылку 2ГИС.');
+      }
+      case 'from_confirm': {
+        if (text === 'Да') {
+          const { point, text: original } = state.data.tmp;
+          state.data.from = {
+            addr: normalizeAddress(original),
+            lat: point.lat,
+            lon: point.lon
+          };
+          delete state.data.tmp;
+          state.step = 'to';
+          return ctx.reply('Куда? Отправьте адрес или ссылку 2ГИС.');
+        }
+        if (text === 'Нет') {
+          delete state.data.tmp;
+          state.step = 'from';
+          return ctx.reply('Откуда? Отправьте адрес или ссылку 2ГИС.');
+        }
+        return ctx.reply('Ответьте Да или Нет.');
+      }
+      case 'to': {
+        const parsed = await parse2GisLink(text);
+        if (parsed) {
+          const point = 'from' in parsed ? parsed.to : parsed;
+          const addr = await reverseGeocode(point);
+          if (addr) {
+            state.data.to = { addr: normalizeAddress(addr), lat: point.lat, lon: point.lon };
+            state.step = 'size';
+            return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
+          }
+          state.data.tmp = { point, text };
+          state.step = 'to_confirm';
+          return ctx.reply(
+            'Не удалось определить адрес, использовать введённый? (Да/Нет)',
+            Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize()
+          );
+        }
+        state.data.to = { addr: normalizeAddress(text) };
+>>>>>>> 3c7234d (feat: improve 2gis integration)
         state.step = 'size';
         return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
+      }
+      case 'to_confirm': {
+        if (text === 'Да') {
+          const { point, text: original } = state.data.tmp;
+          state.data.to = {
+            addr: normalizeAddress(original),
+            lat: point.lat,
+            lon: point.lon
+          };
+          delete state.data.tmp;
+          state.step = 'size';
+          return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
+        }
+        if (text === 'Нет') {
+          delete state.data.tmp;
+          state.step = 'to';
+          return ctx.reply('Куда? Отправьте адрес или ссылку 2ГИС.');
+        }
+        return ctx.reply('Ответьте Да или Нет.');
       }
       case 'size': {
         if (!['S', 'M', 'L'].includes(text)) {
@@ -341,7 +458,24 @@ export default function orderCommands(bot: Telegraf) {
           summary += `\nДистанция: ${dist.toFixed(1)} км\nETA: ${eta} мин\nЦена: ${price} тг`;
         }
         state.step = 'confirm';
+<<<<<<< HEAD
         return ctx.reply(summary, Markup.keyboard([['Подтвердить заказ'], ['Отмена']]).resize());
+=======
+        const summary = `Тип: ${state.data.cargo_type}\nОткуда: ${state.data.from.addr}\nКуда: ${state.data.to.addr}\nРазмер: ${state.data.size}\nОплата: ${state.data.pay_type}`;
+        if (state.data.from.lat && state.data.to.lat) {
+          await ctx.reply(
+            summary,
+            Markup.inlineKeyboard([
+              [Markup.button.url('Открыть в 2ГИС', pointDeeplink(state.data.from as any))],
+              [Markup.button.url('Маршрут в 2ГИС', routeDeeplink({ from: state.data.from as any, to: state.data.to as any }))],
+              [Markup.button.url('До точки B', routeToDeeplink(state.data.to as any))]
+            ])
+          );
+        } else {
+          await ctx.reply(summary);
+        }
+        return ctx.reply('Подтвердите заказ', Markup.keyboard([['Подтвердить заказ'], ['Отмена']]).resize());
+>>>>>>> 3c7234d (feat: improve 2gis integration)
       }
       case 'confirm': {
         if (text !== 'Подтвердить заказ') {
@@ -369,7 +503,15 @@ export default function orderCommands(bot: Telegraf) {
         const settings = getSettings();
         if (settings.drivers_channel_id) {
           const text = `Новый заказ #${order.id}\nОткуда: ${order.from.addr}\nКуда: ${order.to.addr}`;
-          await ctx.telegram.sendMessage(settings.drivers_channel_id, text);
+          const extra =
+            order.from.lat && order.to.lat
+              ? Markup.inlineKeyboard([
+                  [Markup.button.url('Открыть в 2ГИС', pointDeeplink(order.from as any))],
+                  [Markup.button.url('Маршрут в 2ГИС', routeDeeplink({ from: order.from as any, to: order.to as any }))],
+                  [Markup.button.url('До точки B', routeToDeeplink(order.to as any))]
+                ])
+              : undefined;
+          await ctx.telegram.sendMessage(settings.drivers_channel_id, text, extra ? extra : undefined);
         }
         return;
       }
