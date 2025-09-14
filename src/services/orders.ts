@@ -8,9 +8,22 @@ export interface Location {
   lon?: number;
 }
 
+export type OrderStatus =
+  | 'open'
+  | 'assigned'
+  | 'heading_to_sender'
+  | 'at_sender'
+  | 'picked_up'
+  | 'en_route'
+  | 'at_recipient'
+  | 'delivered'
+  | 'closed'
+  | 'dispute_open';
+
 export interface Order {
   id: number;
   client_id: number;
+  courier_id?: number;
   cargo_type: 'docs' | 'parcel' | 'food' | 'other';
   from: Location;
   to: Location;
@@ -21,10 +34,17 @@ export interface Order {
   pay_type: 'cash' | 'p2p' | 'receiver';
   comment?: string;
   created_at: string;
+<<<<<<< HEAD
   status: 'open' | 'reserved' | 'assigned';
   reserved_by?: number;
   reserved_until?: string;
   message_id?: number;
+=======
+  status: OrderStatus;
+  updated_at: string;
+  pickup_proof?: string;
+  delivery_proof?: string;
+>>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
 }
 
 function load(): Order[] {
@@ -42,6 +62,7 @@ function save(orders: Order[]) {
   writeFileSync(FILE_PATH, JSON.stringify(orders, null, 2));
 }
 
+<<<<<<< HEAD
 export function createOrder(
   order: Omit<
     Order,
@@ -56,12 +77,26 @@ export function createOrder(
     id,
     created_at: new Date().toISOString(),
     status: 'open'
+=======
+export function createOrder(order: Omit<Order, 'id' | 'created_at' | 'status' | 'updated_at'>): Order {
+  const orders = load();
+  const last = orders[orders.length - 1];
+  const id = last ? last.id + 1 : 1;
+  const now = new Date().toISOString();
+  const newOrder: Order = {
+    ...order,
+    id,
+    created_at: now,
+    status: 'open',
+    updated_at: now
+>>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
   };
   orders.push(newOrder);
   save(orders);
   return newOrder;
 }
 
+<<<<<<< HEAD
 export function updateOrder(id: number, patch: Partial<Omit<Order, 'id'>>): Order | undefined {
   const orders = load();
   const idx = orders.findIndex((o) => o.id === id);
@@ -121,7 +156,79 @@ export function releaseExpiredReservations(): Order[] {
   return updated;
 }
 
+=======
+>>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
 export function getOrder(id: number): Order | undefined {
   const orders = load();
   return orders.find((o) => o.id === id);
 }
+<<<<<<< HEAD
+=======
+
+export function getCourierActiveOrder(courier_id: number): Order | undefined {
+  const orders = load();
+  return orders.find((o) => o.courier_id === courier_id && o.status !== 'closed');
+}
+
+export function assignOrder(id: number, courier_id: number): Order | undefined {
+  const orders = load();
+  const order = orders.find((o) => o.id === id && o.status === 'open');
+  if (!order) return undefined;
+  order.courier_id = courier_id;
+  order.status = 'assigned';
+  order.updated_at = new Date().toISOString();
+  save(orders);
+  return order;
+}
+
+export function updateOrderStatus(id: number, status: OrderStatus): Order | undefined {
+  const orders = load();
+  const order = orders.find((o) => o.id === id);
+  if (!order) return undefined;
+  order.status = status;
+  order.updated_at = new Date().toISOString();
+  save(orders);
+  return order;
+}
+
+export function addPickupProof(id: number, proof: string) {
+  const orders = load();
+  const order = orders.find((o) => o.id === id);
+  if (!order) return;
+  order.pickup_proof = proof;
+  order.updated_at = new Date().toISOString();
+  save(orders);
+}
+
+export function addDeliveryProof(id: number, proof: string) {
+  const orders = load();
+  const order = orders.find((o) => o.id === id);
+  if (!order) return;
+  order.delivery_proof = proof;
+  order.updated_at = new Date().toISOString();
+  save(orders);
+}
+
+export function checkOrderTimeouts(
+  timeoutMs: number,
+  onTimeout: (order: Order) => void
+) {
+  const orders = load();
+  const now = Date.now();
+  let changed = false;
+  for (const order of orders) {
+    if (
+      order.courier_id &&
+      !['closed', 'dispute_open'].includes(order.status) &&
+      now - new Date(order.updated_at).getTime() > timeoutMs
+    ) {
+      delete order.courier_id;
+      order.status = 'open';
+      order.updated_at = new Date().toISOString();
+      changed = true;
+      onTimeout(order);
+    }
+  }
+  if (changed) save(orders);
+}
+>>>>>>> b73ce5b (feat: add courier workflow and dispute handling)

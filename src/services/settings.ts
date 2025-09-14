@@ -5,6 +5,7 @@ const FILE_PATH = 'data/settings.json';
 export interface Settings {
   verify_channel_id?: number;
   drivers_channel_id?: number;
+  moderators_channel_id?: number;
 }
 
 function load(): Settings {
