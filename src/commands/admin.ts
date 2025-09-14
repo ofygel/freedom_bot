@@ -38,6 +38,20 @@ export default function adminCommands(bot: Telegraf) {
   bot.command('set_surcharge_M', (ctx) => setNumber(ctx, 'surcharge_M'));
   bot.command('set_surcharge_L', (ctx) => setNumber(ctx, 'surcharge_L'));
 
+  bot.command('set_order_hours', (ctx) => {
+    if (!ensureAdmin(ctx)) return;
+    const parts = ((ctx.message as any)?.text ?? '').split(' ');
+    const start = Number(parts[1]);
+    const end = Number(parts[2]);
+    if (isNaN(start) || isNaN(end)) {
+      ctx.reply('Используйте: /set_order_hours START END');
+      return;
+    }
+    updateSetting('order_hours_start', start);
+    updateSetting('order_hours_end', end);
+    ctx.reply(`order_hours = ${start}-${end}`);
+  });
+
   bot.command('toggle_night', (ctx) => {
     if (!ensureAdmin(ctx)) return;
     const settings = getSettings();
