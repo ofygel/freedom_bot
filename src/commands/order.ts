@@ -224,8 +224,18 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
             settings.drivers_channel_id,
             card,
             Markup.inlineKeyboard([
-              [Markup.button.url('Маршрут', routeToDeeplink(from, to))],
-              [Markup.button.callback('Резерв', `reserve:${order.id}`)],
+              [
+                Markup.button.url('Маршрут', routeToDeeplink(from, to)),
+                Markup.button.url(
+                  'До точки B',
+                  `https://2gis.kz/almaty?m=${to.lon},${to.lat}`
+                ),
+              ],
+              [
+                Markup.button.callback('Резерв', `reserve:${order.id}`),
+                Markup.button.callback('Детали', `details:${order.id}`),
+                Markup.button.callback('Скрыть на 1 час', `hide:${order.id}`),
+              ],
             ])
           );
         }
