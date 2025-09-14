@@ -79,11 +79,14 @@ function dimsKeyboard(s: OrderSession) {
   ]);
 }
 
-async function parsePoint(input: string): Promise<Point | null> {
+async function parsePoint(
+  input: string
+): Promise<{ point: Point } | { from: Point; to: Point } | null> {
   if (/2gis\./i.test(input)) {
     return await parse2GisLink(input);
   }
-  return await geocodeAddress(input);
+  const p = await geocodeAddress(input);
+  return p ? { point: p } : null;
 }
 
 export default function registerOrderCommands(bot: Telegraf<Context>) {
@@ -135,39 +138,87 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         );
         break;
       case 2: {
-        let point: Point | null = loc ?? (text ? await parsePoint(text) : null);
-        if (!point || !isInAlmaty(point)) {
+        const parsed = loc ? { point: loc } : text ? await parsePoint(text) : null;
+        if (!parsed) {
           await ctx.reply('Не удалось определить точку в пределах Алматы. Попробуйте ещё раз.');
           return;
         }
-        s.from = point;
-        const addr = await reverseGeocode(point);
-        s.step = 3;
-        await sendStep(
-          ctx,
-          s,
-          `A: ${addr}\nhttps://2gis.kz/almaty?m=${point.lon},${point.lat}\nКуда? Пришлите геолокацию, адрес или ссылку 2ГИС`,
-          Markup.inlineKeyboard([
-            [Markup.button.callback('Как отправить ссылку из 2ГИС', 'order:2gis')],
-          ])
-        );
+        if ('from' in parsed) {
+          const { from, to } = parsed;
+          if (!isInAlmaty(from) || !isInAlmaty(to)) {
+            await ctx.reply('Не удалось определить точку в пределах Алматы. Попробуйте ещё раз.');
+            return;
+          }
+          s.from = from;
+          s.to = to;
+          const addrA = await reverseGeocode(from);
+          const addrB = await reverseGeocode(to);
+          s.step = 4;
+          await sendStep(
+            ctx,
+            s,
+            `A: ${addrA}\nhttps://2gis.kz/almaty?m=${from.lon},${from.lat}\nB: ${addrB}\nhttps://2gis.kz/almaty?m=${to.lon},${to.lat}\nКогда?`,
+            Markup.keyboard(['Сейчас', 'К времени']).oneTime().resize()
+          );
+        } else {
+          const { point } = parsed;
+          if (!isInAlmaty(point)) {
+            await ctx.reply('Не удалось определить точку в пределах Алматы. Попробуйте ещё раз.');
+            return;
+          }
+          s.from = point;
+          const addr = await reverseGeocode(point);
+          s.step = 3;
+          await sendStep(
+            ctx,
+            s,
+            `A: ${addr}\nhttps://2gis.kz/almaty?m=${point.lon},${point.lat}\nКуда? Пришлите геолокацию, адрес или ссылку 2ГИС`,
+            Markup.inlineKeyboard([
+              [Markup.button.callback('Как отправить ссылку из 2ГИС', 'order:2gis')],
+            ])
+          );
+        }
         break;
       }
       case 3: {
-        let point: Point | null = loc ?? (text ? await parsePoint(text) : null);
-        if (!point || !isInAlmaty(point)) {
+        const parsed = loc ? { point: loc } : text ? await parsePoint(text) : null;
+        if (!parsed) {
           await ctx.reply('Не удалось определить точку в пределах Алматы. Попробуйте ещё раз.');
           return;
         }
-        s.to = point;
-        const addr = await reverseGeocode(point);
-        s.step = 4;
-        await sendStep(
-          ctx,
-          s,
-          `B: ${addr}\nhttps://2gis.kz/almaty?m=${point.lon},${point.lat}\nКогда?`,
-          Markup.keyboard(['Сейчас', 'К времени']).oneTime().resize()
-        );
+        if ('from' in parsed) {
+          const { from, to } = parsed;
+          if (!isInAlmaty(from) || !isInAlmaty(to)) {
+            await ctx.reply('Не удалось определить точку в пределах Алматы. Попробуйте ещё раз.');
+            return;
+          }
+          s.from = from;
+          s.to = to;
+          const addrA = await reverseGeocode(from);
+          const addrB = await reverseGeocode(to);
+          s.step = 4;
+          await sendStep(
+            ctx,
+            s,
+            `A: ${addrA}\nhttps://2gis.kz/almaty?m=${from.lon},${from.lat}\nB: ${addrB}\nhttps://2gis.kz/almaty?m=${to.lon},${to.lat}\nКогда?`,
+            Markup.keyboard(['Сейчас', 'К времени']).oneTime().resize()
+          );
+        } else {
+          const { point } = parsed;
+          if (!isInAlmaty(point)) {
+            await ctx.reply('Не удалось определить точку в пределах Алматы. Попробуйте ещё раз.');
+            return;
+          }
+          s.to = point;
+          const addr = await reverseGeocode(point);
+          s.step = 4;
+          await sendStep(
+            ctx,
+            s,
+            `B: ${addr}\nhttps://2gis.kz/almaty?m=${point.lon},${point.lat}\nКогда?`,
+            Markup.keyboard(['Сейчас', 'К времени']).oneTime().resize()
+          );
+        }
         break;
       }
       case 4:
