@@ -1,12 +1,12 @@
 import { Telegraf, Markup, Context } from 'telegraf';
-import { getUser } from '../services/users.js';
+import { getUser } from '../services/users';
 import {
   getCourier,
   upsertCourier,
   scheduleCardMessageDeletion,
-} from '../services/couriers.js';
-import type { CourierProfile } from '../services/couriers.js';
-import { getSettings } from '../services/settings.js';
+} from '../services/couriers';
+import type { CourierProfile } from '../services/couriers';
+import { getSettings } from '../services/settings';
 
 interface ProfileState {
   step: 'transport' | 'fullname' | 'id_photo' | 'selfie' | 'card';

@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { Telegraf, Context } from 'telegraf';
-import { updateSetting, getSettings } from '../services/settings.js';
-import type { Settings } from '../services/settings.js';
-import { getAllUsers } from '../services/users.js';
+import { updateSetting, getSettings } from '../services/settings';
+import type { Settings } from '../services/settings';
+import { getAllUsers } from '../services/users';
 import {
   warnUser,
   suspendUser,
@@ -10,9 +10,9 @@ import {
   unbanUser,
   resolveDispute,
   getModerationInfo,
-} from '../services/moderation.js';
-import { getCourierMetrics } from '../services/couriers.js';
-import { addDisputeMessage, resolveDispute } from '../services/orders.js';
+} from '../services/moderation';
+import { getCourierMetrics } from '../services/couriers';
+import { addDisputeMessage, resolveDispute } from '../services/orders';
 
 function isAdmin(ctx: Context): boolean {
   const adminId = Number(process.env.ADMIN_ID);

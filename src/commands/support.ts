@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { Telegraf, Markup, Context } from 'telegraf';
-import { getOrdersByClient } from '../services/orders.js';
-import { createTicket, updateTicketStatus, getTicket } from '../services/tickets.js';
-import { getSettings } from '../services/settings.js';
+import { getOrdersByClient } from '../services/orders';
+import { createTicket, updateTicketStatus, getTicket } from '../services/tickets';
+import { getSettings } from '../services/settings';
 
 interface SupportState {
   step: 'order' | 'topic' | 'content';

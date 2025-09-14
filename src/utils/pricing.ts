@@ -1,4 +1,4 @@
-import { getSettings } from '../services/settings.js';
+import { getSettings } from '../services/settings';
 
 export function calcPrice(
   distanceKm: number,

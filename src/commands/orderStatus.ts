@@ -1,6 +1,6 @@
 import { Telegraf } from 'telegraf';
-import { updateOrderStatus } from '../services/orders.js';
-import { cleanupOldChats } from '../services/chat.js';
+import { updateOrderStatus } from '../services/orders';
+import { cleanupOldChats } from '../services/chat';
 
 export default function orderStatusCommands(bot: Telegraf) {
   bot.command('order_status', async (ctx) => {
