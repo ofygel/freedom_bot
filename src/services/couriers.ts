@@ -12,10 +12,13 @@ import {
   createHash,
 } from 'crypto';
 import type { Telegram } from 'telegraf';
+import { warnUser, suspendUser } from './moderation';
 
 const FILE_PATH = 'data/couriers.json';
 const METRICS_PATH = 'data/courier_metrics.json';
 const AUDIT_PATH = 'data/courier_audit.log';
+const WARN_THRESHOLD = 3;
+const SUSPEND_THRESHOLD = 5;
 
 export interface CourierMetrics {
   cancel_count: number;
@@ -99,6 +102,17 @@ export function logCourierIssue(record: Omit<CourierAuditRecord, 'timestamp'>) {
   const line = JSON.stringify({ ...record, timestamp: new Date().toISOString() });
   if (!existsSync('data')) mkdirSync('data');
   appendFileSync(AUDIT_PATH, line + '\n');
+  if (record.type === 'cancel' || record.type === 'complaint') {
+    const entries = getCourierAudit(record.courier_id).filter(
+      (r) => r.type === record.type
+    );
+    const count = entries.length;
+    if (count >= SUSPEND_THRESHOLD) {
+      suspendUser(record.courier_id);
+    } else if (count >= WARN_THRESHOLD) {
+      warnUser(record.courier_id);
+    }
+  }
 }
 
 export function getCourierAudit(id: number): CourierAuditRecord[] {
