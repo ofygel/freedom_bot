@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import registerOrder from '../src/commands/order';
 import { createMockBot, sendUpdate } from './helpers';
+import { updateSetting } from '../src/services/settings';
 
 function setup() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'order-test-'));
@@ -13,6 +14,8 @@ function setup() {
   const messages: { id: number; text: string }[] = [];
   const bot = createMockBot(messages);
   registerOrder(bot);
+  updateSetting('order_hours_start', 0);
+  updateSetting('order_hours_end', 24);
   return { dir, prev, bot, messages };
 }
 
