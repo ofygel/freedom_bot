@@ -4,12 +4,16 @@ import startCommand from './commands/start.js';
 import { handleBindingCommands, pingBindingsCommand } from './commands/bindings.js';
 import orderCommands from './commands/order.js';
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { releaseExpiredReservations } from './services/orders.js';
 =======
 import driverCommands from './commands/driver.js';
 import { checkOrderTimeouts } from './services/orders.js';
 >>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
 import { getSettings } from './services/settings.js';
+=======
+import profileCommands from './commands/profile.js';
+>>>>>>> 8bdc958 (feat: add courier verification)
 
 dotenv.config();
 
@@ -24,7 +28,11 @@ startCommand(bot);
 handleBindingCommands(bot);
 pingBindingsCommand(bot);
 orderCommands(bot);
+<<<<<<< HEAD
 driverCommands(bot);
+=======
+profileCommands(bot);
+>>>>>>> 8bdc958 (feat: add courier verification)
 
 bot.launch().then(() => {
   console.log('Bot started');

@@ -1,6 +1,7 @@
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { Telegraf, Markup, Context } from 'telegraf';
 =======
 import { Telegraf, Context, Markup } from 'telegraf';
@@ -11,11 +12,15 @@ import { Telegraf, Markup, Context } from 'telegraf';
 =======
 import { Telegraf, Markup, Context } from 'telegraf';
 >>>>>>> bcad4d7 (feat: add payment fields and flows)
+=======
+import { Telegraf, Markup, Context } from 'telegraf';
+>>>>>>> 8bdc958 (feat: add courier verification)
 import { upsertUser, getUser } from '../services/users.js';
 
 export default function startCommand(bot: Telegraf) {
   const pendingRoles = new Map<number, 'client' | 'courier'>();
   const pendingAgreement = new Map<number, 'client' | 'courier'>();
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -32,6 +37,8 @@ export default function startCommand(bot: Telegraf) {
 >>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
 =======
 >>>>>>> bcad4d7 (feat: add payment fields and flows)
+=======
+>>>>>>> 8bdc958 (feat: add courier verification)
 
   bot.start(async (ctx) => {
     await ctx.reply(
@@ -70,6 +77,7 @@ export default function startCommand(bot: Telegraf) {
     }
     upsertUser({ id: uid, phone, role, city: 'Алматы', agreed: false });
     pendingRoles.delete(uid);
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
@@ -131,6 +139,8 @@ export default function startCommand(bot: Telegraf) {
 =======
 >>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
 =======
+=======
+>>>>>>> 8bdc958 (feat: add courier verification)
     pendingAgreement.set(uid, role);
     await ctx.reply(
       'Город: Алматы. Согласны с правилами сервиса?',
@@ -138,7 +148,10 @@ export default function startCommand(bot: Telegraf) {
         ['Согласен']
       ]).oneTime().resize()
     );
+<<<<<<< HEAD
 >>>>>>> bcad4d7 (feat: add payment fields and flows)
+=======
+>>>>>>> 8bdc958 (feat: add courier verification)
   });
 
   bot.hears('Согласен', async (ctx) => {
@@ -175,7 +188,6 @@ export default function startCommand(bot: Telegraf) {
 
   bot.hears('Создать заказ', (ctx) => ctx.reply('Создание заказа в разработке.'));
   bot.hears('Мои заказы', (ctx) => ctx.reply('Здесь будут ваши заказы.'));
-  bot.hears('Профиль', (ctx) => ctx.reply('Профиль в разработке.'));
   bot.hears('Поддержка', (ctx) => ctx.reply('Поддержка в разработке.'));
   bot.hears('Онлайн/Оффлайн', (ctx) => ctx.reply('Режим курьера переключен.'));
   bot.hears('Лента заказов', (ctx) => ctx.reply('Лента заказов в разработке.'));
