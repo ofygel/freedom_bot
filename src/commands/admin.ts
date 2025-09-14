@@ -2,7 +2,6 @@ import { Telegraf, Context } from 'telegraf';
 import { updateSetting, getSettings } from '../services/settings.js';
 import type { Settings } from '../services/settings.js';
 import { getAllUsers } from '../services/users.js';
-<<<<<<< HEAD
 import {
   warnUser,
   suspendUser,
@@ -12,9 +11,7 @@ import {
   getModerationInfo,
 } from '../services/moderation.js';
 import { getCourierMetrics } from '../services/couriers.js';
-=======
 import { addDisputeMessage, resolveDispute } from '../services/orders.js';
->>>>>>> 55a7169 (feat: extend courier workflow and disputes)
 
 function isAdmin(ctx: Context): boolean {
   const adminId = Number(process.env.ADMIN_ID);
@@ -109,7 +106,6 @@ export default function adminCommands(bot: Telegraf) {
     ctx.reply('Рассылка отправлена');
   });
 
-<<<<<<< HEAD
   bot.command('warn', async (ctx) => {
     if (!ensureAdmin(ctx)) return;
     const parts = ((ctx.message as any)?.text ?? '').split(' ');
@@ -177,7 +173,6 @@ export default function adminCommands(bot: Telegraf) {
     const metrics = getCourierMetrics(id);
     if (!metrics) return ctx.reply('Данные не найдены');
     ctx.reply(`cancel_rate: ${metrics.cancel_rate.toFixed(2)}\ncompleted_count: ${metrics.completed_count}`);
-=======
   bot.command('dispute_reply', async (ctx) => {
     if (!ensureAdmin(ctx)) return;
     const parts = ((ctx.message as any)?.text ?? '').split(' ');
@@ -225,6 +220,5 @@ export default function adminCommands(bot: Telegraf) {
         `Спор по заказу #${order.id} закрыт`
       );
     } catch {}
->>>>>>> 55a7169 (feat: extend courier workflow and disputes)
   });
 }

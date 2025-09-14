@@ -1,9 +1,6 @@
-<<<<<<< HEAD
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
-=======
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
->>>>>>> f6a2c0c (feat: add receiver payment flow and secure data)
 
 const FILE_PATH = 'data/couriers.json';
 const METRICS_PATH = 'data/courier_metrics.json';
@@ -47,7 +44,6 @@ function save(store: Record<string, CourierProfile>) {
   writeFileSync(FILE_PATH, JSON.stringify(store, null, 2));
 }
 
-<<<<<<< HEAD
 function loadMetrics(): Record<string, CourierMetrics> {
   if (existsSync(METRICS_PATH)) {
     const raw = readFileSync(METRICS_PATH, 'utf-8');
@@ -95,7 +91,6 @@ export function getCourierAudit(id: number): CourierAuditRecord[] {
     .filter(Boolean)
     .map((line) => JSON.parse(line) as CourierAuditRecord)
     .filter((r) => r.courier_id === id);
-=======
 const SECRET = process.env.COURIER_SECRET || 'default_secret_key_32_bytes_long!';
 
 function getKey() {
@@ -121,7 +116,6 @@ function decrypt(payload: string): string {
   } catch {
     return '';
   }
->>>>>>> f6a2c0c (feat: add receiver payment flow and secure data)
 }
 
 export function upsertCourier(profile: CourierProfile) {
