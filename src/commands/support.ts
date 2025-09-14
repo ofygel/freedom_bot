@@ -7,31 +7,51 @@ import { getSettings } from '../services/settings';
 interface SupportState {
   step: 'order' | 'topic' | 'content';
   data: any;
+  msgId?: number;
 }
 
 const states = new Map<number, SupportState>();
 
-function startSupportWizard(ctx: Context) {
+async function sendStepSupport(
+  ctx: Context,
+  state: SupportState,
+  text: string,
+  extra?: Parameters<typeof ctx.reply>[1]
+) {
+  if (state.msgId) {
+    await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
+  }
+  const msg = await ctx.reply(text, extra);
+  state.msgId = msg.message_id;
+}
+
+async function startSupportWizard(ctx: Context) {
   const uid = ctx.from!.id;
   const orders = getOrdersByClient(uid);
   if (orders.length === 0) {
-    ctx.reply('У вас нет заказов.');
+    await ctx.reply('У вас нет заказов.');
     return;
   }
-  states.set(uid, { step: 'order', data: {} });
   const buttons = orders.map((o) => [`${o.id}`]);
-  ctx.reply('Выберите номер заказа:', Markup.keyboard([...buttons, ['Отмена']]).resize());
+  const msg = await ctx.reply(
+    'Выберите номер заказа:',
+    Markup.keyboard([...buttons, ['Отмена']]).resize()
+  );
+  states.set(uid, { step: 'order', data: {}, msgId: msg.message_id });
 }
 
 export default function supportCommands(bot: Telegraf) {
-  bot.hears('Поддержка', (ctx) => {
+  bot.hears('Поддержка', async (ctx) => {
     if (!ctx.from) return;
-    startSupportWizard(ctx);
+    await startSupportWizard(ctx);
   });
 
-  bot.hears('Отмена', (ctx) => {
+  bot.hears('Отмена', async (ctx) => {
+    const state = states.get(ctx.from!.id);
+    if (state?.msgId)
+      await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
     states.delete(ctx.from!.id);
-    ctx.reply('Отменено', Markup.removeKeyboard());
+    await ctx.reply('Отменено', Markup.removeKeyboard());
   });
 
   bot.on('text', async (ctx) => {
@@ -47,12 +67,22 @@ export default function supportCommands(bot: Telegraf) {
         }
         state.data.order_id = orderId;
         state.step = 'topic';
-        return ctx.reply('Тема проблемы?', Markup.keyboard([['Отмена']]).resize());
+        return sendStepSupport(
+          ctx,
+          state,
+          'Тема проблемы?',
+          Markup.keyboard([['Отмена']]).resize()
+        );
       }
       case 'topic': {
         state.data.topic = text;
         state.step = 'content';
-        return ctx.reply('Опишите проблему или отправьте фото.', Markup.keyboard([['Отмена']]).resize());
+        return sendStepSupport(
+          ctx,
+          state,
+          'Опишите проблему или отправьте фото.',
+          Markup.keyboard([['Отмена']]).resize()
+        );
       }
       case 'content': {
         state.data.text = text;
@@ -62,6 +92,8 @@ export default function supportCommands(bot: Telegraf) {
           topic: state.data.topic,
           text: state.data.text,
         });
+        if (state.msgId)
+          await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
         states.delete(uid);
         await ctx.reply(`Тикет #${ticket.id} создан`, Markup.removeKeyboard());
         const settings = getSettings();
@@ -89,6 +121,8 @@ export default function supportCommands(bot: Telegraf) {
       topic: state.data.topic,
       photo: state.data.photo,
     });
+    if (state.msgId)
+      await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
     states.delete(uid);
     await ctx.reply(`Тикет #${ticket.id} создан`, Markup.removeKeyboard());
     const settings = getSettings();

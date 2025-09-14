@@ -19,11 +19,29 @@ interface OrderSession {
   options?: string[];
   payment?: string;
   comment?: string;
+  msgId?: number;
 }
 
 const sessions = new Map<number, OrderSession>();
 
 const optionLabels = ['Хрупкое', 'Опломбировать'];
+const twoGisHelp =
+  'Чтобы отправить ссылку из 2ГИС:\n1. Найдите нужный адрес.\n2. Нажмите кнопку «Поделиться».\n3. Выберите «Скопировать ссылку» и отправьте её сюда.';
+
+async function sendStep(
+  ctx: Context,
+  s: OrderSession,
+  text: string,
+  extra?: Parameters<typeof ctx.reply>[1]
+) {
+  if (s.msgId) {
+    await ctx.telegram
+      .deleteMessage(ctx.chat!.id, s.msgId)
+      .catch(() => {});
+  }
+  const msg = await ctx.reply(text, extra);
+  s.msgId = msg.message_id;
+}
 
 function dimsKeyboard(s: OrderSession) {
   const sizeRow = ['S', 'M', 'L'].map((v) =>
@@ -64,11 +82,11 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         .padStart(2, '0')}:00`);
       return;
     }
-    sessions.set(ctx.from!.id, { step: 1 });
-    await ctx.reply(
+    const msg = await ctx.reply(
       'Выберите тип заказа',
       Markup.keyboard(['Доставка', 'Пассажир']).oneTime().resize()
     );
+    sessions.set(ctx.from!.id, { step: 1, msgId: msg.message_id });
   });
 
   bot.on('message', async (ctx, next) => {
@@ -83,7 +101,14 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         if (!text) return;
         s.type = text;
         s.step = 2;
-        await ctx.reply('Откуда? Пришлите геолокацию, адрес или ссылку 2ГИС');
+        await sendStep(
+          ctx,
+          s,
+          'Откуда? Пришлите геолокацию, адрес или ссылку 2ГИС',
+          Markup.inlineKeyboard([
+            [Markup.button.callback('Как отправить ссылку из 2ГИС', 'order:2gis')],
+          ])
+        );
         break;
       case 2: {
         let point: Point | null = loc ?? (text ? await parsePoint(text) : null);
@@ -93,11 +118,15 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         }
         s.from = point;
         const addr = await reverseGeocode(point);
-        await ctx.reply(`A: ${addr}`, Markup.inlineKeyboard([
-          [Markup.button.url('Открыть в 2ГИС', `https://2gis.kz/almaty?m=${point.lon},${point.lat}`)]
-        ]));
         s.step = 3;
-        await ctx.reply('Куда?');
+        await sendStep(
+          ctx,
+          s,
+          `A: ${addr}\nhttps://2gis.kz/almaty?m=${point.lon},${point.lat}\nКуда? Пришлите геолокацию, адрес или ссылку 2ГИС`,
+          Markup.inlineKeyboard([
+            [Markup.button.callback('Как отправить ссылку из 2ГИС', 'order:2gis')],
+          ])
+        );
         break;
       }
       case 3: {
@@ -108,12 +137,11 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         }
         s.to = point;
         const addr = await reverseGeocode(point);
-        await ctx.reply(`B: ${addr}`, Markup.inlineKeyboard([
-          [Markup.button.url('Открыть в 2ГИС', `https://2gis.kz/almaty?m=${point.lon},${point.lat}`)]
-        ]));
         s.step = 4;
-        await ctx.reply(
-          'Когда?',
+        await sendStep(
+          ctx,
+          s,
+          `B: ${addr}\nhttps://2gis.kz/almaty?m=${point.lon},${point.lat}\nКогда?`,
           Markup.keyboard(['Сейчас', 'К времени']).oneTime().resize()
         );
         break;
@@ -124,10 +152,10 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           s.time = 'Сейчас';
           s.timeAt = new Date().toISOString();
           s.step = 5;
-          await ctx.reply('Габариты/Опции?', dimsKeyboard(s));
+          await sendStep(ctx, s, 'Габариты/Опции?', dimsKeyboard(s));
         } else if (text === 'К времени') {
           s.step = 41;
-          await ctx.reply('Укажите дату и время (YYYY-MM-DD HH:mm)');
+          await sendStep(ctx, s, 'Укажите дату и время (YYYY-MM-DD HH:mm)');
         } else {
           const dt = new Date(text.replace(' ', 'T'));
           if (isNaN(dt.getTime()) || dt.getTime() < Date.now()) {
@@ -137,7 +165,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           s.time = dt.toLocaleString('ru-RU');
           s.timeAt = dt.toISOString();
           s.step = 5;
-          await ctx.reply('Габариты/Опции?', dimsKeyboard(s));
+          await sendStep(ctx, s, 'Габариты/Опции?', dimsKeyboard(s));
         }
         break;
       case 41:
@@ -150,7 +178,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         s.time = dt.toLocaleString('ru-RU');
         s.timeAt = dt.toISOString();
         s.step = 5;
-        await ctx.reply('Габариты/Опции?', dimsKeyboard(s));
+        await sendStep(ctx, s, 'Габариты/Опции?', dimsKeyboard(s));
         break;
       case 5:
         return; // waiting for button callbacks
@@ -158,11 +186,14 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         if (!text) return;
         s.payment = text;
         s.step = 7;
-        await ctx.reply('Комментарий?');
+        await sendStep(ctx, s, 'Комментарий?');
         break;
       case 7:
         if (!text) return;
         s.comment = text;
+        if (s.msgId) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, s.msgId).catch(() => {});
+        }
         const from = s.from!, to = s.to!;
         const dist = distanceKm(from, to);
         const eta = etaMinutes(dist);
@@ -287,13 +318,21 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
       return;
     }
     s.step = 6;
-    await ctx.editMessageReplyMarkup(undefined);
-    await ctx.reply(
+    if (s.msgId) {
+      await ctx.telegram.deleteMessage(ctx.chat!.id, s.msgId).catch(() => {});
+    }
+    const msg = await ctx.reply(
       'Оплата? (наличные/карта/получатель платит)',
       Markup.keyboard(['Наличные', 'Карта', 'Получатель платит'])
         .oneTime()
         .resize()
     );
+    s.msgId = msg.message_id;
     await ctx.answerCbQuery();
+  });
+
+  bot.action('order:2gis', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply(twoGisHelp);
   });
 }
