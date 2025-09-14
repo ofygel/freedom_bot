@@ -32,6 +32,9 @@ export interface Order {
   thermobox: boolean;
   cash_change_needed: boolean;
   pay_type: 'cash' | 'p2p' | 'receiver';
+  amount_total: number;
+  amount_to_courier: number;
+  payment_status: 'pending' | 'awaiting_confirm' | 'paid';
   comment?: string;
   created_at: string;
 <<<<<<< HEAD
@@ -96,6 +99,7 @@ export function createOrder(order: Omit<Order, 'id' | 'created_at' | 'status' | 
   return newOrder;
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 export function updateOrder(id: number, patch: Partial<Omit<Order, 'id'>>): Order | undefined {
   const orders = load();
@@ -232,3 +236,14 @@ export function checkOrderTimeouts(
   if (changed) save(orders);
 }
 >>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
+=======
+export function updateOrder(id: number, data: Partial<Order>): Order | undefined {
+  const orders = load();
+  const idx = orders.findIndex((o) => o.id === id);
+  if (idx === -1) return undefined;
+  const updated = { ...orders[idx], ...data } as Order;
+  orders[idx] = updated;
+  save(orders);
+  return updated;
+}
+>>>>>>> bcad4d7 (feat: add payment fields and flows)
