@@ -5,9 +5,12 @@ export default function startCommand(bot: Telegraf) {
   const pendingRoles = new Map<number, 'client' | 'courier'>();
   const pendingAgreement = new Map<number, 'client' | 'courier'>();
 <<<<<<< HEAD
+<<<<<<< HEAD
   const pendingCity = new Map<number, true>();
 =======
 >>>>>>> bdae1ea (feat: add geo utilities)
+=======
+>>>>>>> 3c7234d (feat: improve 2gis integration)
 
   bot.start(async (ctx) => {
     await ctx.reply(
@@ -47,6 +50,7 @@ export default function startCommand(bot: Telegraf) {
     upsertUser({ id: uid, phone, role, city: 'Алматы', agreed: false });
     pendingRoles.delete(uid);
 <<<<<<< HEAD
+<<<<<<< HEAD
     if (role === 'client') {
       pendingCity.set(uid, true);
       await ctx.reply('Введите ваш город (по умолчанию Алматы).');
@@ -81,12 +85,17 @@ export default function startCommand(bot: Telegraf) {
     }
     return next();
 =======
+=======
+>>>>>>> 3c7234d (feat: improve 2gis integration)
     pendingAgreement.set(uid, role);
     await ctx.reply(
       'Город: Алматы. Согласны с правилами сервиса?',
       Markup.keyboard([['Согласен']]).oneTime().resize()
     );
+<<<<<<< HEAD
 >>>>>>> bdae1ea (feat: add geo utilities)
+=======
+>>>>>>> 3c7234d (feat: improve 2gis integration)
   });
 
   bot.hears('Согласен', async (ctx) => {
@@ -129,3 +138,4 @@ export default function startCommand(bot: Telegraf) {
   bot.hears('Лента заказов', (ctx) => ctx.reply('Лента заказов в разработке.'));
   bot.hears('Баланс/Выплаты', (ctx) => ctx.reply('Информация о балансе в разработке.'));
 }
+
