@@ -1,0 +1,22 @@
+{
+  "name": "freedom_bot",
+  "version": "1.0.0",
+  "description": "Telegram delivery aggregator bot for Almaty.",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "npm run build"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.0",
+    "telegraf": "^4.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}
