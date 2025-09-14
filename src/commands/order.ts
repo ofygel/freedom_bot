@@ -8,9 +8,11 @@ import { getSettings } from '../services/settings';
 import { createOrder } from '../services/orders';
 import { geocodeAddress, reverseGeocode } from '../utils/geocode';
 
+type OrderType = 'docs' | 'parcel' | 'food' | 'other';
+
 interface OrderSession {
   step: number;
-  type?: string;
+  type?: OrderType;
   from?: Point;
   to?: Point;
   time?: string; // formatted for display
@@ -23,6 +25,20 @@ interface OrderSession {
 }
 
 const sessions = new Map<number, OrderSession>();
+
+const typeButtons = ['Документы', 'Посылка', 'Еда', 'Другое'];
+const typeMap: Record<string, OrderType> = {
+  Документы: 'docs',
+  Посылка: 'parcel',
+  Еда: 'food',
+  Другое: 'other',
+};
+const typeLabels: Record<OrderType, string> = {
+  docs: 'Документы',
+  parcel: 'Посылка',
+  food: 'Еда',
+  other: 'Другое',
+};
 
 const optionLabels = ['Хрупкое', 'Опломбировать'];
 const twoGisHelp =
@@ -84,7 +100,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
     }
     const msg = await ctx.reply(
       'Выберите тип заказа',
-      Markup.keyboard(['Доставка', 'Пассажир']).oneTime().resize()
+      Markup.keyboard(typeButtons).oneTime().resize()
     );
     sessions.set(ctx.from!.id, { step: 1, msgId: msg.message_id });
   });
@@ -99,7 +115,15 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
     switch (s.step) {
       case 1:
         if (!text) return;
-        s.type = text;
+        const t = typeMap[text];
+        if (!t) {
+          await ctx.reply(
+            'Выберите тип заказа',
+            Markup.keyboard(typeButtons).oneTime().resize()
+          );
+          return;
+        }
+        s.type = t;
         s.step = 2;
         await sendStep(
           ctx,
@@ -197,11 +221,11 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         const from = s.from!, to = s.to!;
         const dist = distanceKm(from, to);
         const eta = etaMinutes(dist);
-        const price = calcPrice(dist, s.size || 'M', new Date(s.timeAt!));
+        const price = calcPrice(dist, s.size || 'M', new Date(s.timeAt!), s.type!);
         const fromAddr = await reverseGeocode(from);
         const toAddr = await reverseGeocode(to);
         await ctx.reply([
-          `Тип: ${s.type}`,
+          `Тип: ${typeLabels[s.type!]}`,
           `Откуда: ${fromAddr}`,
           `Куда: ${toAddr}`,
           `Время: ${s.time}`,
@@ -242,6 +266,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         if (settings.drivers_channel_id) {
           const card = [
             `#${order.id}`,
+            `Тип: ${typeLabels[order.type as OrderType]}`,
             `Откуда: ${fromAddr}`,
             `Куда: ${toAddr}`,
             `Время: ${s.time}`,
