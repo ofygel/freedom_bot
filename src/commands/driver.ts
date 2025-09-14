@@ -12,7 +12,9 @@ import {
 } from '../services/orders.js';
 import {
   toggleCourierOnline,
-  isCourierOnline
+  isCourierOnline,
+  hideOrderForCourier,
+  isOrderHiddenForCourier
 } from '../services/courierState.js';
 import { getSettings } from '../services/settings.js';
 
@@ -30,11 +32,21 @@ export default function driverCommands(bot: Telegraf) {
     const parts = ctx.message.text.split(' ');
     const id = Number(parts[1]);
     if (!id) return ctx.reply('Укажите ID заказа.');
+    if (!isCourierOnline(ctx.from!.id)) {
+      return ctx.reply('Сначала включите режим Онлайн.');
+    }
+    if (isOrderHiddenForCourier(ctx.from!.id, id)) {
+      return ctx.reply('Этот заказ временно скрыт.');
+    }
     const order = assignOrder(id, ctx.from!.id);
     if (!order) return ctx.reply('Не удалось назначить заказ.');
     ctx.reply(
       `Заказ #${order.id} назначен.`,
-      Markup.keyboard([['Еду к отправителю'], ['Открыть спор']]).resize()
+      Markup.keyboard([
+        ['Еду к отправителю'],
+        ['Скрыть на 1 час'],
+        ['Открыть спор']
+      ]).resize()
     );
   });
 
@@ -49,8 +61,13 @@ export default function driverCommands(bot: Telegraf) {
     ctx.reply(online ? 'Вы в сети.' : 'Вы оффлайн.');
   });
 
-  bot.hears('Еду к отправителю', (ctx) => handleTransition(ctx, 'assigned', 'heading_to_sender', 'У отправителя'));
-  bot.hears('У отправителя', (ctx) => handleTransition(ctx, 'heading_to_sender', 'at_sender', 'Забрал'));
+  bot.hears('Скрыть на 1 час', (ctx) => {
+    const order = getCourierActiveOrder(ctx.from!.id);
+    if (!order) return ctx.reply('Нет активного заказа.');
+    updateOrderStatus(order.id, 'new');
+    hideOrderForCourier(ctx.from!.id, order.id);
+    ctx.reply('Заказ скрыт на 1 час.', Markup.removeKeyboard());
+  });
 
   bot.hears('Забрал', async (ctx) => {
     const order = getCourierActiveOrder(ctx.from!.id);
@@ -202,7 +219,7 @@ function handleTransition(
     'Статус обновлён.',
     Markup.keyboard([extra, ['Открыть спор']]).resize()
   );
-  if (toStatus === 'at_recipient' && order.pay_type === 'receiver') {
+  if (toStatus === 'at_dropoff' && order.pay_type === 'receiver') {
     ctx.reply('Передайте получателю, что оплата необходима при получении.');
   }
 }
