@@ -3,7 +3,12 @@ import dotenv from 'dotenv';
 import startCommand from './commands/start.js';
 import { handleBindingCommands, pingBindingsCommand } from './commands/bindings.js';
 import orderCommands from './commands/order.js';
+<<<<<<< HEAD
 import { releaseExpiredReservations } from './services/orders.js';
+=======
+import driverCommands from './commands/driver.js';
+import { checkOrderTimeouts } from './services/orders.js';
+>>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
 import { getSettings } from './services/settings.js';
 
 dotenv.config();
@@ -19,11 +24,13 @@ startCommand(bot);
 handleBindingCommands(bot);
 pingBindingsCommand(bot);
 orderCommands(bot);
+driverCommands(bot);
 
 bot.launch().then(() => {
   console.log('Bot started');
 });
 
+<<<<<<< HEAD
 setInterval(async () => {
   const settings = getSettings();
   if (!settings.drivers_channel_id) return;
@@ -46,6 +53,19 @@ setInterval(async () => {
     }
   }
 }, 5000);
+=======
+setInterval(() => {
+  checkOrderTimeouts(30 * 60 * 1000, (order) => {
+    const settings = getSettings();
+    if (settings.drivers_channel_id) {
+      bot.telegram.sendMessage(
+        settings.drivers_channel_id,
+        `Заказ #${order.id} возвращён в ленту из-за отсутствия прогресса.`
+      );
+    }
+  });
+}, 60 * 1000);
+>>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));

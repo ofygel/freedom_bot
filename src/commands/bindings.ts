@@ -1,7 +1,10 @@
 import { Telegraf, Context } from 'telegraf';
 import { updateSetting, getSettings } from '../services/settings.js';
 
-type BindingKey = 'verify_channel_id' | 'drivers_channel_id';
+type BindingKey =
+  | 'verify_channel_id'
+  | 'drivers_channel_id'
+  | 'moderators_channel_id';
 
 export function handleBindingCommands(bot: Telegraf) {
   bot.on('channel_post', async (ctx) => {
@@ -11,6 +14,8 @@ export function handleBindingCommands(bot: Telegraf) {
       await bindChannel(ctx, 'verify_channel_id');
     } else if (text === '/bind_drivers_channel') {
       await bindChannel(ctx, 'drivers_channel_id');
+    } else if (text === '/bind_moderators_channel') {
+      await bindChannel(ctx, 'moderators_channel_id');
     }
   });
 }
@@ -37,7 +42,10 @@ async function bindChannel(ctx: Context, key: BindingKey) {
   }
   updateSetting(key, ctx.chat.id);
   const title = ctx.chat.title ?? '—';
-  const label = key === 'verify_channel_id' ? 'verify-канал' : 'drivers-канал';
+  let label = '';
+  if (key === 'verify_channel_id') label = 'verify-канал';
+  else if (key === 'drivers_channel_id') label = 'drivers-канал';
+  else label = 'moderators-канал';
   await ctx.reply(`✅ Привязан ${label}: ${title} (id: ${ctx.chat.id})`);
 }
 
@@ -47,7 +55,8 @@ export function pingBindingsCommand(bot: Telegraf) {
     const settings = getSettings();
     await ctx.reply(
       `verify_channel_id: ${settings.verify_channel_id ?? 'не привязан'}\n` +
-        `drivers_channel_id: ${settings.drivers_channel_id ?? 'не привязан'}`
+        `drivers_channel_id: ${settings.drivers_channel_id ?? 'не привязан'}\n` +
+        `moderators_channel_id: ${settings.moderators_channel_id ?? 'не привязан'}`
     );
   });
 }
