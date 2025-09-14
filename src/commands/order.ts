@@ -325,14 +325,18 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
 
         const settings = getSettings();
         if (settings.drivers_channel_id) {
+          const timePart = s.time === 'Сейчас' ? 'сейчас' : `к ${s.time}`;
+          const header = `Алматы • ${typeLabels[order.type as OrderType]} • ${
+            s.size || 'M'
+          } • ${timePart}`;
           const card = [
             `#${order.id}`,
-            `Тип: ${typeLabels[order.type as OrderType]}`,
+            header,
             `Откуда: ${fromAddr}`,
             `Куда: ${toAddr}`,
-            `Время: ${s.time}`,
+            `Расстояние: ${dist.toFixed(1)} км`,
+            `ETA: ~${eta} мин`,
             `Оплата: ${s.payment}`,
-            `Габариты: ${s.size}`,
             `Опции: ${s.options?.join(', ') || 'нет'}`,
             `Комментарий: ${s.comment}`,
             `Цена: ~${price} ₸`,

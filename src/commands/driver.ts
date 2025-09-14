@@ -95,7 +95,39 @@ export default function driverCommands(bot: Telegraf) {
     ).catch(() => {});
     await ctx.telegram.sendMessage(
       uid,
-      `Заказ #${order.id} зарезервирован. Отправьте /assign ${order.id} в личные сообщения боту.`
+      `Заказ #${order.id} зарезервирован.`,
+      Markup.inlineKeyboard([
+        [Markup.button.callback('Подтвердить старт', `assign:${order.id}`)],
+      ])
+    );
+  });
+
+  bot.action(/assign:(\d+)/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    const uid = ctx.from!.id;
+    if (!isCourierOnline(uid)) {
+      await ctx.answerCbQuery('Сначала включите режим Онлайн.');
+      return;
+    }
+    if (isOrderHiddenForCourier(uid, id)) {
+      await ctx.answerCbQuery('Заказ скрыт.');
+      return;
+    }
+    const order = assignOrder(id, uid);
+    if (!order) {
+      await ctx.answerCbQuery('Не удалось назначить.');
+      return;
+    }
+    await ctx.answerCbQuery('Назначено');
+    await ctx.editMessageReplyMarkup(undefined).catch(() => {});
+    await ctx.editMessageText(`Заказ #${order.id} назначен.`).catch(() => {});
+    await ctx.reply(
+      `Заказ #${order.id} назначен.`,
+      Markup.keyboard([
+        ['Еду к отправителю'],
+        ['Скрыть на 1 час'],
+        ['Открыть спор'],
+      ]).resize()
     );
   });
 
