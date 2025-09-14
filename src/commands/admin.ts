@@ -172,7 +172,11 @@ export default function adminCommands(bot: Telegraf) {
     if (!id) return ctx.reply('Укажите ID курьера');
     const metrics = getCourierMetrics(id);
     if (!metrics) return ctx.reply('Данные не найдены');
-    ctx.reply(`cancel_rate: ${metrics.cancel_rate.toFixed(2)}\ncompleted_count: ${metrics.completed_count}`);
+    ctx.reply(
+      `cancel_rate: ${metrics.cancel_rate.toFixed(2)}\ncompleted_count: ${metrics.completed_count}`
+    );
+  });
+
   bot.command('dispute_reply', async (ctx) => {
     if (!ensureAdmin(ctx)) return;
     const parts = ((ctx.message as any)?.text ?? '').split(' ');

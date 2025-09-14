@@ -4,6 +4,7 @@ import type { Point } from '../utils/twoGis';
 import { parse2GisLink, routeToDeeplink } from '../utils/twoGis';
 import { distanceKm, etaMinutes, isInAlmaty } from '../utils/geo';
 import { calcPrice } from '../utils/pricing';
+import { getSettings } from '../services/settings.js';
 import { geocodeAddress, reverseGeocode } from '../utils/geocode';
 
 interface OrderSession {
@@ -28,8 +29,21 @@ async function parsePoint(input: string): Promise<Point | null> {
 
 export default function registerOrderCommands(bot: Telegraf<Context>) {
   bot.command('order', async (ctx) => {
+    const settings = getSettings();
+    const start = settings.order_hours_start ?? 8;
+    const end = settings.order_hours_end ?? 23;
+    const hour = new Date().getHours();
+    if (hour < start || hour >= end) {
+      await ctx.reply(`Приём заказов с ${start.toString().padStart(2, '0')}:00 до ${end
+        .toString()
+        .padStart(2, '0')}:00`);
+      return;
+    }
     sessions.set(ctx.from!.id, { step: 1 });
-    await ctx.reply('Выберите тип заказа', Markup.keyboard(['Доставка', 'Пассажир']).oneTime().resize());
+    await ctx.reply(
+      'Выберите тип заказа',
+      Markup.keyboard(['Доставка', 'Пассажир']).oneTime().resize()
+    );
   });
 
   bot.on('message', async (ctx, next) => {
@@ -105,7 +119,9 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         const from = s.from!, to = s.to!;
         const dist = distanceKm(from, to);
         const eta = etaMinutes(dist);
-        const price = calcPrice(dist, new Date());
+        const sizeMatch = s.options?.match(/\b([SML])\b/i);
+        const size = (sizeMatch ? sizeMatch[1].toUpperCase() : 'M') as 'S' | 'M' | 'L';
+        const price = calcPrice(dist, size, new Date());
         const fromAddr = await reverseGeocode(from);
         const toAddr = await reverseGeocode(to);
         await ctx.reply([
