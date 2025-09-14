@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import type { Telegraf, Context } from 'telegraf';
 import type { Point } from '../utils/twoGis';
+import { incrementCourierReserve, incrementCourierCancel } from './courierState';
+import { recordCourierMetric } from './couriers';
 
 let botRef: Telegraf<Context> | null = null;
 export function setOrdersBot(bot: Telegraf<Context>) { botRef = bot; }
@@ -240,6 +242,15 @@ export function reserveOrder(id: number, courierId: number): Order | undefined {
   writeAll(list);
   notifyStatus(order);
   logEvent(order.id, 'reserved', courierId, { reserved_until: order.reserved_until });
+  const { count, warned } = incrementCourierReserve(courierId);
+  recordCourierMetric(courierId, 'reserve');
+  if (warned) {
+    if (botRef)
+      botRef.telegram
+        .sendMessage(courierId, 'Вы слишком часто резервируете заказы')
+        .catch(() => {});
+    logEvent(order.id, 'reserve_warn', courierId, { count });
+  }
   return order;
 }
 
@@ -306,15 +317,30 @@ export function updateOrderStatus(
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
+  const prevCourier = order.courier_id;
   order.status = status;
   if (courierId !== undefined) {
     order.courier_id = courierId;
+  }
+  if (status === 'open') {
+    order.courier_id = null;
   }
   order.transitions.push({ status, at: new Date().toISOString() });
   list[index] = order;
   writeAll(list);
   notifyStatus(order);
   logEvent(order.id, 'status_updated', courierId ?? null, { status });
+  if (status === 'open' && prevCourier) {
+    const { count, warned } = incrementCourierCancel(prevCourier);
+    recordCourierMetric(prevCourier, 'cancel');
+    if (warned) {
+      if (botRef)
+        botRef.telegram
+          .sendMessage(prevCourier, 'Вы слишком часто отменяете заказы')
+          .catch(() => {});
+      logEvent(order.id, 'cancel_warn', prevCourier, { count });
+    }
+  }
   return order;
 }
 

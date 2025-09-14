@@ -20,6 +20,7 @@ const AUDIT_PATH = 'data/courier_audit.log';
 export interface CourierMetrics {
   cancel_count: number;
   completed_count: number;
+  reserve_count: number;
 }
 
 export interface CourierAuditRecord {
@@ -70,16 +71,22 @@ function saveMetrics(store: Record<string, CourierMetrics>) {
   writeFileSync(METRICS_PATH, JSON.stringify(store, null, 2));
 }
 
-export function recordCourierMetric(id: number, type: 'cancel' | 'complete') {
+export function recordCourierMetric(
+  id: number,
+  type: 'cancel' | 'complete' | 'reserve'
+) {
   const metrics = loadMetrics();
-  const m = metrics[id] || { cancel_count: 0, completed_count: 0 };
+  const m = metrics[id] || { cancel_count: 0, completed_count: 0, reserve_count: 0 };
   if (type === 'cancel') m.cancel_count++;
-  else m.completed_count++;
+  else if (type === 'complete') m.completed_count++;
+  else m.reserve_count++;
   metrics[id] = m;
   saveMetrics(metrics);
 }
 
-export function getCourierMetrics(id: number): (CourierMetrics & { cancel_rate: number }) | undefined {
+export function getCourierMetrics(
+  id: number
+): (CourierMetrics & { cancel_rate: number }) | undefined {
   const metrics = loadMetrics();
   const m = metrics[id];
   if (!m) return undefined;
