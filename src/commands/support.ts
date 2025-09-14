@@ -1,6 +1,6 @@
 import { Telegraf, Markup, Context } from 'telegraf';
 import { getOrdersByClient } from '../services/orders.js';
-import { createTicket, updateTicketStatus } from '../services/tickets.js';
+import { createTicket, updateTicketStatus, getTicket } from '../services/tickets.js';
 import { getSettings } from '../services/settings.js';
 
 interface SupportState {
@@ -114,6 +114,34 @@ export default function supportCommands(bot: Telegraf) {
     await ctx.telegram.sendMessage(
       ticket.user_id,
       `Тикет #${ticket.id}: статус ${ticket.status}` + (ticket.reply ? `\nОтвет: ${ticket.reply}` : '')
+    );
+  });
+
+  bot.command('ticket_reply', async (ctx) => {
+    const parts = ctx.message.text.split(' ');
+    if (parts.length < 3) {
+      return ctx.reply('Usage: /ticket_reply <id> <text>');
+    }
+    const id = Number(parts[1]);
+    const text = parts.slice(2).join(' ');
+    const ticket = updateTicketStatus(id, 'in_progress', text);
+    if (!ticket) return ctx.reply('Ticket not found');
+    await ctx.reply('Ответ отправлен');
+    await ctx.telegram.sendMessage(ticket.user_id, `Тикет #${ticket.id}: ${text}`);
+  });
+
+  bot.command('ticket', (ctx) => {
+    const parts = ctx.message.text.split(' ');
+    if (parts.length < 2) {
+      return ctx.reply('Usage: /ticket <id>');
+    }
+    const id = Number(parts[1]);
+    const ticket = getTicket(id);
+    if (!ticket || ticket.user_id !== ctx.from!.id) {
+      return ctx.reply('Тикет не найден');
+    }
+    ctx.reply(
+      `Статус: ${ticket.status}` + (ticket.reply ? `\nОтвет: ${ticket.reply}` : '')
     );
   });
 }

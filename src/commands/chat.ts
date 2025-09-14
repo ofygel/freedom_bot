@@ -1,6 +1,10 @@
 import { Telegraf } from 'telegraf';
 import { getOrder } from '../services/orders.js';
-import { sendProxyMessage } from '../services/chat.js';
+import {
+  sendProxyMessage,
+  getActiveChatByUser,
+  cleanupOldChats,
+} from '../services/chat.js';
 
 export default function chatCommands(bot: Telegraf) {
   bot.command('msg', async (ctx) => {
@@ -30,4 +34,14 @@ export default function chatCommands(bot: Telegraf) {
     await sendProxyMessage(bot, orderId, fromId, toId, text);
     await ctx.reply('Отправлено');
   });
+
+  bot.on('text', async (ctx, next) => {
+    if (ctx.message.text.startsWith('/')) return next();
+    const chat = getActiveChatByUser(ctx.from!.id);
+    if (!chat) return next();
+    const toId = chat.client_id === ctx.from!.id ? chat.courier_id : chat.client_id;
+    await sendProxyMessage(bot, chat.order_id, ctx.from!.id, toId, ctx.message.text);
+  });
+
+  setInterval(cleanupOldChats, 60 * 60 * 1000);
 }

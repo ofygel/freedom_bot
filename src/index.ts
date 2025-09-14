@@ -20,6 +20,7 @@ import profileCommands from './commands/profile.js';
 import supportCommands from './commands/support.js';
 import chatCommands from './commands/chat.js';
 import orderStatusCommands from './commands/orderStatus.js';
+import { setOrdersBot } from './services/orders.js';
 >>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
 =======
 import adminCommands from './commands/admin.js';
@@ -33,6 +34,8 @@ if (!token) {
 }
 
 const bot = new Telegraf(token);
+
+setOrdersBot(bot);
 
 startCommand(bot);
 handleBindingCommands(bot);

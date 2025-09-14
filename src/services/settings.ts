@@ -17,8 +17,11 @@ export interface Settings {
   night_multiplier?: number;
   night_active?: boolean;
   city_polygon?: { lat: number; lon: number }[];
+<<<<<<< HEAD
   order_hours_start?: number;
   order_hours_end?: number;
+=======
+>>>>>>> de14bbc (feat: add order chat and notifications)
 }
 
 function load(): Settings {

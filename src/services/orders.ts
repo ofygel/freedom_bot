@@ -1,4 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { Telegraf } from 'telegraf';
+import { createOrderChat, markOrderChatDelivered } from './chat.js';
 
 const FILE_PATH = 'data/orders.json';
 
@@ -55,6 +57,12 @@ export interface Order {
   pickup_proof?: string;
   delivery_proof?: string;
 >>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
+}
+
+let bot: Telegraf | null = null;
+
+export function setOrdersBot(b: Telegraf) {
+  bot = b;
 }
 
 function load(): Order[] {
@@ -294,6 +302,61 @@ export function updateOrderStatus(
   if (courierId !== undefined) {
     data.courier_id = courierId;
   }
-  return updateOrder(id, data);
+  const order = updateOrder(id, data);
+  if (!order) return undefined;
+  if (status === 'assigned' && order.courier_id) {
+    createOrderChat(order.id, order.client_id, order.courier_id);
+  }
+  if (status === 'delivered') {
+    markOrderChatDelivered(order.id);
+  }
+  if (bot) {
+    const msg = STATUS_MESSAGES[status as OrderStatus];
+    if (msg) {
+      bot.telegram
+        .sendMessage(order.client_id, msg.client.replace('{id}', String(order.id)))
+        .catch(() => {});
+      if (order.courier_id) {
+        bot.telegram
+          .sendMessage(order.courier_id, msg.courier.replace('{id}', String(order.id)))
+          .catch(() => {});
+      }
+    }
+  }
+  return order;
 }
+
+const STATUS_MESSAGES: Record<OrderStatus, { client: string; courier: string }> = {
+  assigned: {
+    client: 'Ваш заказ #{id} назначен курьеру',
+    courier: 'Вам назначен заказ #{id}',
+  },
+  heading_to_sender: {
+    client: 'Курьер едет к отправителю по заказу #{id}',
+    courier: 'Вы направляетесь к отправителю по заказу #{id}',
+  },
+  at_sender: {
+    client: 'Курьер прибыл к отправителю по заказу #{id}',
+    courier: 'Вы на месте отправителя по заказу #{id}',
+  },
+  picked_up: {
+    client: 'Заказ #{id} забран у отправителя',
+    courier: 'Вы забрали заказ #{id}',
+  },
+  en_route: {
+    client: 'Курьер в пути с заказом #{id}',
+    courier: 'Вы в пути к получателю по заказу #{id}',
+  },
+  at_recipient: {
+    client: 'Курьер прибыл к получателю по заказу #{id}',
+    courier: 'Вы прибыли к получателю по заказу #{id}',
+  },
+  delivered: {
+    client: 'Заказ #{id} доставлен',
+    courier: 'Вы доставили заказ #{id}',
+  },
+  open: { client: '', courier: '' },
+  closed: { client: '', courier: '' },
+  dispute_open: { client: '', courier: '' },
+};
 >>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
