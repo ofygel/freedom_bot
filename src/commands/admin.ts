@@ -2,6 +2,15 @@ import { Telegraf, Context } from 'telegraf';
 import { updateSetting, getSettings } from '../services/settings.js';
 import type { Settings } from '../services/settings.js';
 import { getAllUsers } from '../services/users.js';
+import {
+  warnUser,
+  suspendUser,
+  banUser,
+  unbanUser,
+  resolveDispute,
+  getModerationInfo,
+} from '../services/moderation.js';
+import { getCourierMetrics } from '../services/couriers.js';
 
 function isAdmin(ctx: Context): boolean {
   const adminId = Number(process.env.ADMIN_ID);
@@ -94,5 +103,74 @@ export default function adminCommands(bot: Telegraf) {
       } catch {}
     }
     ctx.reply('Рассылка отправлена');
+  });
+
+  bot.command('warn', async (ctx) => {
+    if (!ensureAdmin(ctx)) return;
+    const parts = ((ctx.message as any)?.text ?? '').split(' ');
+    const id = Number(parts[1]);
+    const reason = parts.slice(2).join(' ') || 'Без причины';
+    if (!id) return ctx.reply('Укажите ID пользователя');
+    warnUser(id);
+    try {
+      await ctx.telegram.sendMessage(id, `Предупреждение: ${reason}`);
+    } catch {}
+    ctx.reply('Предупреждение отправлено');
+  });
+
+  bot.command('suspend', async (ctx) => {
+    if (!ensureAdmin(ctx)) return;
+    const parts = ((ctx.message as any)?.text ?? '').split(' ');
+    const id = Number(parts[1]);
+    if (!id) return ctx.reply('Укажите ID пользователя');
+    suspendUser(id);
+    try {
+      await ctx.telegram.sendMessage(id, 'Ваш аккаунт временно приостановлен');
+    } catch {}
+    ctx.reply('Пользователь приостановлен');
+  });
+
+  bot.command('ban', async (ctx) => {
+    if (!ensureAdmin(ctx)) return;
+    const parts = ((ctx.message as any)?.text ?? '').split(' ');
+    const id = Number(parts[1]);
+    if (!id) return ctx.reply('Укажите ID пользователя');
+    banUser(id);
+    try {
+      await ctx.telegram.sendMessage(id, 'Вы заблокированы');
+    } catch {}
+    ctx.reply('Пользователь заблокирован');
+  });
+
+  bot.command('unban', async (ctx) => {
+    if (!ensureAdmin(ctx)) return;
+    const parts = ((ctx.message as any)?.text ?? '').split(' ');
+    const id = Number(parts[1]);
+    if (!id) return ctx.reply('Укажите ID пользователя');
+    unbanUser(id);
+    try {
+      await ctx.telegram.sendMessage(id, 'Доступ восстановлен');
+    } catch {}
+    ctx.reply('Пользователь разблокирован');
+  });
+
+  bot.command('resolve_dispute', (ctx) => {
+    if (!ensureAdmin(ctx)) return;
+    const parts = ((ctx.message as any)?.text ?? '').split(' ');
+    const orderId = Number(parts[1]);
+    const resolution = parts.slice(2).join(' ');
+    if (!orderId || !resolution) return ctx.reply('Использование: /resolve_dispute <orderId> <resolution>');
+    resolveDispute(orderId, resolution);
+    ctx.reply('Спор закрыт');
+  });
+
+  bot.command('metrics', (ctx) => {
+    if (!ensureAdmin(ctx)) return;
+    const parts = ((ctx.message as any)?.text ?? '').split(' ');
+    const id = Number(parts[1]);
+    if (!id) return ctx.reply('Укажите ID курьера');
+    const metrics = getCourierMetrics(id);
+    if (!metrics) return ctx.reply('Данные не найдены');
+    ctx.reply(`cancel_rate: ${metrics.cancel_rate.toFixed(2)}\ncompleted_count: ${metrics.completed_count}`);
   });
 }
