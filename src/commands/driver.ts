@@ -6,12 +6,9 @@ import {
   updateOrderStatus,
   addPickupProof,
   addDeliveryProof,
-<<<<<<< HEAD
   updateOrder
-=======
   openDispute,
   addDisputeMessage,
->>>>>>> 55a7169 (feat: extend courier workflow and disputes)
 } from '../services/orders.js';
 import {
   toggleCourierOnline,
@@ -41,14 +38,12 @@ export default function driverCommands(bot: Telegraf) {
     );
   });
 
-<<<<<<< HEAD
   bot.hears('Еду к отправителю', (ctx) =>
     handleTransition(ctx, 'assigned', 'going_to_pickup', 'У отправителя')
   );
   bot.hears('У отправителя', (ctx) =>
     handleTransition(ctx, 'going_to_pickup', 'at_pickup', 'Забрал')
   );
-=======
   bot.hears('Онлайн/Оффлайн', (ctx) => {
     const online = toggleCourierOnline(ctx.from!.id);
     ctx.reply(online ? 'Вы в сети.' : 'Вы оффлайн.');
@@ -56,7 +51,6 @@ export default function driverCommands(bot: Telegraf) {
 
   bot.hears('Еду к отправителю', (ctx) => handleTransition(ctx, 'assigned', 'heading_to_sender', 'У отправителя'));
   bot.hears('У отправителя', (ctx) => handleTransition(ctx, 'heading_to_sender', 'at_sender', 'Забрал'));
->>>>>>> 0fd3a32 (feat: driver availability and order hide)
 
   bot.hears('Забрал', async (ctx) => {
     const order = getCourierActiveOrder(ctx.from!.id);
