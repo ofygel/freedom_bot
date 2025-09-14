@@ -10,5 +10,14 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/index.ts",
+    "src/commands/start.ts",
+    "src/commands/bindings.ts",
+    "src/commands/order.ts",
+    "src/services/settings.ts",
+    "src/services/orders.ts",
+    "src/services/users.ts",
+    "src/utils/**/*.ts"
+  ]
 }

@@ -4,10 +4,7 @@ import type { Telegraf, Context } from 'telegraf';
 import type { Point } from '../utils/twoGis';
 
 let botRef: Telegraf<Context> | null = null;
-
-export function setOrdersBot(bot: Telegraf<Context>) {
-  botRef = bot;
-}
+export function setOrdersBot(bot: Telegraf<Context>) { botRef = bot; }
 
 const file = path.join(process.cwd(), 'data', 'orders.json');
 
@@ -19,7 +16,7 @@ export interface Order {
   comment: string | null;
   price_estimate: number;
   status: 'new' | 'assigned' | 'done' | 'canceled';
-  created_at: string; // ISO
+  created_at: string;
 }
 
 interface CreateOrderInput {
