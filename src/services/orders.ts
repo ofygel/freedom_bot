@@ -58,9 +58,59 @@ export interface Order {
   reserved_until: string | null;
   pickup_proof?: string | null;
   delivery_proof?: string | null;
+  payment_status?: 'pending' | 'paid';
   dispute?: Dispute;
   transitions: StatusTransition[];
   created_at: string;
+}
+
+const statusMessages: Partial<Record<OrderStatus, { client?: string; courier?: string }>> = {
+  assigned: { client: 'Курьер назначен', courier: 'Заказ назначен' },
+  going_to_pickup: {
+    client: 'Курьер едет к отправителю',
+    courier: 'Едете к отправителю',
+  },
+  at_pickup: { client: 'Курьер у отправителя', courier: 'У отправителя' },
+  picked: { client: 'Заказ забран', courier: 'Заказ забран' },
+  going_to_dropoff: {
+    client: 'Курьер в пути к получателю',
+    courier: 'Едете к получателю',
+  },
+  at_dropoff: { client: 'Курьер у получателя', courier: 'У получателя' },
+  delivered: { client: 'Доставка подтверждена', courier: 'Заказ доставлен' },
+  awaiting_confirm: { client: 'Ожидаем оплату', courier: 'Ожидаем оплату' },
+  closed: { client: 'Заказ закрыт', courier: 'Заказ закрыт' },
+  canceled: { client: 'Заказ отменён', courier: 'Заказ отменён' },
+};
+
+function notifyStatus(order: Order) {
+  if (!botRef) return;
+  const msg = statusMessages[order.status];
+  if (!msg) return;
+  if (msg.client) botRef.telegram.sendMessage(order.customer_id, msg.client).catch(() => {});
+  if (order.courier_id && msg.courier)
+    botRef.telegram.sendMessage(order.courier_id, msg.courier).catch(() => {});
+}
+
+function notifyPayment(order: Order) {
+  if (!botRef) return;
+  if (order.payment_status === 'paid') {
+    botRef.telegram
+      .sendMessage(order.customer_id, `Оплата заказа #${order.id} подтверждена`)
+      .catch(() => {});
+    if (order.courier_id)
+      botRef.telegram
+        .sendMessage(order.courier_id, `Оплата по заказу #${order.id} получена`)
+        .catch(() => {});
+  }
+}
+
+function notifyDispute(order: Order, text: string, exclude?: number) {
+  if (!botRef) return;
+  if (order.customer_id !== exclude)
+    botRef.telegram.sendMessage(order.customer_id, text).catch(() => {});
+  if (order.courier_id && order.courier_id !== exclude)
+    botRef.telegram.sendMessage(order.courier_id, text).catch(() => {});
 }
 
 interface CreateOrderInput {
@@ -131,6 +181,7 @@ export function updateOrder(id: number, data: Partial<Order>): Order | undefined
   const order = { ...list[index], ...data };
   list[index] = order;
   writeAll(list);
+  if ('payment_status' in data) notifyPayment(order);
   return order;
 }
 
@@ -153,6 +204,7 @@ export function reserveOrder(id: number, courierId: number): Order | undefined {
   order.transitions.push({ status: 'reserved', at: new Date(now).toISOString() });
   list[index] = order;
   writeAll(list);
+  notifyStatus(order);
   return order;
 }
 
@@ -173,6 +225,7 @@ export function assignOrder(id: number, courierId: number): Order | undefined {
   order.transitions.push({ status: 'assigned', at: new Date(now).toISOString() });
   list[index] = order;
   writeAll(list);
+  notifyStatus(order);
   return order;
 }
 
@@ -192,6 +245,7 @@ export function updateOrderStatus(
   order.transitions.push({ status, at: new Date().toISOString() });
   list[index] = order;
   writeAll(list);
+  notifyStatus(order);
   return order;
 }
 
@@ -231,6 +285,7 @@ export function openDispute(id: number): Order | undefined {
   }
   list[index] = order;
   writeAll(list);
+  notifyDispute(order, `Открыт спор по заказу #${order.id}`);
   return order;
 }
 
@@ -247,6 +302,19 @@ export function addDisputeMessage(
   order.dispute.messages.push({ author, text, created_at: new Date().toISOString() });
   list[index] = order;
   writeAll(list);
+  const prefix =
+    author === 'courier'
+      ? 'Сообщение от курьера'
+      : author === 'client'
+      ? 'Сообщение от клиента'
+      : 'Сообщение от модератора';
+  const exclude =
+    author === 'courier'
+      ? order.courier_id ?? undefined
+      : author === 'client'
+      ? order.customer_id
+      : undefined;
+  notifyDispute(order, `${prefix}: ${text}`, exclude);
   return order;
 }
 
@@ -260,5 +328,6 @@ export function resolveDispute(id: number): Order | undefined {
   order.dispute.resolved_at = new Date().toISOString();
   list[index] = order;
   writeAll(list);
+  notifyDispute(order, `Спор по заказу #${order.id} завершён`);
   return order;
 }
