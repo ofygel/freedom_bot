@@ -5,6 +5,7 @@ import { parse2GisLink, routeToDeeplink } from '../utils/twoGis';
 import { distanceKm, etaMinutes, isInAlmaty } from '../utils/geo';
 import { calcPrice } from '../utils/pricing';
 import { getSettings } from '../services/settings.js';
+import { createOrder } from '../services/orders.js';
 import { geocodeAddress, reverseGeocode } from '../utils/geocode';
 
 interface OrderSession {
@@ -140,6 +141,50 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           [Markup.button.url('Маршрут', routeToDeeplink(from, to))],
           [Markup.button.url('До точки B', `https://2gis.kz/almaty?m=${to.lon},${to.lat}`)],
         ]));
+
+        const payType =
+          s.payment === 'Карта'
+            ? 'card'
+            : s.payment === 'Получатель платит'
+            ? 'receiver'
+            : 'cash';
+
+        const order = createOrder({
+          customer_id: ctx.from!.id,
+          from,
+          to,
+          type: s.type!,
+          time: s.time!,
+          options: s.options || null,
+          size,
+          pay_type: payType,
+          comment: s.comment,
+          price,
+        });
+
+        const settings = getSettings();
+        if (settings.drivers_channel_id) {
+          const card = [
+            `#${order.id}`,
+            `Откуда: ${fromAddr}`,
+            `Куда: ${toAddr}`,
+            `Время: ${s.time}`,
+            `Оплата: ${s.payment}`,
+            `Габариты/Опции: ${s.options}`,
+            `Комментарий: ${s.comment}`,
+            `Цена: ~${price} ₸`,
+          ].join('\n');
+          await ctx.telegram.sendMessage(
+            settings.drivers_channel_id,
+            card,
+            Markup.inlineKeyboard([
+              [Markup.button.url('Маршрут', routeToDeeplink(from, to))],
+              [Markup.button.callback('Резерв', `reserve:${order.id}`)],
+            ])
+          );
+        }
+
+        await ctx.reply(`Заказ #${order.id} создан. Ожидайте курьера.`);
 
         if (s.payment === 'Получатель платит' && process.env.PROVIDER_TOKEN) {
           await ctx.replyWithInvoice({
