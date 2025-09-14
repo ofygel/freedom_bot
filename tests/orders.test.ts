@@ -12,8 +12,10 @@ import {
   addDisputeMessage,
   resolveDispute,
   reserveOrder,
+  assignOrder,
   getOrder,
   expireReservations,
+  getOrderEvents,
 } from '../src/services/orders';
 
 function setup() {
@@ -160,6 +162,45 @@ test('expired reservations are released and notify users', () => {
       { id: 100, text: `Заказ #${order.id} возвращён в ленту` },
       { id: 200, text: `Бронь заказа #${order.id} истекла` },
     ]);
+  } finally {
+    teardown(dir, prev);
+  }
+});
+
+test('order events are logged', () => {
+  const { dir, prev } = setup();
+  try {
+    const order = createOrder({
+      customer_id: 100,
+      from: { lat: 0, lon: 0 },
+      to: { lat: 1, lon: 1 },
+      type: 'delivery',
+      time: 'now',
+      options: null,
+      size: 'S',
+      pay_type: 'cash',
+      comment: null,
+      price: 10,
+    });
+    reserveOrder(order.id, 200);
+    assignOrder(order.id, 200);
+    updateOrderStatus(order.id, 'delivered', 200);
+    openDispute(order.id);
+    addDisputeMessage(order.id, 'client', 'привет');
+    resolveDispute(order.id);
+    const events = getOrderEvents(order.id);
+    assert.deepEqual(
+      events.map(e => ({ event: e.event, actor_id: e.actor_id })),
+      [
+        { event: 'created', actor_id: 100 },
+        { event: 'reserved', actor_id: 200 },
+        { event: 'assigned', actor_id: 200 },
+        { event: 'status_updated', actor_id: 200 },
+        { event: 'dispute_opened', actor_id: null },
+        { event: 'dispute_message', actor_id: 100 },
+        { event: 'dispute_resolved', actor_id: null },
+      ],
+    );
   } finally {
     teardown(dir, prev);
   }

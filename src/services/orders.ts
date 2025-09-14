@@ -7,6 +7,39 @@ let botRef: Telegraf<Context> | null = null;
 export function setOrdersBot(bot: Telegraf<Context>) { botRef = bot; }
 
 const file = path.join(process.cwd(), 'data', 'orders.json');
+const eventsFile = path.join(process.cwd(), 'data', 'order_events.json');
+
+export interface OrderEvent {
+  order_id: number;
+  event: string;
+  actor_id: number | null;
+  payload: any;
+  created_at: string;
+}
+
+function readEvents(): OrderEvent[] {
+  try {
+    return JSON.parse(fs.readFileSync(eventsFile, 'utf-8')) as OrderEvent[];
+  } catch {
+    return [];
+  }
+}
+
+function writeEvents(list: OrderEvent[]) {
+  fs.mkdirSync(path.dirname(eventsFile), { recursive: true });
+  fs.writeFileSync(eventsFile, JSON.stringify(list, null, 2));
+}
+
+function logEvent(order_id: number, event: string, actor_id: number | null, payload: any) {
+  const list = readEvents();
+  list.push({ order_id, event, actor_id, payload, created_at: new Date().toISOString() });
+  writeEvents(list);
+}
+
+export function getOrderEvents(orderId?: number): OrderEvent[] {
+  const list = readEvents();
+  return orderId === undefined ? list : list.filter(e => e.order_id === orderId);
+}
 
 export type OrderStatus =
   | 'open'
@@ -161,6 +194,7 @@ export function createOrder(input: CreateOrderInput): Order {
   };
   list.push(order);
   writeAll(list);
+  logEvent(order.id, 'created', order.customer_id, input);
   return order;
 }
 
@@ -205,6 +239,7 @@ export function reserveOrder(id: number, courierId: number): Order | undefined {
   list[index] = order;
   writeAll(list);
   notifyStatus(order);
+  logEvent(order.id, 'reserved', courierId, { reserved_until: order.reserved_until });
   return order;
 }
 
@@ -226,6 +261,7 @@ export function assignOrder(id: number, courierId: number): Order | undefined {
   list[index] = order;
   writeAll(list);
   notifyStatus(order);
+  logEvent(order.id, 'assigned', courierId, {});
   return order;
 }
 
@@ -245,6 +281,7 @@ export function expireReservations(): void {
       order.reserved_until = null;
       order.transitions.push({ status: 'open', at: new Date(now).toISOString() });
       changed = true;
+      logEvent(order.id, 'reservation_expired', prevCourier ?? null, {});
       if (botRef) {
         botRef.telegram
           .sendMessage(order.customer_id, `Заказ #${order.id} возвращён в ленту`)
@@ -277,6 +314,7 @@ export function updateOrderStatus(
   list[index] = order;
   writeAll(list);
   notifyStatus(order);
+  logEvent(order.id, 'status_updated', courierId ?? null, { status });
   return order;
 }
 
@@ -288,6 +326,7 @@ export function addPickupProof(id: number, proof: string): Order | undefined {
   order.pickup_proof = proof;
   list[index] = order;
   writeAll(list);
+  logEvent(order.id, 'pickup_proof_added', null, { proof });
   return order;
 }
 
@@ -299,6 +338,7 @@ export function addDeliveryProof(id: number, proof: string): Order | undefined {
   order.delivery_proof = proof;
   list[index] = order;
   writeAll(list);
+  logEvent(order.id, 'delivery_proof_added', null, { proof });
   return order;
 }
 
@@ -317,6 +357,7 @@ export function openDispute(id: number): Order | undefined {
   list[index] = order;
   writeAll(list);
   notifyDispute(order, `Открыт спор по заказу #${order.id}`);
+  logEvent(order.id, 'dispute_opened', null, {});
   return order;
 }
 
@@ -346,6 +387,13 @@ export function addDisputeMessage(
       ? order.customer_id
       : undefined;
   notifyDispute(order, `${prefix}: ${text}`, exclude);
+  const actorId =
+    author === 'courier'
+      ? order.courier_id ?? null
+      : author === 'client'
+      ? order.customer_id
+      : null;
+  logEvent(order.id, 'dispute_message', actorId, { author, text });
   return order;
 }
 
@@ -360,5 +408,6 @@ export function resolveDispute(id: number): Order | undefined {
   list[index] = order;
   writeAll(list);
   notifyDispute(order, `Спор по заказу #${order.id} завершён`);
+  logEvent(order.id, 'dispute_resolved', null, {});
   return order;
 }
