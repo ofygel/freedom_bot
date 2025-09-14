@@ -6,6 +6,7 @@ import orderCommands from './commands/order.js';
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { releaseExpiredReservations } from './services/orders.js';
 =======
 import driverCommands from './commands/driver.js';
@@ -20,6 +21,9 @@ import supportCommands from './commands/support.js';
 import chatCommands from './commands/chat.js';
 import orderStatusCommands from './commands/orderStatus.js';
 >>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
+=======
+import adminCommands from './commands/admin.js';
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
 
 dotenv.config();
 
@@ -36,6 +40,7 @@ pingBindingsCommand(bot);
 orderCommands(bot);
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 driverCommands(bot);
 =======
 profileCommands(bot);
@@ -45,6 +50,9 @@ supportCommands(bot);
 chatCommands(bot);
 orderStatusCommands(bot);
 >>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
+=======
+adminCommands(bot);
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
 
 bot.launch().then(() => {
   console.log('Bot started');

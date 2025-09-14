@@ -30,13 +30,19 @@ export interface Order {
   size: 'S' | 'M' | 'L';
   fragile: boolean;
   thermobox: boolean;
+  wait_minutes: number;
   cash_change_needed: boolean;
   pay_type: 'cash' | 'p2p' | 'receiver';
   amount_total: number;
   amount_to_courier: number;
   payment_status: 'pending' | 'awaiting_confirm' | 'paid';
   comment?: string;
+<<<<<<< HEAD
   status: 'new' | 'assigned' | 'delivered';
+=======
+  distance_km?: number;
+  price?: number;
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
   created_at: string;
 <<<<<<< HEAD
   status: 'open' | 'reserved' | 'assigned';
