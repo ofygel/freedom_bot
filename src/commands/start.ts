@@ -1,8 +1,16 @@
 import { Telegraf, Markup, Context } from 'telegraf';
+<<<<<<< HEAD
 import { upsertUser } from '../services/users.js';
 
 export default function startCommand(bot: Telegraf) {
   const pendingRoles = new Map<number, 'client' | 'courier'>();
+=======
+import { upsertUser, getUser } from '../services/users.js';
+
+export default function startCommand(bot: Telegraf) {
+  const pendingRoles = new Map<number, 'client' | 'courier'>();
+  const pendingAgreement = new Map<number, 'client' | 'courier'>();
+>>>>>>> ee717cc (feat: add rules agreement during onboarding)
 
   bot.start(async (ctx) => {
     await ctx.reply(
@@ -34,6 +42,7 @@ export default function startCommand(bot: Telegraf) {
       await ctx.reply('Сначала выберите роль.');
       return;
     }
+<<<<<<< HEAD
     const phone = ctx.message.contact?.phone_number;
     if (!phone) {
       await ctx.reply('Не удалось получить номер. Нажмите кнопку «Поделиться номером».');
@@ -41,6 +50,36 @@ export default function startCommand(bot: Telegraf) {
     }
     upsertUser({ id: uid, phone, role });
     pendingRoles.delete(uid);
+=======
+      const phone = ctx.message.contact?.phone_number;
+      if (!phone) {
+        await ctx.reply('Не удалось получить номер. Нажмите кнопку «Поделиться номером».');
+        return;
+      }
+      upsertUser({ id: uid, phone, role, city: 'Алматы', agreed: false });
+      pendingRoles.delete(uid);
+      pendingAgreement.set(uid, role);
+      await ctx.reply(
+        'Город: Алматы. Согласны с правилами сервиса?',
+        Markup.keyboard([
+          ['Согласен']
+        ]).oneTime().resize()
+      );
+    });
+
+  bot.hears('Согласен', async (ctx) => {
+    const uid = ctx.from!.id;
+    const role = pendingAgreement.get(uid);
+    if (!role) {
+      await ctx.reply('Сначала поделитесь контактом через /start');
+      return;
+    }
+    const user = getUser(uid);
+    if (user) {
+      upsertUser({ ...user, agreed: true });
+    }
+    pendingAgreement.delete(uid);
+>>>>>>> ee717cc (feat: add rules agreement during onboarding)
     if (role === 'client') {
       await ctx.reply(
         'Спасибо! Контакт получен.',

@@ -38,7 +38,7 @@ function startWizard(ctx: Context) {
 export default function orderCommands(bot: Telegraf) {
   bot.hears('Создать заказ', (ctx) => {
     const user = getUser(ctx.from!.id);
-    if (!user) return ctx.reply('Сначала поделитесь контактом через /start');
+    if (!user || !user.agreed) return ctx.reply('Сначала поделитесь контактом и согласитесь с правилами через /start');
     startWizard(ctx);
   });
 
