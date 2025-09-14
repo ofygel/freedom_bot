@@ -6,6 +6,8 @@ export interface User {
   id: number;
   phone: string;
   role: 'client' | 'courier';
+  city?: string;
+  agreed?: boolean;
 }
 
 function load(): Record<string, User> {
