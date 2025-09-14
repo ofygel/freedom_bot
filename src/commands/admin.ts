@@ -174,7 +174,9 @@ export default function adminCommands(bot: Telegraf) {
     const metrics = getCourierMetrics(id);
     if (!metrics) return ctx.reply('Данные не найдены');
     ctx.reply(
-      `cancel_rate: ${metrics.cancel_rate.toFixed(2)}\ncompleted_count: ${metrics.completed_count}`
+      `cancel_rate: ${metrics.cancel_rate.toFixed(2)}\n` +
+        `completed_count: ${metrics.completed_count}\n` +
+        `reserve_count: ${metrics.reserve_count}`
     );
   });
 

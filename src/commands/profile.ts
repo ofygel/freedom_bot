@@ -4,6 +4,7 @@ import {
   getCourier,
   upsertCourier,
   scheduleCardMessageDeletion,
+  getCourierMetrics,
 } from '../services/couriers';
 import type { CourierProfile } from '../services/couriers';
 import { getSettings } from '../services/settings';
@@ -143,11 +144,16 @@ export default function profileCommands(bot: Telegraf) {
         break;
     }
     upsertCourier({ ...profile, status });
+    const metrics = getCourierMetrics(uid);
+    const metricsText = metrics
+      ? `cancel_rate: ${metrics.cancel_rate.toFixed(2)}\nreserve_count: ${metrics.reserve_count}\n`
+      : '';
     const caption =
       `Анкета курьера\n` +
       `ФИО: ${profile.fullName}\n` +
       `Транспорт: ${profile.transport}\n` +
       `Карта: ${profile.card}\n` +
+      metricsText +
       `Статус: ${statusText}`;
     await ctx.editMessageCaption(caption);
     await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
@@ -190,11 +196,16 @@ async function finalize(ctx: Context, uid: number, data: Required<CourierProfile
   upsertCourier(profile);
   const settings = getSettings();
   if (settings.verify_channel_id) {
+    const metrics = getCourierMetrics(uid);
+    const metricsText = metrics
+      ? `\ncancel_rate: ${metrics.cancel_rate.toFixed(2)}\nreserve_count: ${metrics.reserve_count}`
+      : '';
     const verifyMessage = await ctx.telegram.sendPhoto(
       settings.verify_channel_id,
       profile.idPhoto,
       {
-        caption: `Анкета курьера\nФИО: ${profile.fullName}\nТранспорт: ${profile.transport}\nКарта: ${profile.card}`,
+        caption:
+          `Анкета курьера\nФИО: ${profile.fullName}\nТранспорт: ${profile.transport}\nКарта: ${profile.card}${metricsText}`,
         reply_markup: {
           inline_keyboard: [
             [

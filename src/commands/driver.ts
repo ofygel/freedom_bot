@@ -22,6 +22,7 @@ import {
 import { getSettings } from '../services/settings';
 import { routeToDeeplink } from '../utils/twoGis';
 import { reverseGeocode } from '../utils/geocode';
+import { rateLimit } from '../utils/rateLimiter';
 
 interface ProofState {
   orderId: number;
@@ -30,6 +31,8 @@ interface ProofState {
 
 const proofPending = new Map<number, ProofState>();
 const disputePending = new Map<number, number>();
+const ACTION_LIMIT = 5;
+const ACTION_INTERVAL = 60 * 1000;
 
 export default function driverCommands(bot: Telegraf) {
   bot.command('assign', (ctx) => {
@@ -58,6 +61,10 @@ export default function driverCommands(bot: Telegraf) {
   bot.action(/reserve:(\d+)/, async (ctx) => {
     const id = Number(ctx.match[1]);
     const uid = ctx.from!.id;
+    if (!rateLimit(`reserve:${uid}`, ACTION_LIMIT, ACTION_INTERVAL)) {
+      await ctx.answerCbQuery('Слишком часто');
+      return;
+    }
     if (!isCourierOnline(uid)) {
       await ctx.answerCbQuery('Сначала включите режим Онлайн.');
       return;
@@ -136,7 +143,12 @@ export default function driverCommands(bot: Telegraf) {
 
   bot.action(/hide:(\d+)/, async (ctx) => {
     const id = Number(ctx.match[1]);
-    hideOrderForCourier(ctx.from!.id, id);
+    const uid = ctx.from!.id;
+    if (!rateLimit(`hide:${uid}`, ACTION_LIMIT, ACTION_INTERVAL)) {
+      await ctx.answerCbQuery('Слишком часто');
+      return;
+    }
+    hideOrderForCourier(uid, id);
     await ctx.answerCbQuery('Скрыто на 1 час');
   });
 

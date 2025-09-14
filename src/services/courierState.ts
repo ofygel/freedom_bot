@@ -1,6 +1,14 @@
 const online = new Set<number>();
 const hidden = new Map<number, Map<number, number>>();
 
+const cancelCounts = new Map<number, number>();
+const reserveCounts = new Map<number, number>();
+const cancelWarned = new Set<number>();
+const reserveWarned = new Set<number>();
+
+const CANCEL_THRESHOLD = 3;
+const RESERVE_THRESHOLD = 10;
+
 export function setCourierOnline(id: number, value: boolean) {
   if (value) online.add(id);
   else online.delete(id);
@@ -42,4 +50,24 @@ export function isOrderHiddenForCourier(courierId: number, orderId: number): boo
     return false;
   }
   return true;
+}
+
+function inc(map: Map<number, number>, id: number): number {
+  const next = (map.get(id) ?? 0) + 1;
+  map.set(id, next);
+  return next;
+}
+
+export function incrementCourierCancel(id: number): { count: number; warned: boolean } {
+  const count = inc(cancelCounts, id);
+  const warned = count >= CANCEL_THRESHOLD && !cancelWarned.has(id);
+  if (warned) cancelWarned.add(id);
+  return { count, warned };
+}
+
+export function incrementCourierReserve(id: number): { count: number; warned: boolean } {
+  const count = inc(reserveCounts, id);
+  const warned = count >= RESERVE_THRESHOLD && !reserveWarned.has(id);
+  if (warned) reserveWarned.add(id);
+  return { count, warned };
 }
