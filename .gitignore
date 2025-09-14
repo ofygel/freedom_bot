@@ -1,6 +1,4 @@
 node_modules
-.env
 dist
-/data
-
-package-lock.json
+data/*.json
+.env

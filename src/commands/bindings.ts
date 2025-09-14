@@ -1,62 +1,51 @@
-import { Telegraf, Context } from 'telegraf';
-import { updateSetting, getSettings } from '../services/settings.js';
+import type { Telegraf, Context } from 'telegraf';
+import { getSettings, saveSettings, type Settings } from '../services/settings';
 
-type BindingKey =
-  | 'verify_channel_id'
-  | 'drivers_channel_id'
-  | 'moderators_channel_id';
+type BindingKey = keyof Pick<Settings,'drivers_channel_id'|'moderators_channel_id'>;
 
-export function handleBindingCommands(bot: Telegraf) {
+export function registerBindingCommands(bot: Telegraf<Context>) {
+  // support commands from channels (channel_post)
   bot.on('channel_post', async (ctx) => {
     const text = (ctx.channelPost as any)?.text?.trim();
     if (!text) return;
-    if (text === '/bind_verify_channel') {
-      await bindChannel(ctx, 'verify_channel_id');
-    } else if (text === '/bind_drivers_channel') {
+
+    if (text === '/bind_drivers_channel') {
       await bindChannel(ctx, 'drivers_channel_id');
     } else if (text === '/bind_moderators_channel') {
       await bindChannel(ctx, 'moderators_channel_id');
     }
   });
+
+  // also allow from chats by replying with channel id number
+  bot.command('bind_drivers_channel', async (ctx) => bindChannel(ctx, 'drivers_channel_id'));
+  bot.command('bind_moderators_channel', async (ctx) => bindChannel(ctx, 'moderators_channel_id'));
 }
 
 async function bindChannel(ctx: Context, key: BindingKey) {
-  if (ctx.chat?.type !== 'channel') {
-    await ctx.reply('Команда работает только в канале');
+  // if command came from a channel
+  if (ctx.chat?.type === 'channel') {
+    const from = ctx.from;
+    if (!from) return;
+    const member = await ctx.telegram.getChatMember(ctx.chat.id, from.id);
+    if (!['creator','administrator'].includes(member.status)) {
+      await ctx.reply('Нужно быть администратором канала.');
+      return;
+    }
+    const s = getSettings();
+    (s as any)[key] = String(ctx.chat.id);
+    saveSettings(s);
+    await ctx.reply(`Ок. Привязал канал: ${ctx.chat.title} (${ctx.chat.id})`);
     return;
   }
-  const from = ctx.from;
-  if (!from) return;
-  const member = await ctx.telegram.getChatMember(ctx.chat.id, from.id);
-  if (!['administrator', 'creator'].includes(member.status)) {
-    await ctx.reply('Нужны права администратора канала');
-    return;
-  }
-  const botMember = await ctx.telegram.getChatMember(ctx.chat.id, ctx.botInfo.id);
-  if (
-    !['administrator', 'creator'].includes(botMember.status) ||
-    (botMember.status === 'administrator' && botMember.can_post_messages === false)
-  ) {
-    await ctx.reply('У бота нет прав на публикацию сообщений');
-    return;
-  }
-  updateSetting(key, ctx.chat.id);
-  const title = ctx.chat.title ?? '—';
-  let label = '';
-  if (key === 'verify_channel_id') label = 'verify-канал';
-  else if (key === 'drivers_channel_id') label = 'drivers-канал';
-  else label = 'moderators-канал';
-  await ctx.reply(`✅ Привязан ${label}: ${title} (id: ${ctx.chat.id})`);
-}
 
-export function pingBindingsCommand(bot: Telegraf) {
-  bot.command('ping_bindings', async (ctx) => {
-    if (ctx.chat?.type !== 'private') return;
-    const settings = getSettings();
-    await ctx.reply(
-      `verify_channel_id: ${settings.verify_channel_id ?? 'не привязан'}\n` +
-        `drivers_channel_id: ${settings.drivers_channel_id ?? 'не привязан'}\n` +
-        `moderators_channel_id: ${settings.moderators_channel_id ?? 'не привязан'}`
-    );
-  });
+  // if command came from a private/group chat, expect an argument: numeric channel id
+  const arg = (ctx.message as any)?.text?.split(' ')[1];
+  if (!arg || !/^-?\d+$/.test(arg)) {
+    await ctx.reply('Отправьте команду из канала (как администратор) ИЛИ укажите numeric ID канала аргументом.');
+    return;
+  }
+  const s = getSettings();
+  (s as any)[key] = arg;
+  saveSettings(s);
+  await ctx.reply(`Сохранил ${key} = ${arg}`);
 }
