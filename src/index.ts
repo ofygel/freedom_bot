@@ -5,6 +5,7 @@ import { handleBindingCommands, pingBindingsCommand } from './commands/bindings.
 import orderCommands from './commands/order.js';
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { releaseExpiredReservations } from './services/orders.js';
 =======
 import driverCommands from './commands/driver.js';
@@ -14,6 +15,11 @@ import { getSettings } from './services/settings.js';
 =======
 import profileCommands from './commands/profile.js';
 >>>>>>> 8bdc958 (feat: add courier verification)
+=======
+import supportCommands from './commands/support.js';
+import chatCommands from './commands/chat.js';
+import orderStatusCommands from './commands/orderStatus.js';
+>>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
 
 dotenv.config();
 
@@ -29,10 +35,16 @@ handleBindingCommands(bot);
 pingBindingsCommand(bot);
 orderCommands(bot);
 <<<<<<< HEAD
+<<<<<<< HEAD
 driverCommands(bot);
 =======
 profileCommands(bot);
 >>>>>>> 8bdc958 (feat: add courier verification)
+=======
+supportCommands(bot);
+chatCommands(bot);
+orderStatusCommands(bot);
+>>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
 
 bot.launch().then(() => {
   console.log('Bot started');

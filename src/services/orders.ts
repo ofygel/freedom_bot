@@ -36,6 +36,7 @@ export interface Order {
   amount_to_courier: number;
   payment_status: 'pending' | 'awaiting_confirm' | 'paid';
   comment?: string;
+  status: 'new' | 'assigned' | 'delivered';
   created_at: string;
 <<<<<<< HEAD
   status: 'open' | 'reserved' | 'assigned';
@@ -66,6 +67,7 @@ function save(orders: Order[]) {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 export function createOrder(
   order: Omit<
     Order,
@@ -94,11 +96,19 @@ export function createOrder(order: Omit<Order, 'id' | 'created_at' | 'status' | 
     updated_at: now
 >>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
   };
+=======
+export function createOrder(order: Omit<Order, 'id' | 'created_at' | 'status'>): Order {
+  const orders = load();
+  const last = orders[orders.length - 1];
+  const id = last ? last.id + 1 : 1;
+  const newOrder: Order = { ...order, id, status: 'new', created_at: new Date().toISOString() };
+>>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
   orders.push(newOrder);
   save(orders);
   return newOrder;
 }
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 export function updateOrder(id: number, patch: Partial<Omit<Order, 'id'>>): Order | undefined {
@@ -162,10 +172,13 @@ export function releaseExpiredReservations(): Order[] {
 
 =======
 >>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
+=======
+>>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
 export function getOrder(id: number): Order | undefined {
   const orders = load();
   return orders.find((o) => o.id === id);
 }
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 
@@ -247,3 +260,34 @@ export function updateOrder(id: number, data: Partial<Order>): Order | undefined
   return updated;
 }
 >>>>>>> bcad4d7 (feat: add payment fields and flows)
+=======
+
+export function getOrdersByClient(clientId: number): Order[] {
+  const orders = load();
+  return orders.filter((o) => o.client_id === clientId);
+}
+
+function updateOrder(id: number, data: Partial<Order>): Order | undefined {
+  const orders = load();
+  const index = orders.findIndex((o) => o.id === id);
+  if (index === -1) return undefined;
+  const existing = orders[index];
+  if (!existing) return undefined;
+  const updated: Order = { ...existing, ...data, id: existing.id };
+  orders[index] = updated;
+  save(orders);
+  return updated;
+}
+
+export function updateOrderStatus(
+  id: number,
+  status: Order['status'],
+  courierId?: number
+): Order | undefined {
+  const data: Partial<Order> = { status };
+  if (courierId !== undefined) {
+    data.courier_id = courierId;
+  }
+  return updateOrder(id, data);
+}
+>>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
