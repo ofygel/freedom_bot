@@ -5,9 +5,7 @@ const FILE_PATH = 'data/settings.json';
 export interface Settings {
   verify_channel_id?: number;
   drivers_channel_id?: number;
-<<<<<<< HEAD
   moderators_channel_id?: number;
-=======
   base_price?: number;
   per_km?: number;
   min_price?: number;
@@ -19,7 +17,8 @@ export interface Settings {
   night_multiplier?: number;
   night_active?: boolean;
   city_polygon?: { lat: number; lon: number }[];
->>>>>>> 32bd694 (feat: add tariff settings and admin controls)
+  order_hours_start?: number;
+  order_hours_end?: number;
 }
 
 function load(): Settings {
