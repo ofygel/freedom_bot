@@ -1,5 +1,17 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  appendFileSync,
+} from 'fs';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  createHash,
+} from 'crypto';
+import type { Telegram } from 'telegraf';
 
 const FILE_PATH = 'data/couriers.json';
 const METRICS_PATH = 'data/courier_metrics.json';
@@ -130,4 +142,14 @@ export function getCourier(id: number): CourierProfile | undefined {
   const prof = store[id];
   if (!prof) return undefined;
   return { ...prof, card: decrypt(prof.card) };
+}
+
+export function scheduleCardMessageDeletion(
+  telegram: Telegram,
+  chatId: number,
+  messageId: number,
+) {
+  setTimeout(() => {
+    telegram.deleteMessage(chatId, messageId).catch(() => {});
+  }, 2 * 60 * 60 * 1000);
 }

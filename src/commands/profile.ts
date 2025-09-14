@@ -1,6 +1,10 @@
 import { Telegraf, Markup, Context } from 'telegraf';
 import { getUser } from '../services/users.js';
-import { getCourier, upsertCourier } from '../services/couriers.js';
+import {
+  getCourier,
+  upsertCourier,
+  scheduleCardMessageDeletion,
+} from '../services/couriers.js';
 import type { CourierProfile } from '../services/couriers.js';
 import { getSettings } from '../services/settings.js';
 
@@ -167,9 +171,11 @@ async function finalize(ctx: Context, uid: number, data: Required<CourierProfile
     );
     await ctx.telegram.sendPhoto(settings.verify_channel_id, profile.selfie);
     upsertCourier({ ...profile, verifyMsgId: verifyMessage.message_id });
-    setTimeout(() => {
-      ctx.telegram.deleteMessage(settings.verify_channel_id!, verifyMessage.message_id).catch(() => {});
-    }, 2 * 60 * 60 * 1000);
+    scheduleCardMessageDeletion(
+      ctx.telegram,
+      Number(settings.verify_channel_id!),
+      verifyMessage.message_id,
+    );
   }
   await ctx.reply(
     'Анкета отправлена на проверку.',
