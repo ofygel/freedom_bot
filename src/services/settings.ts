@@ -15,6 +15,8 @@ export interface Settings {
   surcharge_S?: number;
   surcharge_M?: number;
   surcharge_L?: number;
+  surcharge_thermobox?: number;
+  surcharge_change?: number;
   night_active?: boolean;
   order_hours_start?: number;
   order_hours_end?: number;
@@ -46,6 +48,8 @@ const defaults: Settings = {
   surcharge_S: Number(process.env.SURCHARGE_S) || 0,
   surcharge_M: Number(process.env.SURCHARGE_M) || 0,
   surcharge_L: Number(process.env.SURCHARGE_L) || 0,
+  surcharge_thermobox: Number(process.env.SURCHARGE_THERMOBOX) || 0,
+  surcharge_change: Number(process.env.SURCHARGE_CHANGE) || 0,
   night_active: false,
   order_hours_start: 8,
   order_hours_end: 23,

@@ -65,3 +65,39 @@ test('reservation holds order for 90 seconds', async () => {
     teardown(dir, prev);
   }
 });
+
+test('details include order options', async () => {
+  const { dir, prev, bot, messages } = setup();
+  try {
+    const order = createOrder({
+      customer_id: 100,
+      from: { lat: 43.2, lon: 76.9 },
+      to: { lat: 43.25, lon: 76.95 },
+      type: 'delivery',
+      time: 'now',
+      options: 'Хрупкое, Термобокс',
+      size: 'M',
+      pay_type: 'cash',
+      comment: null,
+      price: 10,
+    });
+    await sendUpdate(bot, {
+      update_id: 1,
+      callback_query: {
+        id: '1',
+        from: { id: 200, is_bot: false, first_name: 'C' },
+        message: {
+          message_id: 10,
+          text: 'card',
+          chat: { id: -100, type: 'channel' },
+        } as any,
+        data: `details:${order.id}`,
+      } as any,
+    });
+    assert.ok(
+      messages.at(-1)?.text.includes('Опции: Хрупкое, Термобокс')
+    );
+  } finally {
+    teardown(dir, prev);
+  }
+});

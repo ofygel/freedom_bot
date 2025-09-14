@@ -40,7 +40,7 @@ const typeLabels: Record<OrderType, string> = {
   other: 'Другое',
 };
 
-const optionLabels = ['Хрупкое', 'Опломбировать'];
+const optionLabels = ['Хрупкое', 'Опломбировать', 'Термобокс', 'Нужна сдача'];
 const twoGisHelp =
   'Чтобы отправить ссылку из 2ГИС:\n1. Найдите нужный адрес.\n2. Нажмите кнопку «Поделиться».\n3. Выберите «Скопировать ссылку» и отправьте её сюда.';
 
@@ -221,7 +221,13 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         const from = s.from!, to = s.to!;
         const dist = distanceKm(from, to);
         const eta = etaMinutes(dist);
-        const price = calcPrice(dist, s.size || 'M', new Date(s.timeAt!), s.type!);
+        const price = calcPrice(
+          dist,
+          s.size || 'M',
+          new Date(s.timeAt!),
+          s.type!,
+          s.options || []
+        );
         const fromAddr = await reverseGeocode(from);
         const toAddr = await reverseGeocode(to);
         await ctx.reply([
