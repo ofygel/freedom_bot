@@ -6,13 +6,15 @@ export function calcPrice(
   now = new Date(),
   type: 'docs' | 'parcel' | 'food' | 'other' = 'other',
   options: string[] = []
-): number {
+): { price: number; nightApplied: boolean } {
   const settings = getSettings();
   const base = settings.base_price ?? 500;
   let perKm = settings.per_km ?? 180;
   const isNight = now.getHours() >= 22 || now.getHours() < 7;
+  let nightApplied = false;
   if (isNight && settings.night_active) {
     perKm *= 1.2;
+    nightApplied = true;
   }
   const surcharge =
     (settings as any)[`surcharge_${size}` as const] ?? 0;
@@ -37,6 +39,6 @@ export function calcPrice(
     typeSurcharge[type] +
     optionsTotal;
   price = Math.round(price / 10) * 10;
-  return price;
+  return { price, nightApplied };
 }
 
