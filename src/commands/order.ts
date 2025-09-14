@@ -3,20 +3,38 @@ import { parse2GisLink } from '../utils/twoGis.js';
 import { createOrder } from '../services/orders.js';
 import { getSettings } from '../services/settings.js';
 import { getUser } from '../services/users.js';
+import {
+  distanceKm,
+  etaMinutes,
+  calcPrice,
+  isInAlmaty,
+  isNight
+} from '../utils/geo.js';
+import type { Coord } from '../utils/geo.js';
+
+type Step =
+  | 'idle'
+  | 'type'
+  | 'from_method'
+  | 'from_geo_wait'
+  | 'from_address_wait'
+  | 'from_link_wait'
+  | 'to_method'
+  | 'to_geo_wait'
+  | 'to_address_wait'
+  | 'to_link_wait'
+  | 'time'
+  | 'time_input'
+  | 'size'
+  | 'fragile'
+  | 'thermobox'
+  | 'change'
+  | 'pay'
+  | 'comment'
+  | 'confirm';
 
 interface WizardState {
-  step:
-    | 'idle'
-    | 'type'
-    | 'from'
-    | 'to'
-    | 'size'
-    | 'fragile'
-    | 'thermobox'
-    | 'change'
-    | 'pay'
-    | 'comment'
-    | 'confirm';
+  step: Step;
   data: any;
 }
 
@@ -47,6 +65,41 @@ export default function orderCommands(bot: Telegraf) {
     ctx.reply('Заказ отменён.', Markup.removeKeyboard());
   });
 
+  bot.on('location', (ctx) => {
+    const uid = ctx.from!.id;
+    const state = states.get(uid);
+    if (!state) return;
+    const { latitude: lat, longitude: lon } = ctx.message.location;
+    if (state.step === 'from_geo_wait') {
+      if (!isInAlmaty({ lat, lon })) {
+        return ctx.reply('Точка вне Алматы. Отправьте другую.');
+      }
+      state.data.from = { addr: 'Геолокация', lat, lon };
+      state.step = 'to_method';
+      return ctx.reply(
+        'Куда? Выберите способ ввода.',
+        Markup.keyboard([
+          ['Гео', 'Адрес', '2ГИС‑ссылка'],
+          ['Отмена']
+        ]).resize()
+      );
+    }
+    if (state.step === 'to_geo_wait') {
+      if (!isInAlmaty({ lat, lon })) {
+        return ctx.reply('Точка вне Алматы. Отправьте другую.');
+      }
+      state.data.to = { addr: 'Геолокация', lat, lon };
+      state.step = 'time';
+      return ctx.reply(
+        'Когда доставить?',
+        Markup.keyboard([
+          ['Сейчас', 'К времени'],
+          ['Отмена']
+        ]).resize()
+      );
+    }
+  });
+
   bot.on('text', async (ctx) => {
     const uid = ctx.from!.id;
     const state = states.get(uid);
@@ -65,37 +118,164 @@ export default function orderCommands(bot: Telegraf) {
           return ctx.reply('Выберите вариант из клавиатуры.');
         }
         state.data.cargo_type = cargo;
-        state.step = 'from';
-        return ctx.reply('Откуда? Отправьте адрес или ссылку 2ГИС.');
+        state.step = 'from_method';
+        return ctx.reply(
+          'Откуда? Выберите способ ввода.',
+          Markup.keyboard([
+            ['Гео', 'Адрес', '2ГИС‑ссылка'],
+            ['Отмена']
+          ]).resize()
+        );
       }
-      case 'from': {
+      case 'from_method': {
+        if (text === 'Гео') {
+          state.step = 'from_geo_wait';
+          return ctx.reply(
+            'Отправьте геолокацию.',
+            Markup.keyboard([
+              [Markup.button.locationRequest('Отправить гео')],
+              ['Отмена']
+            ]).resize()
+          );
+        }
+        if (text === 'Адрес') {
+          state.step = 'from_address_wait';
+          return ctx.reply('Введите адрес.');
+        }
+        if (text === '2ГИС‑ссылка') {
+          state.step = 'from_link_wait';
+          return ctx.reply(
+            'Инструкция: в 2ГИС нажмите «Поделиться» → «Скопировать ссылку» и отправьте её сюда.'
+          );
+        }
+        return ctx.reply('Выберите вариант из клавиатуры.');
+      }
+      case 'from_address_wait': {
+        state.data.from = { addr: text };
+        state.step = 'to_method';
+        return ctx.reply(
+          'Куда? Выберите способ ввода.',
+          Markup.keyboard([
+            ['Гео', 'Адрес', '2ГИС‑ссылка'],
+            ['Отмена']
+          ]).resize()
+        );
+      }
+      case 'from_link_wait': {
         const parsed = await parse2GisLink(text);
-        if (parsed && 'from' in parsed) {
+        if (!parsed) return ctx.reply('Не удалось разобрать ссылку.');
+        if ('from' in parsed) {
+          if (!isInAlmaty(parsed.from) || !isInAlmaty(parsed.to)) {
+            return ctx.reply('Точки вне Алматы. Отправьте другую ссылку.');
+          }
           state.data.from = { addr: '2ГИС точка', lat: parsed.from.lat, lon: parsed.from.lon };
           state.data.to = { addr: '2ГИС точка', lat: parsed.to.lat, lon: parsed.to.lon };
+          await ctx.replyWithLocation(parsed.from.lat, parsed.from.lon);
+          await ctx.replyWithLocation(parsed.to.lat, parsed.to.lon);
+          state.step = 'time';
+          return ctx.reply(
+            'Когда доставить?',
+            Markup.keyboard([
+              ['Сейчас', 'К времени'],
+              ['Отмена']
+            ]).resize()
+          );
+        }
+        if (!isInAlmaty(parsed)) {
+          return ctx.reply('Точка вне Алматы. Отправьте другую ссылку.');
+        }
+        state.data.from = { addr: '2ГИС точка', lat: parsed.lat, lon: parsed.lon };
+        await ctx.replyWithLocation(parsed.lat, parsed.lon);
+        state.step = 'to_method';
+        return ctx.reply(
+          'Куда? Выберите способ ввода.',
+          Markup.keyboard([
+            ['Гео', 'Адрес', '2ГИС‑ссылка'],
+            ['Отмена']
+          ]).resize()
+        );
+      }
+      case 'to_method': {
+        if (text === 'Гео') {
+          state.step = 'to_geo_wait';
+          return ctx.reply(
+            'Отправьте геолокацию.',
+            Markup.keyboard([
+              [Markup.button.locationRequest('Отправить гео')],
+              ['Отмена']
+            ]).resize()
+          );
+        }
+        if (text === 'Адрес') {
+          state.step = 'to_address_wait';
+          return ctx.reply('Введите адрес.');
+        }
+        if (text === '2ГИС‑ссылка') {
+          state.step = 'to_link_wait';
+          return ctx.reply('Инструкция: в 2ГИС нажмите «Поделиться» → «Скопировать ссылку» и отправьте её сюда.');
+        }
+        return ctx.reply('Выберите вариант из клавиатуры.');
+      }
+      case 'to_address_wait': {
+        state.data.to = { addr: text };
+        state.step = 'time';
+        return ctx.reply(
+          'Когда доставить?',
+          Markup.keyboard([
+            ['Сейчас', 'К времени'],
+            ['Отмена']
+          ]).resize()
+        );
+      }
+      case 'to_link_wait': {
+        const parsed = await parse2GisLink(text);
+        if (!parsed) return ctx.reply('Не удалось разобрать ссылку.');
+        if ('from' in parsed) {
+          if (!isInAlmaty(parsed.from) || !isInAlmaty(parsed.to)) {
+            return ctx.reply('Точки вне Алматы. Отправьте другую ссылку.');
+          }
+          state.data.to = { addr: '2ГИС точка', lat: parsed.to.lat, lon: parsed.to.lon };
+          state.data.from = { addr: '2ГИС точка', lat: parsed.from.lat, lon: parsed.from.lon };
+          await ctx.replyWithLocation(parsed.from.lat, parsed.from.lon);
+          await ctx.replyWithLocation(parsed.to.lat, parsed.to.lon);
+        } else {
+          if (!isInAlmaty(parsed)) {
+            return ctx.reply('Точка вне Алматы. Отправьте другую ссылку.');
+          }
+          state.data.to = { addr: '2ГИС точка', lat: parsed.lat, lon: parsed.lon };
+          await ctx.replyWithLocation(parsed.lat, parsed.lon);
+        }
+        state.step = 'time';
+        return ctx.reply(
+          'Когда доставить?',
+          Markup.keyboard([
+            ['Сейчас', 'К времени'],
+            ['Отмена']
+          ]).resize()
+        );
+      }
+      case 'time': {
+        if (text === 'Сейчас') {
+          state.data.delivery_time = 'now';
           state.step = 'size';
-          await ctx.reply('Получатель уже указан из ссылки.');
           return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
         }
-        if (parsed) {
-          state.data.from = { addr: '2ГИС точка', lat: parsed.lat, lon: parsed.lon };
-        } else {
-          state.data.from = { addr: text };
+        if (text === 'К времени') {
+          state.step = 'time_input';
+          return ctx.reply('Введите время в формате ЧЧ:ММ.');
         }
-        state.step = 'to';
-        return ctx.reply('Куда? Отправьте адрес или ссылку 2ГИС.');
+        return ctx.reply('Выберите вариант из клавиатуры.');
       }
-      case 'to': {
-        const parsed = await parse2GisLink(text);
-        if (parsed) {
-          if ('from' in parsed) {
-            state.data.to = { addr: '2ГИС точка', lat: parsed.to.lat, lon: parsed.to.lon };
-          } else {
-            state.data.to = { addr: '2ГИС точка', lat: parsed.lat, lon: parsed.lon };
-          }
-        } else {
-          state.data.to = { addr: text };
-        }
+      case 'time_input': {
+        const [hStr, mStr] = text.split(':');
+        const h = Number(hStr);
+        const m = Number(mStr);
+        if (isNaN(h) || isNaN(m)) return ctx.reply('Неверный формат.');
+        const now = new Date();
+        const dt = new Date();
+        dt.setHours(h, m, 0, 0);
+        if (dt < now) return ctx.reply('Время уже прошло.');
+        state.data.delivery_time = dt.toISOString();
         state.step = 'size';
         return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
       }
@@ -143,8 +323,24 @@ export default function orderCommands(bot: Telegraf) {
         if (text !== 'Пропустить') {
           state.data.comment = text;
         }
+        let summary = `Тип: ${state.data.cargo_type}\nОткуда: ${state.data.from.addr}\nКуда: ${state.data.to.addr}\nРазмер: ${state.data.size}\nОплата: ${state.data.pay_type}`;
+        if (state.data.from.lat && state.data.to?.lat) {
+          const from: Coord = { lat: state.data.from.lat, lon: state.data.from.lon };
+          const to: Coord = { lat: state.data.to.lat, lon: state.data.to.lon };
+          const dist = distanceKm(from, to);
+          const eta = etaMinutes(dist);
+          const night = isNight(state.data.delivery_time ? new Date(state.data.delivery_time) : new Date());
+          const price = calcPrice(dist, state.data.size, {
+            fragile: state.data.fragile,
+            thermobox: state.data.thermobox,
+            night
+          });
+          state.data.distance = dist;
+          state.data.eta = eta;
+          state.data.price = price;
+          summary += `\nДистанция: ${dist.toFixed(1)} км\nETA: ${eta} мин\nЦена: ${price} тг`;
+        }
         state.step = 'confirm';
-        const summary = `Тип: ${state.data.cargo_type}\nОткуда: ${state.data.from.addr}\nКуда: ${state.data.to.addr}\nРазмер: ${state.data.size}\nОплата: ${state.data.pay_type}`;
         return ctx.reply(summary, Markup.keyboard([['Подтвердить заказ'], ['Отмена']]).resize());
       }
       case 'confirm': {

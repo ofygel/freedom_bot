@@ -4,7 +4,10 @@ import { upsertUser, getUser } from '../services/users.js';
 export default function startCommand(bot: Telegraf) {
   const pendingRoles = new Map<number, 'client' | 'courier'>();
   const pendingAgreement = new Map<number, 'client' | 'courier'>();
+<<<<<<< HEAD
   const pendingCity = new Map<number, true>();
+=======
+>>>>>>> bdae1ea (feat: add geo utilities)
 
   bot.start(async (ctx) => {
     await ctx.reply(
@@ -20,9 +23,9 @@ export default function startCommand(bot: Telegraf) {
     pendingRoles.set(ctx.from!.id, role);
     await ctx.reply(
       'Нужно подтвердить номер телефона.',
-      Markup.keyboard([
-        [Markup.button.contactRequest('Поделиться номером')]
-      ]).oneTime().resize()
+      Markup.keyboard([[Markup.button.contactRequest('Поделиться номером')]])
+        .oneTime()
+        .resize()
     );
   };
 
@@ -43,6 +46,7 @@ export default function startCommand(bot: Telegraf) {
     }
     upsertUser({ id: uid, phone, role, city: 'Алматы', agreed: false });
     pendingRoles.delete(uid);
+<<<<<<< HEAD
     if (role === 'client') {
       pendingCity.set(uid, true);
       await ctx.reply('Введите ваш город (по умолчанию Алматы).');
@@ -76,6 +80,13 @@ export default function startCommand(bot: Telegraf) {
       return;
     }
     return next();
+=======
+    pendingAgreement.set(uid, role);
+    await ctx.reply(
+      'Город: Алматы. Согласны с правилами сервиса?',
+      Markup.keyboard([['Согласен']]).oneTime().resize()
+    );
+>>>>>>> bdae1ea (feat: add geo utilities)
   });
 
   bot.hears('Согласен', async (ctx) => {
