@@ -17,6 +17,10 @@ function startWizard(ctx: Context) {
   ctx.reply('Какой у вас транспорт?');
 }
 
+export function startProfileWizard(ctx: Context) {
+  startWizard(ctx);
+}
+
 export default function profileCommands(bot: Telegraf) {
   bot.hears('Профиль', async (ctx) => {
     const uid = ctx.from!.id;
@@ -167,5 +171,8 @@ async function finalize(ctx: Context, uid: number, data: Required<CourierProfile
       ctx.telegram.deleteMessage(settings.verify_channel_id!, verifyMessage.message_id).catch(() => {});
     }, 2 * 60 * 60 * 1000);
   }
-  await ctx.reply('Анкета отправлена на проверку.', Markup.removeKeyboard());
+  await ctx.reply(
+    'Анкета отправлена на проверку.',
+    Markup.keyboard([['Профиль'], ['Поддержка']]).resize()
+  );
 }
