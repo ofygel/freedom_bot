@@ -12,7 +12,11 @@ export type OrderStatus =
   | 'open'
   | 'reserved'
   | 'assigned'
-  | 'picked_up'
+  | 'going_to_pickup'
+  | 'at_pickup'
+  | 'picked'
+  | 'going_to_dropoff'
+  | 'at_dropoff'
   | 'delivered'
   | 'awaiting_confirm'
   | 'closed'
@@ -97,6 +101,12 @@ export function createOrder(input: CreateOrderInput): Order {
 
 export function getOrder(id: number): Order | undefined {
   return readAll().find(o => o.id === id);
+}
+
+export function getCourierActiveOrder(courierId: number): Order | undefined {
+  return readAll().find(
+    o => o.courier_id === courierId && !['closed', 'canceled'].includes(o.status)
+  );
 }
 
 export function updateOrder(id: number, data: Partial<Order>): Order | undefined {

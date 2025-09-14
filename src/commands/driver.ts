@@ -6,10 +6,11 @@ import {
   updateOrderStatus,
   addPickupProof,
   addDeliveryProof,
-  updateOrder
+  updateOrder,
   openDispute,
   addDisputeMessage,
 } from '../services/orders.js';
+import type { OrderStatus } from '../services/orders.js';
 import {
   toggleCourierOnline,
   isCourierOnline,
@@ -64,7 +65,7 @@ export default function driverCommands(bot: Telegraf) {
   bot.hears('Скрыть на 1 час', (ctx) => {
     const order = getCourierActiveOrder(ctx.from!.id);
     if (!order) return ctx.reply('Нет активного заказа.');
-    updateOrderStatus(order.id, 'new');
+    updateOrderStatus(order.id, 'open');
     hideOrderForCourier(ctx.from!.id, order.id);
     ctx.reply('Заказ скрыт на 1 час.', Markup.removeKeyboard());
   });
@@ -246,8 +247,8 @@ export default function driverCommands(bot: Telegraf) {
 
 function handleTransition(
   ctx: Context,
-  fromStatus: string,
-  toStatus: any,
+  fromStatus: OrderStatus,
+  toStatus: OrderStatus,
   nextButton: string
 ) {
   const order = getCourierActiveOrder(ctx.from!.id);
@@ -256,10 +257,9 @@ function handleTransition(
     return;
   }
   updateOrderStatus(order.id, toStatus);
-  const extra = [nextButton];
   ctx.reply(
     'Статус обновлён.',
-    Markup.keyboard([extra, ['Открыть спор']]).resize()
+    Markup.keyboard([[nextButton], ['Открыть спор']]).resize()
   );
   if (toStatus === 'at_dropoff' && order.pay_type === 'receiver') {
     ctx.reply('Передайте получателю, что оплата необходима при получении.');
