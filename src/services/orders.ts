@@ -1,8 +1,20 @@
+<<<<<<< HEAD
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { Telegraf } from 'telegraf';
 import { createOrderChat, markOrderChatDelivered } from './chat.js';
+=======
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
+>>>>>>> cdaeed7 (feat: track user moderation)
 
 const FILE_PATH = 'data/orders.json';
+const AUDIT_PATH = 'data/order_audit.log';
+
+export interface OrderAuditRecord {
+  order_id: number;
+  type: 'cancel' | 'no_movement' | 'complaint';
+  details?: string;
+  timestamp: string;
+}
 
 export interface Location {
   addr: string;
@@ -360,3 +372,19 @@ const STATUS_MESSAGES: Record<OrderStatus, { client: string; courier: string }> 
   dispute_open: { client: '', courier: '' },
 };
 >>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
+
+export function logOrderIssue(record: Omit<OrderAuditRecord, 'timestamp'>) {
+  const line = JSON.stringify({ ...record, timestamp: new Date().toISOString() });
+  if (!existsSync('data')) mkdirSync('data');
+  appendFileSync(AUDIT_PATH, line + '\n');
+}
+
+export function getOrderAudit(id: number): OrderAuditRecord[] {
+  if (!existsSync(AUDIT_PATH)) return [];
+  const raw = readFileSync(AUDIT_PATH, 'utf-8');
+  return raw
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as OrderAuditRecord)
+    .filter((r) => r.order_id === id);
+}
