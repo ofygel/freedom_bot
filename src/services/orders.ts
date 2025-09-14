@@ -22,6 +22,7 @@ export interface Location {
   lon?: number;
 }
 
+<<<<<<< HEAD
 export type OrderStatus =
   | 'open'
   | 'reserved'
@@ -46,23 +47,21 @@ interface DisputeMessage {
   at: string;
 }
 
+=======
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
 export interface Order {
   id: number;
   client_id: number;
-  courier_id?: number;
   cargo_type: 'docs' | 'parcel' | 'food' | 'other';
   from: Location;
   to: Location;
   size: 'S' | 'M' | 'L';
   fragile: boolean;
   thermobox: boolean;
-  wait_minutes: number;
   cash_change_needed: boolean;
   pay_type: 'cash' | 'p2p' | 'receiver';
-  amount_total: number;
-  amount_to_courier: number;
-  payment_status: 'pending' | 'awaiting_confirm' | 'paid';
   comment?: string;
+<<<<<<< HEAD
   status: OrderStatus;
   created_at: string;
   updated_at: string;
@@ -82,6 +81,9 @@ let bot: Telegraf | null = null;
 
 export function setOrdersBot(b: Telegraf) {
   bot = b;
+=======
+  created_at: string;
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
 }
 
 function load(): Order[] {
@@ -99,6 +101,7 @@ function save(orders: Order[]) {
   writeFileSync(FILE_PATH, JSON.stringify(orders, null, 2));
 }
 
+<<<<<<< HEAD
 function generateCode(): string {
   return Math.floor(1000 + Math.random() * 9000).toString();
 }
@@ -131,10 +134,18 @@ export function createOrder(
     dropoff_code: generateCode(),
     status_log: [{ status: 'open', at: now }],
   };
+=======
+export function createOrder(order: Omit<Order, 'id' | 'created_at'>): Order {
+  const orders = load();
+  const last = orders[orders.length - 1];
+  const id = last ? last.id + 1 : 1;
+  const newOrder: Order = { ...order, id, created_at: new Date().toISOString() };
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
   orders.push(newOrder);
   save(orders);
   return newOrder;
 }
+<<<<<<< HEAD
 
 function updateOrder(id: number, patch: Partial<Order>): Order | undefined {
   const orders = load();
@@ -406,3 +417,5 @@ export function resolveDispute(id: number): Order | undefined {
   return order;
 }
 >>>>>>> 55a7169 (feat: extend courier workflow and disputes)
+=======
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)

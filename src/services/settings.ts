@@ -6,6 +6,7 @@ export interface Settings {
   verify_channel_id?: number;
   drivers_channel_id?: number;
   moderators_channel_id?: number;
+<<<<<<< HEAD
   base_price?: number;
   per_km?: number;
   min_price?: number;
@@ -22,6 +23,8 @@ export interface Settings {
   order_hours_end?: number;
 =======
 >>>>>>> de14bbc (feat: add order chat and notifications)
+=======
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
 }
 
 function load(): Settings {
@@ -39,9 +42,9 @@ function save(settings: Settings) {
   writeFileSync(FILE_PATH, JSON.stringify(settings, null, 2));
 }
 
-export function updateSetting(key: keyof Settings, value: any) {
+export function updateSetting(key: keyof Settings, value: number) {
   const current = load();
-  (current as any)[key] = value;
+  current[key] = value;
   save(current);
 }
 

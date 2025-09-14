@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { Telegraf, Markup } from 'telegraf';
 import { pointInPolygon } from '../utils/geo.js';
 import { calcPrice } from '../utils/pricing.js';
@@ -72,10 +73,32 @@ interface WizardState {
 =======
   step: Step;
 >>>>>>> 7534cf0 (feat: add night coefficient)
+=======
+import { Telegraf, Markup, Context } from 'telegraf';
+import { parse2GisLink } from '../utils/twoGis.js';
+import { createOrder } from '../services/orders.js';
+import { getSettings } from '../services/settings.js';
+import { getUser } from '../services/users.js';
+
+interface WizardState {
+  step:
+    | 'idle'
+    | 'type'
+    | 'from'
+    | 'to'
+    | 'size'
+    | 'fragile'
+    | 'thermobox'
+    | 'change'
+    | 'pay'
+    | 'comment'
+    | 'confirm';
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
   data: any;
 }
 
 const states = new Map<number, WizardState>();
+<<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
 =======
@@ -101,6 +124,8 @@ function publishOrder(order: any, bot: Telegraf) {
 }
 =======
 >>>>>>> 7534cf0 (feat: add night coefficient)
+=======
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
 
 function startWizard(ctx: Context) {
   states.set(ctx.from!.id, { step: 'type', data: {} });
@@ -140,6 +165,7 @@ async function sendPointInfo(
 
 export default function orderCommands(bot: Telegraf) {
   bot.hears('Создать заказ', (ctx) => {
+<<<<<<< HEAD
     const settings = getSettings();
     const start = settings.order_hours_start ?? 8;
     const end = settings.order_hours_end ?? 23;
@@ -147,6 +173,8 @@ export default function orderCommands(bot: Telegraf) {
     if (hour < start || hour >= end) {
       return ctx.reply(`Заказы принимаются с ${start.toString().padStart(2,'0')}:00 до ${end.toString().padStart(2,'0')}:00 по времени Алматы.`);
     }
+=======
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
     const user = getUser(ctx.from!.id);
 <<<<<<< HEAD
     if (!user || !user.agreed) return ctx.reply('Сначала поделитесь контактом и согласитесь с правилами через /start');
@@ -168,6 +196,7 @@ export default function orderCommands(bot: Telegraf) {
     ctx.reply('Заказ отменён', Markup.removeKeyboard());
   });
 
+<<<<<<< HEAD
   bot.on('location', async (ctx) => {
     const uid = ctx.from!.id;
     const state = states.get(uid);
@@ -224,21 +253,119 @@ export default function orderCommands(bot: Telegraf) {
   });
 
   bot.on('text', (ctx) => {
+=======
+  bot.on('text', async (ctx) => {
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
     const uid = ctx.from!.id;
     const state = states.get(uid);
+    if (!state) return;
     const text = ctx.message.text.trim();
+<<<<<<< HEAD
     if (!state) return;
     switch (state.step) {
 <<<<<<< HEAD
+=======
+    switch (state.step) {
+      case 'type': {
+        const map: Record<string, string> = {
+          'Документы': 'docs',
+          'Посылка': 'parcel',
+          'Еда': 'food',
+          'Другое': 'other'
+        };
+        const cargo = map[text];
+        if (!cargo) {
+          return ctx.reply('Выберите вариант из клавиатуры.');
+        }
+        state.data.cargo_type = cargo;
+        state.step = 'from';
+        return ctx.reply('Откуда? Отправьте адрес или ссылку 2ГИС.');
+      }
+      case 'from': {
+        const parsed = await parse2GisLink(text);
+        if (parsed && 'from' in parsed) {
+          state.data.from = { addr: '2ГИС точка', lat: parsed.from.lat, lon: parsed.from.lon };
+          state.data.to = { addr: '2ГИС точка', lat: parsed.to.lat, lon: parsed.to.lon };
+          state.step = 'size';
+          await ctx.reply('Получатель уже указан из ссылки.');
+          return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
+        }
+        if (parsed) {
+          state.data.from = { addr: '2ГИС точка', lat: parsed.lat, lon: parsed.lon };
+        } else {
+          state.data.from = { addr: text };
+        }
+        state.step = 'to';
+        return ctx.reply('Куда? Отправьте адрес или ссылку 2ГИС.');
+      }
+      case 'to': {
+        const parsed = await parse2GisLink(text);
+        if (parsed) {
+          if ('from' in parsed) {
+            state.data.to = { addr: '2ГИС точка', lat: parsed.to.lat, lon: parsed.to.lon };
+          } else {
+            state.data.to = { addr: '2ГИС точка', lat: parsed.lat, lon: parsed.lon };
+          }
+        } else {
+          state.data.to = { addr: text };
+        }
+        state.step = 'size';
+        return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
+      }
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
       case 'size': {
         if (!['S', 'M', 'L'].includes(text)) return ctx.reply('Выберите S, M или L.');
         state.data.size = text;
+<<<<<<< HEAD
         const settings = getSettings();
         const { distance, price, night } = calcPrice(state.data.from, state.data.to, 0, state.data.size, settings);
         state.data.price = price;
         let summary = `Дистанция: ${distance.toFixed(1)} км\nСтоимость: ${price} ₸`;
         if (night) summary += '\nНочной коэффициент применён';
         state.step = 'confirm';
+=======
+        state.step = 'fragile';
+        return ctx.reply('Хрупкое? (Да/Нет)', Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize());
+      }
+      case 'fragile': {
+        state.data.fragile = text === 'Да';
+        state.step = 'thermobox';
+        return ctx.reply('Нужен термобокс? (Да/Нет)', Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize());
+      }
+      case 'thermobox': {
+        state.data.thermobox = text === 'Да';
+        state.step = 'change';
+        return ctx.reply('Нужна сдача? (Да/Нет)', Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize());
+      }
+      case 'change': {
+        state.data.cash_change_needed = text === 'Да';
+        state.step = 'pay';
+        return ctx.reply('Как оплатить?', Markup.keyboard([
+          ['Наличные курьеру'],
+          ['Перевод на карту'],
+          ['Получатель платит'],
+          ['Отмена']
+        ]).resize());
+      }
+      case 'pay': {
+        const map: Record<string, string> = {
+          'Наличные курьеру': 'cash',
+          'Перевод на карту': 'p2p',
+          'Получатель платит': 'receiver'
+        };
+        const pay = map[text];
+        if (!pay) return ctx.reply('Выберите вариант из клавиатуры.');
+        state.data.pay_type = pay;
+        state.step = 'comment';
+        return ctx.reply('Комментарий? Если нет, отправьте "Пропустить".');
+      }
+      case 'comment': {
+        if (text !== 'Пропустить') {
+          state.data.comment = text;
+        }
+        state.step = 'confirm';
+        const summary = `Тип: ${state.data.cargo_type}\nОткуда: ${state.data.from.addr}\nКуда: ${state.data.to.addr}\nРазмер: ${state.data.size}\nОплата: ${state.data.pay_type}`;
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
         return ctx.reply(summary, Markup.keyboard([['Подтвердить заказ'], ['Отмена']]).resize());
       }
       case 'confirm': {
@@ -248,29 +375,7 @@ export default function orderCommands(bot: Telegraf) {
 =======
         if (text !== 'Подтвердить заказ') {
           return ctx.reply('Подтвердите или отмените.');
-=======
-          if (text !== 'Пропустить') {
-            state.data.comment = text;
-          }
-          const settings = getSettings();
-          const { distance, price } = calcPrice(
-            state.data.from.lat && state.data.from.lon ? { lat: state.data.from.lat, lon: state.data.from.lon } : undefined,
-            state.data.to.lat && state.data.to.lon ? { lat: state.data.to.lat, lon: state.data.to.lon } : undefined,
-            state.data.wait_minutes || 0,
-            state.data.size,
-            settings
-          );
-          state.data.distance_km = distance;
-          state.data.price = price;
-          state.step = 'confirm';
-          const summary = `Тип: ${state.data.cargo_type}\nОткуда: ${state.data.from.addr}\nКуда: ${state.data.to.addr}\nРазмер: ${state.data.size}\nОплата: ${state.data.pay_type}\nСтоимость: ${price} ₸`;
-          return ctx.reply(summary, Markup.keyboard([['Подтвердить заказ'], ['Отмена']]).resize());
->>>>>>> 32bd694 (feat: add tariff settings and admin controls)
         }
-        case 'confirm': {
-          if (text !== 'Подтвердить заказ') {
-            return ctx.reply('Подтвердите или отмените.');
-          }
         const user = getUser(uid);
         if (!user) {
 =======
@@ -477,13 +582,17 @@ export default function orderCommands(bot: Telegraf) {
         }
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
         const payment_status = state.data.pay_type === 'cash' ? 'pending' : 'awaiting_confirm';
+=======
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
         const order = createOrder({
 >>>>>>> f6a2c0c (feat: add receiver payment flow and secure data)
           client_id: uid,
           from: state.data.from,
           to: state.data.to,
           size: state.data.size,
+<<<<<<< HEAD
           cargo_type: 'other',
           fragile: false,
           thermobox: false,
@@ -494,12 +603,20 @@ export default function orderCommands(bot: Telegraf) {
           amount_to_courier: state.data.price,
           payment_status: 'pending',
           comment: ''
+=======
+          fragile: state.data.fragile,
+          thermobox: state.data.thermobox,
+          cash_change_needed: state.data.cash_change_needed,
+          pay_type: state.data.pay_type,
+          comment: state.data.comment
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
         });
         states.delete(uid);
 <<<<<<< HEAD
         return ctx.reply('Заказ создан', Markup.removeKeyboard());
 =======
         await ctx.reply(`Заказ #${order.id} создан.`, Markup.removeKeyboard());
+<<<<<<< HEAD
         if (order.pay_type === 'p2p') {
           const msg = await ctx.reply('Реквизиты для оплаты: 1234567890\nПосле перевода отправьте скрин или ID.');
           setTimeout(() => {
@@ -514,43 +631,12 @@ export default function orderCommands(bot: Telegraf) {
             ctx.telegram.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
           }, 2 * 60 * 60 * 1000);
         }
+=======
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
         const settings = getSettings();
         if (settings.drivers_channel_id) {
           const text = `Новый заказ #${order.id}\nОткуда: ${order.from.addr}\nКуда: ${order.to.addr}`;
-<<<<<<< HEAD
-<<<<<<< HEAD
-          const extra =
-            order.from.lat && order.to.lat
-              ? Markup.inlineKeyboard([
-                  [Markup.button.url('Открыть в 2ГИС', pointDeeplink(order.from as any))],
-                  [Markup.button.url('Маршрут в 2ГИС', routeDeeplink({ from: order.from as any, to: order.to as any }))],
-                  [Markup.button.url('До точки B', routeToDeeplink(order.to as any))]
-                ])
-              : undefined;
-          await ctx.telegram.sendMessage(settings.drivers_channel_id, text, extra ? extra : undefined);
-=======
-          const msg = await ctx.telegram.sendMessage(
-            settings.drivers_channel_id,
-            text,
-            Markup.inlineKeyboard([
-              [Markup.button.callback('Принять', `accept_${order.id}`)]
-            ])
-          );
-          updateOrder(order.id, { message_id: msg.message_id });
->>>>>>> 0cb5d4a (feat: add order reservation workflow)
-=======
-          const buttons: any[] = [];
-          if (order.pay_type === 'cash') {
-            buttons.push(Markup.button.callback('Нал получены', `cash_paid:${order.id}`));
-          }
-          if (order.pay_type === 'p2p') {
-            buttons.push(Markup.button.callback('Поступление проверил', `p2p_confirm:${order.id}`));
-          }
-          const extra = buttons.length
-            ? { reply_markup: { inline_keyboard: [buttons] } }
-            : undefined;
-          await ctx.telegram.sendMessage(settings.drivers_channel_id, text, extra);
->>>>>>> bcad4d7 (feat: add payment fields and flows)
+          await ctx.telegram.sendMessage(settings.drivers_channel_id, text);
         }
 =======
         publishOrder(order, bot);
@@ -560,6 +646,7 @@ export default function orderCommands(bot: Telegraf) {
       }
     }
   });
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 
@@ -634,5 +721,7 @@ export default function orderCommands(bot: Telegraf) {
     }
   });
 >>>>>>> 7534cf0 (feat: add night coefficient)
+=======
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
 }
 
