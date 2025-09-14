@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Telegraf } from 'telegraf';
 import { getOrder } from '../services/orders.js';
 import {

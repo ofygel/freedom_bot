@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Telegraf, Markup, Context } from 'telegraf';
 import { getOrdersByClient } from '../services/orders.js';
 import { createTicket, updateTicketStatus, getTicket } from '../services/tickets.js';

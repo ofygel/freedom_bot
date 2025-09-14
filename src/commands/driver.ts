@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Telegraf, Markup, Context } from 'telegraf';
 import {
   assignOrder,

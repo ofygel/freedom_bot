@@ -3,6 +3,12 @@ import { Telegraf } from 'telegraf';
 import registerStart from './commands/start';
 import { registerBindingCommands } from './commands/bindings';
 import registerOrderCommands from './commands/order';
+import driverCommands from './commands/driver';
+import supportCommands from './commands/support';
+import chatCommands from './commands/chat';
+import orderStatusCommands from './commands/orderStatus';
+import profileCommands from './commands/profile';
+import adminCommands from './commands/admin';
 import { setOrdersBot } from './services/orders';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -17,6 +23,12 @@ setOrdersBot(bot);
 registerStart(bot);
 registerBindingCommands(bot);
 registerOrderCommands(bot);
+driverCommands(bot);
+supportCommands(bot);
+chatCommands(bot);
+orderStatusCommands(bot);
+profileCommands(bot);
+adminCommands(bot);
 
 bot.command('ping', (ctx) => ctx.reply('pong'));
 
