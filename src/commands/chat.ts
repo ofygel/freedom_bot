@@ -24,13 +24,13 @@ export default function chatCommands(bot: Telegraf) {
     }
     const fromId = ctx.from!.id;
     let toId: number | undefined;
-    if (order.client_id === fromId && order.courier_id) {
+    if (order.customer_id === fromId && order.courier_id) {
       toId = order.courier_id;
     } else if (order.courier_id === fromId) {
-      toId = order.client_id;
+      toId = order.customer_id;
     }
     if (!toId) {
-      return ctx.reply('Нет собеседника для этого заказа');
+      return ctx.reply('Собеседник пока не подключен к чату');
     }
     await sendProxyMessage(bot, orderId, fromId, toId, text);
     await ctx.reply('Отправлено');
@@ -40,8 +40,17 @@ export default function chatCommands(bot: Telegraf) {
     if (ctx.message.text.startsWith('/')) return next();
     const chat = getActiveChatByUser(ctx.from!.id);
     if (!chat) return next();
-    const toId = chat.client_id === ctx.from!.id ? chat.courier_id : chat.client_id;
-    await sendProxyMessage(bot, chat.order_id, ctx.from!.id, toId, ctx.message.text);
+    const fromId = ctx.from!.id;
+    let toId: number | undefined;
+    if (chat.client_id === fromId) {
+      toId = chat.courier_id;
+    } else if (chat.courier_id === fromId) {
+      toId = chat.client_id;
+    }
+    if (!toId) {
+      return ctx.reply('Собеседник пока не подключен к чату');
+    }
+    await sendProxyMessage(bot, chat.order_id, fromId, toId, ctx.message.text);
   });
 
   setInterval(cleanupOldChats, 60 * 60 * 1000);
