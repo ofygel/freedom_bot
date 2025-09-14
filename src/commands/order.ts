@@ -1,5 +1,5 @@
 import type { Telegraf, Context } from 'telegraf';
-import { parse2GisLink, routeToDeeplink, Point } from '../utils/twoGis';
+import { parse2GisLink, routeToDeeplink } from '../utils/twoGis';
 import { distanceKm, etaMinutes, isInAlmaty } from '../utils/geo';
 import { calcPrice } from '../utils/pricing';
 import { createOrder } from '../services/orders';
@@ -16,7 +16,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
     const text = (ctx.message as any)?.text ?? '';
     const links = extractLinks(text);
     if (links.length < 2) {
-      await ctx.reply('Формат: /order <ссылка_2GIS_ОТКУДА> <ссылка_2ГИС_КУДА>');
+      await ctx.reply('Формат: /order <ссылка_2ГИС_откуда> <ссылка_2ГИС_куда>');
       return;
     }
     const from = parse2GisLink(links[0]);
@@ -29,10 +29,10 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
       await ctx.reply('Сервис работает в пределах Алматы. Укажите точки в городе.');
       return;
     }
+
     const dist = distanceKm(from, to);
     const eta = etaMinutes(dist);
     const price = calcPrice(dist, new Date());
-
     const order = createOrder({
       customer_id: ctx.from!.id,
       from, to,

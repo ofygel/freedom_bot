@@ -12,19 +12,14 @@ if (!token) {
 }
 
 const bot = new Telegraf(token);
-
-// expose bot instance to services that need to send messages
 setOrdersBot(bot);
 
-// commands
 registerStart(bot);
 registerBindingCommands(bot);
 registerOrderCommands(bot);
 
-// health
-bot.command('ping', ctx => ctx.reply('pong'));
+bot.command('ping', (ctx) => ctx.reply('pong'));
 
-// launch
 bot.launch().then(() => {
   console.log('Bot started');
 });
