@@ -161,12 +161,19 @@ export function assignOrder(id: number, courierId: number): Order | undefined {
   return order;
 }
 
-export function updateOrderStatus(id: number, status: OrderStatus): Order | undefined {
+export function updateOrderStatus(
+  id: number,
+  status: OrderStatus,
+  courierId?: number | null
+): Order | undefined {
   const list = readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
   order.status = status;
+  if (courierId !== undefined) {
+    order.courier_id = courierId;
+  }
   order.transitions.push({ status, at: new Date().toISOString() });
   list[index] = order;
   writeAll(list);
