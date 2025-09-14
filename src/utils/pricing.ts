@@ -4,7 +4,8 @@ export function calcPrice(
   distanceKm: number,
   size: 'S' | 'M' | 'L' = 'M',
   now = new Date(),
-  type: 'docs' | 'parcel' | 'food' | 'other' = 'other'
+  type: 'docs' | 'parcel' | 'food' | 'other' = 'other',
+  options: string[] = []
 ): number {
   const settings = getSettings();
   const base = settings.base_price ?? 500;
@@ -21,11 +22,20 @@ export function calcPrice(
     food: 150,
     other: 0,
   };
+  const optionSurcharges: Record<string, number> = {
+    'Термобокс': (settings as any).surcharge_thermobox ?? 0,
+    'Нужна сдача': (settings as any).surcharge_change ?? 0,
+  };
+  const optionsTotal = options.reduce(
+    (sum, o) => sum + (optionSurcharges[o] || 0),
+    0
+  );
   let price =
     base +
     perKm * Math.max(1, distanceKm) +
     surcharge +
-    typeSurcharge[type];
+    typeSurcharge[type] +
+    optionsTotal;
   price = Math.round(price / 10) * 10;
   return price;
 }
