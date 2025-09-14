@@ -44,5 +44,16 @@
 
     "esModuleInterop": true,
     "resolveJsonModule": true,
-  }
+  },
+  "include": [
+    "src/index.ts",
+    "src/commands/start.ts",
+    "src/commands/bindings.ts",
+    "src/commands/order.ts",
+    "src/services/users.ts",
+    "src/services/orders.ts",
+    "src/services/settings.ts",
+    "src/utils/twoGis.ts",
+    "src/utils/geo.ts"
+  ]
 }

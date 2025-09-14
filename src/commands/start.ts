@@ -4,6 +4,7 @@ import { upsertUser, getUser } from '../services/users.js';
 export default function startCommand(bot: Telegraf) {
   const pendingRoles = new Map<number, 'client' | 'courier'>();
   const pendingAgreement = new Map<number, 'client' | 'courier'>();
+<<<<<<< HEAD
 
   const replyAndDelete = async (
     ctx: Context,
@@ -16,6 +17,9 @@ export default function startCommand(bot: Telegraf) {
   };
 
   const sendError = (ctx: Context, text: string) => replyAndDelete(ctx, text, undefined, 10000);
+=======
+  const pendingCity = new Map<number, true>();
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
 
   bot.start(async (ctx) => {
     await replyAndDelete(
@@ -33,9 +37,9 @@ export default function startCommand(bot: Telegraf) {
     await replyAndDelete(
       ctx,
       'Нужно подтвердить номер телефона.',
-      Markup.keyboard([[Markup.button.contactRequest('Поделиться номером')]])
-        .oneTime()
-        .resize()
+      Markup.keyboard([
+        [Markup.button.contactRequest('Поделиться номером')]
+      ]).oneTime().resize()
     );
   };
 
@@ -56,12 +60,48 @@ export default function startCommand(bot: Telegraf) {
     }
     upsertUser({ id: uid, phone, role, city: 'Алматы', agreed: false });
     pendingRoles.delete(uid);
+<<<<<<< HEAD
     pendingAgreement.set(uid, role);
     await replyAndDelete(
       ctx,
       'Город: Алматы. Согласны с правилами сервиса?',
       Markup.keyboard([['Согласен']]).oneTime().resize()
     );
+=======
+    if (role === 'client') {
+      pendingCity.set(uid, true);
+      await ctx.reply('Введите ваш город (по умолчанию Алматы).');
+    } else {
+      pendingAgreement.set(uid, role);
+      await ctx.reply(
+        'Согласны с правилами сервиса?',
+        Markup.keyboard([
+          ['Согласен']
+        ]).oneTime().resize()
+      );
+    }
+  });
+
+  bot.on('text', async (ctx, next: () => Promise<void>) => {
+    const uid = ctx.from!.id;
+    if (pendingCity.has(uid)) {
+      const city = ctx.message.text?.trim() || 'Алматы';
+      const user = getUser(uid);
+      if (user) {
+        upsertUser({ ...user, city });
+      }
+      pendingCity.delete(uid);
+      pendingAgreement.set(uid, 'client');
+      await ctx.reply(
+        'Согласны с правилами сервиса?',
+        Markup.keyboard([
+          ['Согласен']
+        ]).oneTime().resize()
+      );
+      return;
+    }
+    return next();
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
   });
 
   bot.hears('Согласен', async (ctx) => {
@@ -98,10 +138,16 @@ export default function startCommand(bot: Telegraf) {
 
   bot.hears('Создать заказ', (ctx) => ctx.reply('Создание заказа в разработке.'));
   bot.hears('Мои заказы', (ctx) => ctx.reply('Здесь будут ваши заказы.'));
+<<<<<<< HEAD
+=======
+  bot.hears('Профиль', (ctx) => ctx.reply('Профиль в разработке.'));
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
   bot.hears('Поддержка', (ctx) => ctx.reply('Поддержка в разработке.'));
   bot.hears('Онлайн/Оффлайн', (ctx) => ctx.reply('Режим курьера переключен.'));
   bot.hears('Лента заказов', (ctx) => ctx.reply('Лента заказов в разработке.'));
   bot.hears('Баланс/Выплаты', (ctx) => ctx.reply('Информация о балансе в разработке.'));
+<<<<<<< HEAD
   bot.hears('Профиль', (ctx) => ctx.reply('Профиль в разработке.'));
+=======
+>>>>>>> 5154931 (fix: resolve merge conflicts and simplify build)
 }
-
