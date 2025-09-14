@@ -272,7 +272,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         const from = s.from!, to = s.to!;
         const dist = distanceKm(from, to);
         const eta = etaMinutes(dist);
-        const price = calcPrice(
+        const { price, nightApplied } = calcPrice(
           dist,
           s.size || 'M',
           new Date(s.timeAt!),
@@ -281,7 +281,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         );
         const fromAddr = await reverseGeocode(from);
         const toAddr = await reverseGeocode(to);
-        await ctx.reply([
+        const summary = [
           `Тип: ${typeLabels[s.type!]}`,
           `Откуда: ${fromAddr}`,
           `Куда: ${toAddr}`,
@@ -293,7 +293,11 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           `Расстояние: ${dist.toFixed(1)} км`,
           `Оценка времени: ~${eta} мин`,
           `Оценка цены: ~${price} ₸`,
-        ].join('\n'), Markup.inlineKeyboard([
+        ];
+        if (nightApplied) {
+          summary.push('Ночной коэффициент применён');
+        }
+        await ctx.reply(summary.join('\n'), Markup.inlineKeyboard([
           [Markup.button.url('Открыть в 2ГИС', `https://2gis.kz/almaty?m=${from.lon},${from.lat}`)],
           [Markup.button.url('Маршрут', routeToDeeplink(from, to))],
           [Markup.button.url('До точки B', `https://2gis.kz/almaty?m=${to.lon},${to.lat}`)],
