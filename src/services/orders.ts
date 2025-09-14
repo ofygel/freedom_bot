@@ -229,6 +229,37 @@ export function assignOrder(id: number, courierId: number): Order | undefined {
   return order;
 }
 
+export function expireReservations(): void {
+  const list = readAll();
+  const now = Date.now();
+  let changed = false;
+  for (const order of list) {
+    if (
+      order.status === 'reserved' &&
+      order.reserved_until &&
+      new Date(order.reserved_until).getTime() < now
+    ) {
+      const prevCourier = order.reserved_by;
+      order.status = 'open';
+      order.reserved_by = null;
+      order.reserved_until = null;
+      order.transitions.push({ status: 'open', at: new Date(now).toISOString() });
+      changed = true;
+      if (botRef) {
+        botRef.telegram
+          .sendMessage(order.customer_id, `Заказ #${order.id} возвращён в ленту`)
+          .catch(() => {});
+        if (prevCourier) {
+          botRef.telegram
+            .sendMessage(prevCourier, `Бронь заказа #${order.id} истекла`)
+            .catch(() => {});
+        }
+      }
+    }
+  }
+  if (changed) writeAll(list);
+}
+
 export function updateOrderStatus(
   id: number,
   status: OrderStatus,
