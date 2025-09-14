@@ -2,10 +2,16 @@ import { Telegraf, Markup, Context } from 'telegraf';
 import {
   assignOrder,
   getCourierActiveOrder,
+  getOrder,
   updateOrderStatus,
   addPickupProof,
   addDeliveryProof,
+<<<<<<< HEAD
   updateOrder
+=======
+  openDispute,
+  addDisputeMessage,
+>>>>>>> 55a7169 (feat: extend courier workflow and disputes)
 } from '../services/orders.js';
 import { getSettings } from '../services/settings.js';
 
@@ -31,22 +37,32 @@ export default function driverCommands(bot: Telegraf) {
     );
   });
 
-  bot.hears('Еду к отправителю', (ctx) => handleTransition(ctx, 'assigned', 'heading_to_sender', 'У отправителя'));
-  bot.hears('У отправителя', (ctx) => handleTransition(ctx, 'heading_to_sender', 'at_sender', 'Забрал'));
+  bot.hears('Еду к отправителю', (ctx) =>
+    handleTransition(ctx, 'assigned', 'going_to_pickup', 'У отправителя')
+  );
+  bot.hears('У отправителя', (ctx) =>
+    handleTransition(ctx, 'going_to_pickup', 'at_pickup', 'Забрал')
+  );
 
   bot.hears('Забрал', async (ctx) => {
     const order = getCourierActiveOrder(ctx.from!.id);
-    if (!order || order.status !== 'at_sender') return ctx.reply('Неверный этап.');
+    if (!order || order.status !== 'at_pickup')
+      return ctx.reply('Неверный этап.');
     proofPending.set(ctx.from!.id, { orderId: order.id, type: 'pickup' });
     await ctx.reply('Введите код от отправителя или отправьте фото.');
   });
 
-  bot.hears('В пути', (ctx) => handleTransition(ctx, 'picked_up', 'en_route', 'У получателя'));
-  bot.hears('У получателя', (ctx) => handleTransition(ctx, 'en_route', 'at_recipient', 'Доставлено'));
+  bot.hears('В пути', (ctx) =>
+    handleTransition(ctx, 'picked', 'going_to_dropoff', 'У получателя')
+  );
+  bot.hears('У получателя', (ctx) =>
+    handleTransition(ctx, 'going_to_dropoff', 'at_dropoff', 'Доставлено')
+  );
 
   bot.hears('Доставлено', async (ctx) => {
     const order = getCourierActiveOrder(ctx.from!.id);
-    if (!order || order.status !== 'at_recipient') return ctx.reply('Неверный этап.');
+    if (!order || order.status !== 'at_dropoff')
+      return ctx.reply('Неверный этап.');
     proofPending.set(ctx.from!.id, { orderId: order.id, type: 'delivery' });
     await ctx.reply('Введите код от получателя или отправьте фото.');
     if (order.pay_type === 'receiver') {
@@ -57,7 +73,7 @@ export default function driverCommands(bot: Telegraf) {
   bot.hears('Открыть спор', async (ctx) => {
     const order = getCourierActiveOrder(ctx.from!.id);
     if (!order) return ctx.reply('Нет активного заказа.');
-    updateOrderStatus(order.id, 'dispute_open');
+    openDispute(order.id);
     disputePending.set(ctx.from!.id, order.id);
     await ctx.reply('Опишите проблему для модераторов.');
   });
@@ -66,15 +82,29 @@ export default function driverCommands(bot: Telegraf) {
     const uid = ctx.from!.id;
     const proof = proofPending.get(uid);
     if (proof) {
+      const order = getOrder(proof.orderId);
+      if (!order) {
+        proofPending.delete(uid);
+        return;
+      }
+      const code = ctx.message.text.trim();
       if (proof.type === 'pickup') {
-        addPickupProof(proof.orderId, ctx.message.text);
-        updateOrderStatus(proof.orderId, 'picked_up');
+        if (code !== order.pickup_code) {
+          await ctx.reply('Неверный код. Попробуйте снова или отправьте фото.');
+          return;
+        }
+        addPickupProof(proof.orderId, code);
+        updateOrderStatus(proof.orderId, 'picked');
         await ctx.reply(
           'Подтверждение получено.',
           Markup.keyboard([['В пути'], ['Открыть спор']]).resize()
         );
       } else {
-        addDeliveryProof(proof.orderId, ctx.message.text);
+        if (code !== order.dropoff_code) {
+          await ctx.reply('Неверный код. Попробуйте снова или отправьте фото.');
+          return;
+        }
+        addDeliveryProof(proof.orderId, code);
         updateOrderStatus(proof.orderId, 'delivered');
         const ord = getCourierActiveOrder(uid);
         if (ord && ord.pay_type !== 'cash') {
@@ -93,6 +123,7 @@ export default function driverCommands(bot: Telegraf) {
     const dispute = disputePending.get(uid);
     if (dispute) {
       const settings = getSettings();
+      addDisputeMessage(dispute, 'courier', ctx.message.text);
       if (settings.moderators_channel_id) {
         const text = `Спор по заказу #${dispute}\nОт: ${uid}\n${ctx.message.text}`;
         await ctx.telegram.sendMessage(settings.moderators_channel_id, text);
@@ -123,7 +154,7 @@ export default function driverCommands(bot: Telegraf) {
     const fileId = last.file_id;
     if (proof.type === 'pickup') {
       addPickupProof(proof.orderId, fileId);
-      updateOrderStatus(proof.orderId, 'picked_up');
+      updateOrderStatus(proof.orderId, 'picked');
       await ctx.reply(
         'Фото получено.',
         Markup.keyboard([['В пути'], ['Открыть спор']]).resize()

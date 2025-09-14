@@ -24,15 +24,27 @@ export interface Location {
 
 export type OrderStatus =
   | 'open'
+  | 'reserved'
   | 'assigned'
-  | 'heading_to_sender'
-  | 'at_sender'
-  | 'picked_up'
-  | 'en_route'
-  | 'at_recipient'
+  | 'going_to_pickup'
+  | 'at_pickup'
+  | 'picked'
+  | 'going_to_dropoff'
+  | 'at_dropoff'
   | 'delivered'
   | 'closed'
   | 'dispute_open';
+
+interface StatusLog {
+  status: OrderStatus;
+  at: string;
+}
+
+interface DisputeMessage {
+  from: 'courier' | 'moderator';
+  text: string;
+  at: string;
+}
 
 export interface Order {
   id: number;
@@ -51,24 +63,19 @@ export interface Order {
   amount_to_courier: number;
   payment_status: 'pending' | 'awaiting_confirm' | 'paid';
   comment?: string;
-<<<<<<< HEAD
-  status: 'new' | 'assigned' | 'delivered';
-=======
-  distance_km?: number;
-  price?: number;
->>>>>>> 32bd694 (feat: add tariff settings and admin controls)
+  status: OrderStatus;
   created_at: string;
-<<<<<<< HEAD
-  status: 'open' | 'reserved' | 'assigned';
+  updated_at: string;
   reserved_by?: number;
   reserved_until?: string;
   message_id?: number;
-=======
-  status: OrderStatus;
-  updated_at: string;
+  pickup_code: string;
+  dropoff_code: string;
   pickup_proof?: string;
   delivery_proof?: string;
->>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
+  status_log: StatusLog[];
+  payout_hold?: boolean;
+  dispute_messages?: DisputeMessage[];
 }
 
 let bot: Telegraf | null = null;
@@ -92,24 +99,24 @@ function save(orders: Order[]) {
   writeFileSync(FILE_PATH, JSON.stringify(orders, null, 2));
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
+function generateCode(): string {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
 export function createOrder(
   order: Omit<
     Order,
-    'id' | 'created_at' | 'status' | 'reserved_by' | 'reserved_until' | 'message_id'
+    | 'id'
+    | 'status'
+    | 'created_at'
+    | 'updated_at'
+    | 'status_log'
+    | 'pickup_code'
+    | 'dropoff_code'
+    | 'payout_hold'
+    | 'dispute_messages'
   >
 ): Order {
-  const orders = load();
-  const last = orders[orders.length - 1];
-  const id = last ? last.id + 1 : 1;
-  const newOrder: Order = {
-    ...order,
-    id,
-    created_at: new Date().toISOString(),
-    status: 'open'
-=======
-export function createOrder(order: Omit<Order, 'id' | 'created_at' | 'status' | 'updated_at'>): Order {
   const orders = load();
   const last = orders[orders.length - 1];
   const id = last ? last.id + 1 : 1;
@@ -117,61 +124,56 @@ export function createOrder(order: Omit<Order, 'id' | 'created_at' | 'status' | 
   const newOrder: Order = {
     ...order,
     id,
-    created_at: now,
     status: 'open',
-    updated_at: now
->>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
+    created_at: now,
+    updated_at: now,
+    pickup_code: generateCode(),
+    dropoff_code: generateCode(),
+    status_log: [{ status: 'open', at: now }],
   };
-=======
-export function createOrder(order: Omit<Order, 'id' | 'created_at' | 'status'>): Order {
-  const orders = load();
-  const last = orders[orders.length - 1];
-  const id = last ? last.id + 1 : 1;
-  const newOrder: Order = { ...order, id, status: 'new', created_at: new Date().toISOString() };
->>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
   orders.push(newOrder);
   save(orders);
   return newOrder;
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-export function updateOrder(id: number, patch: Partial<Omit<Order, 'id'>>): Order | undefined {
+function updateOrder(id: number, patch: Partial<Order>): Order | undefined {
   const orders = load();
   const idx = orders.findIndex((o) => o.id === id);
   if (idx === -1) return undefined;
-  orders[idx] = { ...orders[idx], ...patch } as Order;
+  const order = { ...orders[idx], ...patch } as Order;
+  orders[idx] = order;
   save(orders);
-  return orders[idx];
+  return order;
 }
 
-export function reserveOrder(id: number, userId: number, ttlSec = 90): Order | undefined {
+export function getOrder(id: number): Order | undefined {
   const orders = load();
-  const idx = orders.findIndex((o) => o.id === id);
-  if (idx === -1) return undefined;
-  const order = orders[idx]!;
+  return orders.find((o) => o.id === id);
+}
+
+export function getOrdersByClient(clientId: number): Order[] {
+  const orders = load();
+  return orders.filter((o) => o.client_id === clientId);
+}
+
+export function reserveOrder(
+  id: number,
+  userId: number,
+  ttlSec = 90
+): Order | undefined {
+  const orders = load();
+  const order = orders.find((o) => o.id === id);
+  if (!order) return undefined;
   const now = Date.now();
-  const expired = order.reserved_until ? new Date(order.reserved_until).getTime() < now : true;
+  const expired = order.reserved_until
+    ? new Date(order.reserved_until).getTime() < now
+    : true;
   if (order.status === 'open' || (order.status === 'reserved' && expired)) {
     order.status = 'reserved';
     order.reserved_by = userId;
     order.reserved_until = new Date(now + ttlSec * 1000).toISOString();
-    orders[idx] = order;
-    save(orders);
-    return order;
-  }
-  return undefined;
-}
-
-export function assignOrder(id: number, userId: number): Order | undefined {
-  const orders = load();
-  const idx = orders.findIndex((o) => o.id === id);
-  if (idx === -1) return undefined;
-  const order = orders[idx]!;
-  if (order.status === 'reserved' && order.reserved_by === userId) {
-    order.status = 'assigned';
-    orders[idx] = order;
+    order.updated_at = new Date().toISOString();
+    order.status_log.push({ status: 'reserved', at: order.updated_at });
     save(orders);
     return order;
   }
@@ -183,53 +185,59 @@ export function releaseExpiredReservations(): Order[] {
   const now = Date.now();
   const updated: Order[] = [];
   for (const order of orders) {
-    if (order.status === 'reserved' && order.reserved_until && new Date(order.reserved_until).getTime() < now) {
+    if (
+      order.status === 'reserved' &&
+      order.reserved_until &&
+      new Date(order.reserved_until).getTime() < now
+    ) {
       order.status = 'open';
       delete order.reserved_by;
       delete order.reserved_until;
+      order.updated_at = new Date().toISOString();
+      order.status_log.push({ status: 'open', at: order.updated_at });
       updated.push(order);
     }
   }
-  if (updated.length) {
-    save(orders);
-  }
+  if (updated.length) save(orders);
   return updated;
-}
-
-=======
->>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
-=======
->>>>>>> 270ffc9 (feat: add support tickets and proxy chat)
-export function getOrder(id: number): Order | undefined {
-  const orders = load();
-  return orders.find((o) => o.id === id);
-}
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-
-export function getCourierActiveOrder(courier_id: number): Order | undefined {
-  const orders = load();
-  return orders.find((o) => o.courier_id === courier_id && o.status !== 'closed');
 }
 
 export function assignOrder(id: number, courier_id: number): Order | undefined {
   const orders = load();
-  const order = orders.find((o) => o.id === id && o.status === 'open');
+  const order = orders.find((o) => o.id === id);
   if (!order) return undefined;
-  order.courier_id = courier_id;
-  order.status = 'assigned';
-  order.updated_at = new Date().toISOString();
-  save(orders);
-  return order;
+  if (
+    order.status === 'open' ||
+    (order.status === 'reserved' && order.reserved_by === courier_id)
+  ) {
+    order.courier_id = courier_id;
+    order.status = 'assigned';
+    order.updated_at = new Date().toISOString();
+    order.status_log.push({ status: 'assigned', at: order.updated_at });
+    save(orders);
+    return order;
+  }
+  return undefined;
 }
 
-export function updateOrderStatus(id: number, status: OrderStatus): Order | undefined {
+export function getCourierActiveOrder(courier_id: number): Order | undefined {
+  const orders = load();
+  return orders.find(
+    (o) => o.courier_id === courier_id && o.status !== 'closed'
+  );
+}
+
+export function updateOrderStatus(
+  id: number,
+  status: OrderStatus
+): Order | undefined {
   const orders = load();
   const order = orders.find((o) => o.id === id);
   if (!order) return undefined;
   order.status = status;
-  order.updated_at = new Date().toISOString();
+  const now = new Date().toISOString();
+  order.updated_at = now;
+  order.status_log.push({ status, at: now });
   save(orders);
   return order;
 }
@@ -268,48 +276,34 @@ export function checkOrderTimeouts(
       delete order.courier_id;
       order.status = 'open';
       order.updated_at = new Date().toISOString();
+      order.status_log.push({ status: 'open', at: order.updated_at });
       changed = true;
       onTimeout(order);
     }
   }
   if (changed) save(orders);
 }
->>>>>>> b73ce5b (feat: add courier workflow and dispute handling)
-=======
-export function updateOrder(id: number, data: Partial<Order>): Order | undefined {
+
+export function openDispute(id: number): Order | undefined {
   const orders = load();
-  const idx = orders.findIndex((o) => o.id === id);
-  if (idx === -1) return undefined;
-  const updated = { ...orders[idx], ...data } as Order;
-  orders[idx] = updated;
+  const order = orders.find((o) => o.id === id);
+  if (!order) return undefined;
+  order.status = 'dispute_open';
+  order.payout_hold = true;
+  order.dispute_messages = [];
+  const now = new Date().toISOString();
+  order.updated_at = now;
+  order.status_log.push({ status: 'dispute_open', at: now });
   save(orders);
-  return updated;
-}
->>>>>>> bcad4d7 (feat: add payment fields and flows)
-=======
-
-export function getOrdersByClient(clientId: number): Order[] {
-  const orders = load();
-  return orders.filter((o) => o.client_id === clientId);
+  return order;
 }
 
-function updateOrder(id: number, data: Partial<Order>): Order | undefined {
-  const orders = load();
-  const index = orders.findIndex((o) => o.id === id);
-  if (index === -1) return undefined;
-  const existing = orders[index];
-  if (!existing) return undefined;
-  const updated: Order = { ...existing, ...data, id: existing.id };
-  orders[index] = updated;
-  save(orders);
-  return updated;
-}
-
-export function updateOrderStatus(
+export function addDisputeMessage(
   id: number,
-  status: Order['status'],
-  courierId?: number
+  from: 'courier' | 'moderator',
+  text: string
 ): Order | undefined {
+<<<<<<< HEAD
   const data: Partial<Order> = { status };
   if (courierId !== undefined) {
     data.courier_id = courierId;
@@ -388,3 +382,27 @@ export function getOrderAudit(id: number): OrderAuditRecord[] {
     .map((line) => JSON.parse(line) as OrderAuditRecord)
     .filter((r) => r.order_id === id);
 }
+=======
+  const orders = load();
+  const order = orders.find((o) => o.id === id);
+  if (!order || order.status !== 'dispute_open') return undefined;
+  if (!order.dispute_messages) order.dispute_messages = [];
+  order.dispute_messages.push({ from, text, at: new Date().toISOString() });
+  order.updated_at = new Date().toISOString();
+  save(orders);
+  return order;
+}
+
+export function resolveDispute(id: number): Order | undefined {
+  const orders = load();
+  const order = orders.find((o) => o.id === id);
+  if (!order) return undefined;
+  order.payout_hold = false;
+  const now = new Date().toISOString();
+  order.updated_at = now;
+  order.status = 'closed';
+  order.status_log.push({ status: 'closed', at: now });
+  save(orders);
+  return order;
+}
+>>>>>>> 55a7169 (feat: extend courier workflow and disputes)
