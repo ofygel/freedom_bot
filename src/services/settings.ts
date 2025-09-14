@@ -24,6 +24,11 @@ export interface Settings {
   wait_per_min?: number;
 }
 
+export type BindingKey =
+  | 'drivers_channel_id'
+  | 'moderators_channel_id'
+  | 'verify_channel_id';
+
 const defaultPolygon: Point[] = [
   { lat: 43.0, lon: 76.6 },
   { lat: 43.6, lon: 76.6 },
@@ -62,6 +67,12 @@ export function getSettings(): Settings {
 export function saveSettings(s: Settings) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(s, null, 2));
+}
+
+export function saveBinding(key: BindingKey, value: string) {
+  const s = getSettings();
+  (s as any)[key] = value;
+  saveSettings(s);
 }
 
 export function updateSetting<K extends keyof Settings>(key: K, value: Settings[K]) {
