@@ -14,6 +14,7 @@ export type OrderStatus =
   | 'assigned'
   | 'picked_up'
   | 'delivered'
+  | 'awaiting_confirm'
   | 'closed'
   | 'canceled';
 

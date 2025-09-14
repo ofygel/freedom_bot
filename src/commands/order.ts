@@ -86,7 +86,12 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         if (!text) return;
         s.options = text;
         s.step = 6;
-        await ctx.reply('Оплата? (наличные/карта)', Markup.keyboard(['Наличные', 'Карта']).oneTime().resize());
+        await ctx.reply(
+          'Оплата? (наличные/карта/получатель платит)',
+          Markup.keyboard(['Наличные', 'Карта', 'Получатель платит'])
+            .oneTime()
+            .resize()
+        );
         break;
       case 6:
         if (!text) return;
@@ -119,6 +124,17 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           [Markup.button.url('Маршрут', routeToDeeplink(from, to))],
           [Markup.button.url('До точки B', `https://2gis.kz/almaty?m=${to.lon},${to.lat}`)],
         ]));
+
+        if (s.payment === 'Получатель платит' && process.env.PROVIDER_TOKEN) {
+          await ctx.replyWithInvoice({
+            title: 'Оплата доставки',
+            description: `Заказ на ~${price} ₸`,
+            provider_token: process.env.PROVIDER_TOKEN,
+            currency: 'KZT',
+            prices: [{ label: 'Доставка', amount: Math.round(price * 100) }],
+            payload: 'order_payment',
+          });
+        }
         sessions.delete(ctx.from!.id);
         break;
     }
