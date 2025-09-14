@@ -2,6 +2,7 @@
 import { Telegraf, Markup, Context } from 'telegraf';
 import {
   assignOrder,
+  reserveOrder,
   getCourierActiveOrder,
   getOrder,
   updateOrderStatus,
@@ -49,6 +50,30 @@ export default function driverCommands(bot: Telegraf) {
         ['Скрыть на 1 час'],
         ['Открыть спор']
       ]).resize()
+    );
+  });
+
+  bot.action(/reserve:(\d+)/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    const uid = ctx.from!.id;
+    if (!isCourierOnline(uid)) {
+      await ctx.answerCbQuery('Сначала включите режим Онлайн.');
+      return;
+    }
+    if (isOrderHiddenForCourier(uid, id)) {
+      await ctx.answerCbQuery('Заказ скрыт.');
+      return;
+    }
+    const order = reserveOrder(id, uid);
+    if (!order) {
+      await ctx.answerCbQuery('Не удалось зарезервировать.');
+      return;
+    }
+    await ctx.answerCbQuery('Зарезервировано');
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    await ctx.telegram.sendMessage(
+      uid,
+      `Заказ #${order.id} зарезервирован. Отправьте /assign ${order.id} в личные сообщения боту.`
     );
   });
 

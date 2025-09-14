@@ -46,8 +46,13 @@ export interface Order {
   courier_id?: number | null;
   from: Point;
   to: Point;
+  type: string;
+  time: string;
+  options: string | null;
+  size: 'S' | 'M' | 'L';
+  pay_type: 'cash' | 'card' | 'receiver';
   comment: string | null;
-  price_estimate: number;
+  price: number;
   status: OrderStatus;
   reserved_by: number | null;
   reserved_until: string | null;
@@ -62,8 +67,13 @@ interface CreateOrderInput {
   customer_id: number;
   from: Point;
   to: Point;
+  type: string;
+  time: string;
+  options: string | null;
+  size: 'S' | 'M' | 'L';
+  pay_type: 'cash' | 'card' | 'receiver';
   comment: string | null;
-  price_estimate: number;
+  price: number;
 }
 
 function readAll(): Order[] {
@@ -83,8 +93,13 @@ export function createOrder(input: CreateOrderInput): Order {
     customer_id: input.customer_id,
     from: input.from,
     to: input.to,
+    type: input.type,
+    time: input.time,
+    options: input.options,
+    size: input.size,
+    pay_type: input.pay_type,
     comment: input.comment,
-    price_estimate: input.price_estimate,
+    price: input.price,
     status: 'open',
     reserved_by: null,
     reserved_until: null,
