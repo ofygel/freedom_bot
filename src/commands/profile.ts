@@ -163,6 +163,9 @@ async function finalize(ctx: Context, uid: number, data: Required<CourierProfile
     );
     await ctx.telegram.sendPhoto(settings.verify_channel_id, profile.selfie);
     upsertCourier({ ...profile, verifyMsgId: verifyMessage.message_id });
+    setTimeout(() => {
+      ctx.telegram.deleteMessage(settings.verify_channel_id!, verifyMessage.message_id).catch(() => {});
+    }, 2 * 60 * 60 * 1000);
   }
   await ctx.reply('Анкета отправлена на проверку.', Markup.removeKeyboard());
 }

@@ -4,7 +4,8 @@ import {
   getCourierActiveOrder,
   updateOrderStatus,
   addPickupProof,
-  addDeliveryProof
+  addDeliveryProof,
+  updateOrder
 } from '../services/orders.js';
 import { getSettings } from '../services/settings.js';
 
@@ -48,6 +49,9 @@ export default function driverCommands(bot: Telegraf) {
     if (!order || order.status !== 'at_recipient') return ctx.reply('Неверный этап.');
     proofPending.set(ctx.from!.id, { orderId: order.id, type: 'delivery' });
     await ctx.reply('Введите код от получателя или отправьте фото.');
+    if (order.pay_type === 'receiver') {
+      await ctx.reply('Напомните получателю об оплате заказа.');
+    }
   });
 
   bot.hears('Открыть спор', async (ctx) => {
@@ -72,8 +76,16 @@ export default function driverCommands(bot: Telegraf) {
       } else {
         addDeliveryProof(proof.orderId, ctx.message.text);
         updateOrderStatus(proof.orderId, 'delivered');
-        updateOrderStatus(proof.orderId, 'closed');
-        await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
+        const ord = getCourierActiveOrder(uid);
+        if (ord && ord.pay_type !== 'cash') {
+          await ctx.reply(
+            'Ожидайте оплату от клиента.',
+            Markup.keyboard([['Оплату получил'], ['Открыть спор']]).resize()
+          );
+        } else {
+          updateOrderStatus(proof.orderId, 'closed');
+          await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
+        }
       }
       proofPending.delete(uid);
       return;
@@ -88,6 +100,16 @@ export default function driverCommands(bot: Telegraf) {
       await ctx.reply('Спор открыт, модераторы свяжутся.');
       disputePending.delete(uid);
     }
+  });
+
+  bot.hears('Оплату получил', async (ctx) => {
+    const order = getCourierActiveOrder(ctx.from!.id);
+    if (!order || order.status !== 'delivered') {
+      return ctx.reply('Неверный этап.');
+    }
+    updateOrder(order.id, { payment_status: 'paid' });
+    updateOrderStatus(order.id, 'closed');
+    await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
   });
 
   bot.on('photo', async (ctx) => {
@@ -109,8 +131,16 @@ export default function driverCommands(bot: Telegraf) {
     } else {
       addDeliveryProof(proof.orderId, fileId);
       updateOrderStatus(proof.orderId, 'delivered');
-      updateOrderStatus(proof.orderId, 'closed');
-      await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
+      const ord = getCourierActiveOrder(uid);
+      if (ord && ord.pay_type !== 'cash') {
+        await ctx.reply(
+          'Ожидайте оплату от клиента.',
+          Markup.keyboard([['Оплату получил'], ['Открыть спор']]).resize()
+        );
+      } else {
+        updateOrderStatus(proof.orderId, 'closed');
+        await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
+      }
     }
     proofPending.delete(uid);
   });
@@ -128,8 +158,12 @@ function handleTransition(
     return;
   }
   updateOrderStatus(order.id, toStatus);
+  const extra = [nextButton];
   ctx.reply(
     'Статус обновлён.',
-    Markup.keyboard([[nextButton], ['Открыть спор']]).resize()
+    Markup.keyboard([extra, ['Открыть спор']]).resize()
   );
+  if (toStatus === 'at_recipient' && order.pay_type === 'receiver') {
+    ctx.reply('Передайте получателю, что оплата необходима при получении.');
+  }
 }

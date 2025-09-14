@@ -77,8 +77,44 @@ export default function orderCommands(bot: Telegraf) {
         return ctx.reply(summary, Markup.keyboard([['Подтвердить заказ'], ['Отмена']]).resize());
       }
       case 'confirm': {
+<<<<<<< HEAD
         if (text !== 'Подтвердить заказ') return ctx.reply('Подтвердите или отмените.');
         createOrder({
+=======
+        if (text !== 'Подтвердить заказ') {
+          return ctx.reply('Подтвердите или отмените.');
+=======
+          if (text !== 'Пропустить') {
+            state.data.comment = text;
+          }
+          const settings = getSettings();
+          const { distance, price } = calcPrice(
+            state.data.from.lat && state.data.from.lon ? { lat: state.data.from.lat, lon: state.data.from.lon } : undefined,
+            state.data.to.lat && state.data.to.lon ? { lat: state.data.to.lat, lon: state.data.to.lon } : undefined,
+            state.data.wait_minutes || 0,
+            state.data.size,
+            settings
+          );
+          state.data.distance_km = distance;
+          state.data.price = price;
+          state.step = 'confirm';
+          const summary = `Тип: ${state.data.cargo_type}\nОткуда: ${state.data.from.addr}\nКуда: ${state.data.to.addr}\nРазмер: ${state.data.size}\nОплата: ${state.data.pay_type}\nСтоимость: ${price} ₸`;
+          return ctx.reply(summary, Markup.keyboard([['Подтвердить заказ'], ['Отмена']]).resize());
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
+        }
+        case 'confirm': {
+          if (text !== 'Подтвердить заказ') {
+            return ctx.reply('Подтвердите или отмените.');
+          }
+        const user = getUser(uid);
+        if (!user) {
+          states.delete(uid);
+          return ctx.reply('Не найден пользователь.');
+        }
+<<<<<<< HEAD
+        const payment_status = state.data.pay_type === 'cash' ? 'pending' : 'awaiting_confirm';
+        const order = createOrder({
+>>>>>>> f6a2c0c (feat: add receiver payment flow and secure data)
           client_id: uid,
           from: state.data.from,
           to: state.data.to,
@@ -95,7 +131,63 @@ export default function orderCommands(bot: Telegraf) {
           comment: ''
         });
         states.delete(uid);
+<<<<<<< HEAD
         return ctx.reply('Заказ создан', Markup.removeKeyboard());
+=======
+        await ctx.reply(`Заказ #${order.id} создан.`, Markup.removeKeyboard());
+        if (order.pay_type === 'p2p') {
+          const msg = await ctx.reply('Реквизиты для оплаты: 1234567890\nПосле перевода отправьте скрин или ID.');
+          setTimeout(() => {
+            ctx.telegram.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
+          }, 2 * 60 * 60 * 1000);
+          pendingP2P.set(uid, order.id);
+        }
+        if (order.pay_type === 'receiver') {
+          const msg = await ctx.reply('Передайте получателю: оплатить заказ курьеру при получении.');
+          setTimeout(() => {
+            ctx.telegram.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
+          }, 2 * 60 * 60 * 1000);
+        }
+        const settings = getSettings();
+        if (settings.drivers_channel_id) {
+          const text = `Новый заказ #${order.id}\nОткуда: ${order.from.addr}\nКуда: ${order.to.addr}`;
+<<<<<<< HEAD
+<<<<<<< HEAD
+          const extra =
+            order.from.lat && order.to.lat
+              ? Markup.inlineKeyboard([
+                  [Markup.button.url('Открыть в 2ГИС', pointDeeplink(order.from as any))],
+                  [Markup.button.url('Маршрут в 2ГИС', routeDeeplink({ from: order.from as any, to: order.to as any }))],
+                  [Markup.button.url('До точки B', routeToDeeplink(order.to as any))]
+                ])
+              : undefined;
+          await ctx.telegram.sendMessage(settings.drivers_channel_id, text, extra ? extra : undefined);
+=======
+          const msg = await ctx.telegram.sendMessage(
+            settings.drivers_channel_id,
+            text,
+            Markup.inlineKeyboard([
+              [Markup.button.callback('Принять', `accept_${order.id}`)]
+            ])
+          );
+          updateOrder(order.id, { message_id: msg.message_id });
+>>>>>>> 0cb5d4a (feat: add order reservation workflow)
+=======
+          const buttons: any[] = [];
+          if (order.pay_type === 'cash') {
+            buttons.push(Markup.button.callback('Нал получены', `cash_paid:${order.id}`));
+          }
+          if (order.pay_type === 'p2p') {
+            buttons.push(Markup.button.callback('Поступление проверил', `p2p_confirm:${order.id}`));
+          }
+          const extra = buttons.length
+            ? { reply_markup: { inline_keyboard: [buttons] } }
+            : undefined;
+          await ctx.telegram.sendMessage(settings.drivers_channel_id, text, extra);
+>>>>>>> bcad4d7 (feat: add payment fields and flows)
+        }
+        return;
+>>>>>>> f6a2c0c (feat: add receiver payment flow and secure data)
       }
     }
   });
