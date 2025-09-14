@@ -20,6 +20,8 @@ import {
   isOrderHiddenForCourier
 } from '../services/courierState.js';
 import { getSettings } from '../services/settings.js';
+import { routeToDeeplink } from '../utils/twoGis';
+import { reverseGeocode } from '../utils/geocode';
 
 interface ProofState {
   orderId: number;
@@ -70,11 +72,72 @@ export default function driverCommands(bot: Telegraf) {
       return;
     }
     await ctx.answerCbQuery('Зарезервировано');
-    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => {});
+    const text = `${(ctx.callbackQuery.message as any).text}\nЗанято`;
+    await ctx.editMessageText(text).catch(() => {});
+    await ctx.editMessageReplyMarkup(
+      Markup.inlineKeyboard([
+        [
+          Markup.button.url('Маршрут', routeToDeeplink(order.from, order.to)),
+          Markup.button.url(
+            'До точки B',
+            `https://2gis.kz/almaty?m=${order.to.lon},${order.to.lat}`
+          ),
+        ],
+        [Markup.button.callback('Детали', `details:${order.id}`)],
+      ]).reply_markup
+    ).catch(() => {});
     await ctx.telegram.sendMessage(
       uid,
       `Заказ #${order.id} зарезервирован. Отправьте /assign ${order.id} в личные сообщения боту.`
     );
+  });
+
+  bot.action(/details:(\d+)/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    const order = getOrder(id);
+    if (!order) {
+      await ctx.answerCbQuery('Не найдено');
+      return;
+    }
+    const fromAddr = await reverseGeocode(order.from);
+    const toAddr = await reverseGeocode(order.to);
+    const pay =
+      order.pay_type === 'card'
+        ? 'Карта'
+        : order.pay_type === 'receiver'
+        ? 'Получатель платит'
+        : 'Наличные';
+    const msg = [
+      `#${order.id}`,
+      `Откуда: ${fromAddr}`,
+      `Куда: ${toAddr}`,
+      `Время: ${order.time}`,
+      `Оплата: ${pay}`,
+      `Габариты: ${order.size}`,
+      `Опции: ${order.options || 'нет'}`,
+      `Комментарий: ${order.comment || ''}`,
+      `Цена: ~${order.price} ₸`,
+    ].join('\n');
+    await ctx.telegram.sendMessage(
+      ctx.from!.id,
+      msg,
+      Markup.inlineKeyboard([
+        [
+          Markup.button.url('Маршрут', routeToDeeplink(order.from, order.to)),
+          Markup.button.url(
+            'До точки B',
+            `https://2gis.kz/almaty?m=${order.to.lon},${order.to.lat}`
+          ),
+        ],
+      ])
+    );
+    await ctx.answerCbQuery();
+  });
+
+  bot.action(/hide:(\d+)/, async (ctx) => {
+    const id = Number(ctx.match[1]);
+    hideOrderForCourier(ctx.from!.id, id);
+    await ctx.answerCbQuery('Скрыто на 1 час');
   });
 
   bot.hears('Еду к отправителю', (ctx) =>
