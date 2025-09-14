@@ -1,4 +1,5 @@
 import { Telegraf, Markup, Context } from 'telegraf';
+<<<<<<< HEAD
 import {
   parse2GisLink,
   reverseGeocode,
@@ -8,6 +9,15 @@ import {
   routeToDeeplink
 } from '../utils/twoGis.js';
 import { createOrder } from '../services/orders.js';
+=======
+import { parse2GisLink } from '../utils/twoGis.js';
+import {
+  createOrder,
+  updateOrder,
+  reserveOrder,
+  assignOrder
+} from '../services/orders.js';
+>>>>>>> 0cb5d4a (feat: add order reservation workflow)
 import { getSettings } from '../services/settings.js';
 import { getUser } from '../services/users.js';
 import {
@@ -503,6 +513,7 @@ export default function orderCommands(bot: Telegraf) {
         const settings = getSettings();
         if (settings.drivers_channel_id) {
           const text = `Новый заказ #${order.id}\nОткуда: ${order.from.addr}\nКуда: ${order.to.addr}`;
+<<<<<<< HEAD
           const extra =
             order.from.lat && order.to.lat
               ? Markup.inlineKeyboard([
@@ -512,9 +523,54 @@ export default function orderCommands(bot: Telegraf) {
                 ])
               : undefined;
           await ctx.telegram.sendMessage(settings.drivers_channel_id, text, extra ? extra : undefined);
+=======
+          const msg = await ctx.telegram.sendMessage(
+            settings.drivers_channel_id,
+            text,
+            Markup.inlineKeyboard([
+              [Markup.button.callback('Принять', `accept_${order.id}`)]
+            ])
+          );
+          updateOrder(order.id, { message_id: msg.message_id });
+>>>>>>> 0cb5d4a (feat: add order reservation workflow)
         }
         return;
       }
     }
+  });
+
+  bot.action(/accept_(\d+)/, async (ctx) => {
+    const orderId = Number(ctx.match[1]);
+    const reserved = reserveOrder(orderId, ctx.from!.id);
+    if (!reserved) {
+      return ctx.answerCbQuery('Заказ уже взят или в работе');
+    }
+    const expire = new Date(reserved.reserved_until!).toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    const username = ctx.from?.username || ctx.from?.first_name || '';
+    await ctx.editMessageText(
+      `Новый заказ #${reserved.id}\nОткуда: ${reserved.from.addr}\nКуда: ${reserved.to.addr}\nЗабронирован: ${username} до ${expire}`,
+      Markup.inlineKeyboard([[Markup.button.callback('Подтвердить старт', `start_${reserved.id}`)]])
+    );
+    const settings = getSettings();
+    if (settings.drivers_channel_id) {
+      await ctx.telegram.sendMessage(settings.drivers_channel_id, `Заказ #${reserved.id} принял ${username}`);
+    }
+    return ctx.answerCbQuery('Вы забронировали заказ на 90 сек');
+  });
+
+  bot.action(/start_(\d+)/, async (ctx) => {
+    const orderId = Number(ctx.match[1]);
+    const assigned = assignOrder(orderId, ctx.from!.id);
+    if (!assigned) {
+      return ctx.answerCbQuery('Вы не бронировали этот заказ');
+    }
+    const username = ctx.from?.username || ctx.from?.first_name || '';
+    await ctx.editMessageText(
+      `Заказ #${assigned.id}\nОткуда: ${assigned.from.addr}\nКуда: ${assigned.to.addr}\nВыполняет: ${username}`
+    );
+    return ctx.answerCbQuery('Старт подтверждён');
   });
 }
