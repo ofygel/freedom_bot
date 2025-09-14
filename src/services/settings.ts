@@ -5,7 +5,21 @@ const FILE_PATH = 'data/settings.json';
 export interface Settings {
   verify_channel_id?: number;
   drivers_channel_id?: number;
+<<<<<<< HEAD
   moderators_channel_id?: number;
+=======
+  base_price?: number;
+  per_km?: number;
+  min_price?: number;
+  wait_free?: number;
+  wait_per_min?: number;
+  surcharge_S?: number;
+  surcharge_M?: number;
+  surcharge_L?: number;
+  night_multiplier?: number;
+  night_active?: boolean;
+  city_polygon?: { lat: number; lon: number }[];
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
 }
 
 function load(): Settings {
@@ -23,9 +37,9 @@ function save(settings: Settings) {
   writeFileSync(FILE_PATH, JSON.stringify(settings, null, 2));
 }
 
-export function updateSetting(key: keyof Settings, value: number) {
+export function updateSetting(key: keyof Settings, value: any) {
   const current = load();
-  current[key] = value;
+  (current as any)[key] = value;
   save(current);
 }
 

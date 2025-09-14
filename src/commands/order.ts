@@ -1,6 +1,7 @@
 import { Telegraf, Markup, Context } from 'telegraf';
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 import {
   parse2GisLink,
   reverseGeocode,
@@ -9,6 +10,11 @@ import {
   routeDeeplink,
   routeToDeeplink
 } from '../utils/twoGis.js';
+=======
+import { parse2GisLink } from '../utils/twoGis.js';
+import { pointInPolygon } from '../utils/geo.js';
+import { calcPrice } from '../utils/pricing.js';
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
 import { createOrder } from '../services/orders.js';
 =======
 import { parse2GisLink } from '../utils/twoGis.js';
@@ -69,6 +75,7 @@ interface WizardState {
     | 'size'
     | 'fragile'
     | 'thermobox'
+    | 'wait'
     | 'change'
     | 'pay'
     | 'amount_total'
@@ -97,6 +104,10 @@ function startWizard(ctx: Context) {
 
 export default function orderCommands(bot: Telegraf) {
   bot.hears('Создать заказ', (ctx) => {
+    const hour = (new Date().getUTCHours() + 6) % 24;
+    if (hour < 8 || hour >= 23) {
+      return ctx.reply('Заказы принимаются с 08:00 до 23:00 по времени Алматы.');
+    }
     const user = getUser(ctx.from!.id);
     if (!user || !user.agreed) return ctx.reply('Сначала поделитесь контактом и согласитесь с правилами через /start');
     startWizard(ctx);
@@ -220,6 +231,7 @@ export default function orderCommands(bot: Telegraf) {
       case 'from_link_wait': {
         const parsed = await parse2GisLink(text);
 <<<<<<< HEAD
+<<<<<<< HEAD
         if (!parsed) return ctx.reply('Не удалось разобрать ссылку.');
         if ('from' in parsed) {
           if (!isInAlmaty(parsed.from) || !isInAlmaty(parsed.to)) {
@@ -329,13 +341,38 @@ export default function orderCommands(bot: Telegraf) {
             lon: parsed.to.lon
           };
 >>>>>>> 3c7234d (feat: improve 2gis integration)
+=======
+        const settings = getSettings();
+        if (parsed && 'from' in parsed) {
+          const from = { addr: '2ГИС точка', lat: parsed.from.lat, lon: parsed.from.lon };
+          const to = { addr: '2ГИС точка', lat: parsed.to.lat, lon: parsed.to.lon };
+          if (settings.city_polygon && !pointInPolygon(from, settings.city_polygon)) {
+            return ctx.reply('Адрес вне зоны обслуживания, отправьте другой адрес.');
+          }
+          if (settings.city_polygon && !pointInPolygon(to, settings.city_polygon)) {
+            return ctx.reply('Адрес вне зоны обслуживания, отправьте другой адрес.');
+          }
+          state.data.from = from;
+          state.data.to = to;
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
           state.step = 'size';
           return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
         }
 <<<<<<< HEAD
+<<<<<<< HEAD
         if (text === 'К времени') {
           state.step = 'time_input';
           return ctx.reply('Введите время в формате ЧЧ:ММ.');
+=======
+        if (parsed) {
+          const from = { addr: '2ГИС точка', lat: parsed.lat, lon: parsed.lon };
+          if (settings.city_polygon && !pointInPolygon(from, settings.city_polygon)) {
+            return ctx.reply('Адрес вне зоны обслуживания, отправьте другой адрес.');
+          }
+          state.data.from = from;
+        } else {
+          state.data.from = { addr: text };
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
         }
         return ctx.reply('Выберите вариант из клавиатуры.');
       }
@@ -389,13 +426,29 @@ export default function orderCommands(bot: Telegraf) {
       }
       case 'to': {
         const parsed = await parse2GisLink(text);
+        const settings = getSettings();
         if (parsed) {
+<<<<<<< HEAD
           const point = 'from' in parsed ? parsed.to : parsed;
           const addr = await reverseGeocode(point);
           if (addr) {
             state.data.to = { addr: normalizeAddress(addr), lat: point.lat, lon: point.lon };
             state.step = 'size';
             return ctx.reply('Размер: S, M или L?', Markup.keyboard([['S', 'M', 'L'], ['Отмена']]).resize());
+=======
+          if ('from' in parsed) {
+            const to = { addr: '2ГИС точка', lat: parsed.to.lat, lon: parsed.to.lon };
+            if (settings.city_polygon && !pointInPolygon(to, settings.city_polygon)) {
+              return ctx.reply('Адрес вне зоны обслуживания, отправьте другой адрес.');
+            }
+            state.data.to = to;
+          } else {
+            const to = { addr: '2ГИС точка', lat: parsed.lat, lon: parsed.lon };
+            if (settings.city_polygon && !pointInPolygon(to, settings.city_polygon)) {
+              return ctx.reply('Адрес вне зоны обслуживания, отправьте другой адрес.');
+            }
+            state.data.to = to;
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
           }
           state.data.tmp = { point, text };
           state.step = 'to_confirm';
@@ -441,21 +494,30 @@ export default function orderCommands(bot: Telegraf) {
         state.step = 'thermobox';
         return ctx.reply('Нужен термобокс? (Да/Нет)', Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize());
       }
-      case 'thermobox': {
-        state.data.thermobox = text === 'Да';
-        state.step = 'change';
-        return ctx.reply('Нужна сдача? (Да/Нет)', Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize());
-      }
-      case 'change': {
-        state.data.cash_change_needed = text === 'Да';
-        state.step = 'pay';
-        return ctx.reply('Как оплатить?', Markup.keyboard([
-          ['Наличные курьеру'],
-          ['Перевод на карту'],
-          ['Получатель платит'],
-          ['Отмена']
-        ]).resize());
-      }
+        case 'thermobox': {
+          state.data.thermobox = text === 'Да';
+          state.step = 'wait';
+          return ctx.reply('Сколько минут ожидания? (число)', Markup.keyboard([['0'], ['Отмена']]).resize());
+        }
+        case 'wait': {
+          const wait = Number(text);
+          if (isNaN(wait) || wait < 0) {
+            return ctx.reply('Введите корректное число минут.');
+          }
+          state.data.wait_minutes = wait;
+          state.step = 'change';
+          return ctx.reply('Нужна сдача? (Да/Нет)', Markup.keyboard([['Да', 'Нет'], ['Отмена']]).resize());
+        }
+        case 'change': {
+          state.data.cash_change_needed = text === 'Да';
+          state.step = 'pay';
+          return ctx.reply('Как оплатить?', Markup.keyboard([
+            ['Наличные курьеру'],
+            ['Перевод на карту'],
+            ['Получатель платит'],
+            ['Отмена']
+          ]).resize());
+        }
       case 'pay': {
         const map: Record<string, string> = {
           'Наличные курьеру': 'cash',
@@ -487,6 +549,7 @@ export default function orderCommands(bot: Telegraf) {
         return ctx.reply('Комментарий? Если нет, отправьте "Пропустить".');
       }
       case 'comment': {
+<<<<<<< HEAD
         if (text !== 'Пропустить') {
           state.data.comment = text;
         }
@@ -534,12 +597,35 @@ export default function orderCommands(bot: Telegraf) {
       case 'confirm': {
         if (text !== 'Подтвердить заказ') {
           return ctx.reply('Подтвердите или отмените.');
+=======
+          if (text !== 'Пропустить') {
+            state.data.comment = text;
+          }
+          const settings = getSettings();
+          const { distance, price } = calcPrice(
+            state.data.from.lat && state.data.from.lon ? { lat: state.data.from.lat, lon: state.data.from.lon } : undefined,
+            state.data.to.lat && state.data.to.lon ? { lat: state.data.to.lat, lon: state.data.to.lon } : undefined,
+            state.data.wait_minutes || 0,
+            state.data.size,
+            settings
+          );
+          state.data.distance_km = distance;
+          state.data.price = price;
+          state.step = 'confirm';
+          const summary = `Тип: ${state.data.cargo_type}\nОткуда: ${state.data.from.addr}\nКуда: ${state.data.to.addr}\nРазмер: ${state.data.size}\nОплата: ${state.data.pay_type}\nСтоимость: ${price} ₸`;
+          return ctx.reply(summary, Markup.keyboard([['Подтвердить заказ'], ['Отмена']]).resize());
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
         }
+        case 'confirm': {
+          if (text !== 'Подтвердить заказ') {
+            return ctx.reply('Подтвердите или отмените.');
+          }
         const user = getUser(uid);
         if (!user) {
           states.delete(uid);
           return ctx.reply('Не найден пользователь.');
         }
+<<<<<<< HEAD
         const payment_status = state.data.pay_type === 'p2p' ? 'awaiting_confirm' : 'pending';
         const order = createOrder({
           client_id: uid,
@@ -556,6 +642,23 @@ export default function orderCommands(bot: Telegraf) {
           payment_status,
           comment: state.data.comment
         });
+=======
+          const order = createOrder({
+            client_id: uid,
+            cargo_type: state.data.cargo_type,
+            from: state.data.from,
+            to: state.data.to,
+            size: state.data.size,
+            fragile: state.data.fragile,
+            thermobox: state.data.thermobox,
+            wait_minutes: state.data.wait_minutes,
+            cash_change_needed: state.data.cash_change_needed,
+            pay_type: state.data.pay_type,
+            comment: state.data.comment,
+            distance_km: state.data.distance_km,
+            price: state.data.price
+          });
+>>>>>>> 32bd694 (feat: add tariff settings and admin controls)
         states.delete(uid);
         await ctx.reply(`Заказ #${order.id} создан.`, Markup.removeKeyboard());
         if (order.pay_type === 'p2p') {

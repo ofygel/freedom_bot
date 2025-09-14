@@ -35,3 +35,8 @@ export function getUser(id: number): User | undefined {
   const store = load();
   return store[id];
 }
+
+export function getAllUsers(): User[] {
+  const store = load();
+  return Object.values(store);
+}
