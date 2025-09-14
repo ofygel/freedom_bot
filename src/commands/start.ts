@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { Telegraf, Markup, Context } from 'telegraf';
+=======
+import { Telegraf, Context, Markup } from 'telegraf';
+>>>>>>> 0cb5d4a (feat: add order reservation workflow)
 import { upsertUser, getUser } from '../services/users.js';
 
 export default function startCommand(bot: Telegraf) {
@@ -6,11 +10,14 @@ export default function startCommand(bot: Telegraf) {
   const pendingAgreement = new Map<number, 'client' | 'courier'>();
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
   const pendingCity = new Map<number, true>();
 =======
 >>>>>>> bdae1ea (feat: add geo utilities)
 =======
 >>>>>>> 3c7234d (feat: improve 2gis integration)
+=======
+>>>>>>> 0cb5d4a (feat: add order reservation workflow)
 
   bot.start(async (ctx) => {
     await ctx.reply(
@@ -51,6 +58,7 @@ export default function startCommand(bot: Telegraf) {
     pendingRoles.delete(uid);
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     if (role === 'client') {
       pendingCity.set(uid, true);
       await ctx.reply('Введите ваш город (по умолчанию Алматы).');
@@ -87,15 +95,20 @@ export default function startCommand(bot: Telegraf) {
 =======
 =======
 >>>>>>> 3c7234d (feat: improve 2gis integration)
+=======
+>>>>>>> 0cb5d4a (feat: add order reservation workflow)
     pendingAgreement.set(uid, role);
     await ctx.reply(
       'Город: Алматы. Согласны с правилами сервиса?',
       Markup.keyboard([['Согласен']]).oneTime().resize()
     );
 <<<<<<< HEAD
+<<<<<<< HEAD
 >>>>>>> bdae1ea (feat: add geo utilities)
 =======
 >>>>>>> 3c7234d (feat: improve 2gis integration)
+=======
+>>>>>>> 0cb5d4a (feat: add order reservation workflow)
   });
 
   bot.hears('Согласен', async (ctx) => {
