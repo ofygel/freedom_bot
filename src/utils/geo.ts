@@ -1,5 +1,5 @@
 import type { Point } from './twoGis';
-import { getSettings } from '../services/settings.js';
+import { getSettings } from '../services/settings';
 const R = 6371;
 export function distanceKm(a: Point, b: Point): number {
   const dLat = toRad(b.lat - a.lat);

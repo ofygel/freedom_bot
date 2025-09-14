@@ -11,15 +11,15 @@ import {
   updateOrder,
   openDispute,
   addDisputeMessage,
-} from '../services/orders.js';
-import type { OrderStatus } from '../services/orders.js';
+} from '../services/orders';
+import type { OrderStatus } from '../services/orders';
 import {
   toggleCourierOnline,
   isCourierOnline,
   hideOrderForCourier,
   isOrderHiddenForCourier
-} from '../services/courierState.js';
-import { getSettings } from '../services/settings.js';
+} from '../services/courierState';
+import { getSettings } from '../services/settings';
 import { routeToDeeplink } from '../utils/twoGis';
 import { reverseGeocode } from '../utils/geocode';
 

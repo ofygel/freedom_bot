@@ -1,6 +1,6 @@
 import { Telegraf, Context, Markup } from 'telegraf';
-import { upsertUser } from '../services/users.js';
-import { startProfileWizard } from './profile.js';
+import { upsertUser } from '../services/users';
+import { startProfileWizard } from './profile';
 
 interface StartState {
   step: 'phone' | 'role' | 'consent';

@@ -1,11 +1,11 @@
 // @ts-nocheck
 import { Telegraf } from 'telegraf';
-import { getOrder } from '../services/orders.js';
+import { getOrder } from '../services/orders';
 import {
   sendProxyMessage,
   getActiveChatByUser,
   cleanupOldChats,
-} from '../services/chat.js';
+} from '../services/chat';
 
 export default function chatCommands(bot: Telegraf) {
   bot.command('msg', async (ctx) => {

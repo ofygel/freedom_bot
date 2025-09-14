@@ -4,8 +4,8 @@ import type { Point } from '../utils/twoGis';
 import { parse2GisLink, routeToDeeplink } from '../utils/twoGis';
 import { distanceKm, etaMinutes, isInAlmaty } from '../utils/geo';
 import { calcPrice } from '../utils/pricing';
-import { getSettings } from '../services/settings.js';
-import { createOrder } from '../services/orders.js';
+import { getSettings } from '../services/settings';
+import { createOrder } from '../services/orders';
 import { geocodeAddress, reverseGeocode } from '../utils/geocode';
 
 interface OrderSession {
