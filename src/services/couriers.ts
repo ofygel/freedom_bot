@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypto';
 
 const FILE_PATH = 'data/couriers.json';
@@ -91,6 +90,8 @@ export function getCourierAudit(id: number): CourierAuditRecord[] {
     .filter(Boolean)
     .map((line) => JSON.parse(line) as CourierAuditRecord)
     .filter((r) => r.courier_id === id);
+}
+
 const SECRET = process.env.COURIER_SECRET || 'default_secret_key_32_bytes_long!';
 
 function getKey() {

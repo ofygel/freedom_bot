@@ -7,12 +7,14 @@ export interface Settings {
   drivers_channel_id?: string;
   moderators_channel_id?: string;
   city?: 'almaty';
+  verify_channel_id?: string;
 }
 
 const defaults: Settings = {
   drivers_channel_id: process.env.DRIVERS_CHANNEL_ID || undefined,
   moderators_channel_id: process.env.MODERATORS_CHANNEL_ID || undefined,
   city: (process.env.CITY as any) || 'almaty',
+  verify_channel_id: process.env.VERIFY_CHANNEL_ID || undefined,
 };
 
 export function getSettings(): Settings {
