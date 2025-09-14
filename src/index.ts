@@ -9,7 +9,7 @@ import chatCommands from './commands/chat';
 import orderStatusCommands from './commands/orderStatus';
 import profileCommands from './commands/profile';
 import adminCommands from './commands/admin';
-import { setOrdersBot } from './services/orders';
+import { setOrdersBot, expireReservations } from './services/orders';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -29,6 +29,8 @@ chatCommands(bot);
 orderStatusCommands(bot);
 profileCommands(bot);
 adminCommands(bot);
+
+setInterval(expireReservations, 30_000);
 
 bot.command('ping', (ctx) => ctx.reply('pong'));
 

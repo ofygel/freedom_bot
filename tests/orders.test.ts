@@ -11,6 +11,9 @@ import {
   openDispute,
   addDisputeMessage,
   resolveDispute,
+  reserveOrder,
+  getOrder,
+  expireReservations,
 } from '../src/services/orders';
 
 function setup() {
@@ -121,6 +124,41 @@ test('dispute lifecycle notifies participants', () => {
     assert.deepEqual(messages, [
       { id: 100, text: `Спор по заказу #${order.id} завершён` },
       { id: 200, text: `Спор по заказу #${order.id} завершён` },
+    ]);
+  } finally {
+    teardown(dir, prev);
+  }
+});
+
+test('expired reservations are released and notify users', () => {
+  const { dir, prev, messages } = setup();
+  try {
+    const order = createOrder({
+      customer_id: 100,
+      from: { lat: 0, lon: 0 },
+      to: { lat: 1, lon: 1 },
+      type: 'delivery',
+      time: 'now',
+      options: null,
+      size: 'S',
+      pay_type: 'cash',
+      comment: null,
+      price: 10,
+    });
+    reserveOrder(order.id, 200);
+    updateOrder(order.id, {
+      reserved_until: new Date(Date.now() - 1000).toISOString(),
+    });
+    messages.splice(0);
+    expireReservations();
+    const updated = getOrder(order.id)!;
+    assert.equal(updated.status, 'open');
+    assert.equal(updated.reserved_by, null);
+    assert.equal(updated.reserved_until, null);
+    assert.equal(updated.transitions.at(-1)?.status, 'open');
+    assert.deepEqual(messages, [
+      { id: 100, text: `Заказ #${order.id} возвращён в ленту` },
+      { id: 200, text: `Бронь заказа #${order.id} истекла` },
     ]);
   } finally {
     teardown(dir, prev);
