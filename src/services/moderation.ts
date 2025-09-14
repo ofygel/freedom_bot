@@ -58,7 +58,7 @@ export function getModerationInfo(id: number): ModerationInfo | undefined {
   return store[id];
 }
 
-export function resolveDispute(orderId: number, resolution: string) {
+export function logDisputeResolution(orderId: number, resolution: string) {
   if (!existsSync('data')) mkdirSync('data');
   const line = JSON.stringify({ order_id: orderId, resolution, timestamp: new Date().toISOString() });
   appendFileSync(DISPUTE_LOG, line + '\n');

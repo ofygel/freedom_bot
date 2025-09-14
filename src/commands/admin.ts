@@ -8,7 +8,7 @@ import {
   suspendUser,
   banUser,
   unbanUser,
-  resolveDispute,
+  logDisputeResolution,
   getModerationInfo,
 } from '../services/moderation';
 import { getCourierMetrics, getCourierAudit } from '../services/couriers';
@@ -161,8 +161,10 @@ export default function adminCommands(bot: Telegraf) {
     const parts = ((ctx.message as any)?.text ?? '').split(' ');
     const orderId = Number(parts[1]);
     const resolution = parts.slice(2).join(' ');
-    if (!orderId || !resolution) return ctx.reply('Использование: /resolve_dispute <orderId> <resolution>');
-    resolveDispute(orderId, resolution);
+    if (!orderId || !resolution)
+      return ctx.reply('Использование: /resolve_dispute <orderId> <resolution>');
+    resolveDispute(orderId);
+    logDisputeResolution(orderId, resolution);
     ctx.reply('Спор закрыт');
   });
 
@@ -212,7 +214,7 @@ export default function adminCommands(bot: Telegraf) {
     } catch {}
     try {
       await ctx.telegram.sendMessage(
-        order.client_id,
+        order.customer_id,
         `Ответ по спору заказа #${order.id}: ${text}`
       );
     } catch {}
@@ -236,7 +238,7 @@ export default function adminCommands(bot: Telegraf) {
     } catch {}
     try {
       await ctx.telegram.sendMessage(
-        order.client_id,
+        order.customer_id,
         `Спор по заказу #${order.id} закрыт`
       );
     } catch {}

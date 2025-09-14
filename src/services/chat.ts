@@ -14,7 +14,7 @@ interface ChatMessage {
 
 export interface OrderChat {
   order_id: number;
-  client_id: number;
+  customer_id: number;
   courier_id: number;
   created_at: string;
   expires_at?: string;
@@ -50,10 +50,10 @@ function saveChatSessions(sessions: OrderChat[]) {
   writeFileSync(CHAT_SESSIONS, JSON.stringify(sessions, null, 2));
 }
 
-export function createOrderChat(order_id: number, client_id: number, courier_id: number) {
+export function createOrderChat(order_id: number, customer_id: number, courier_id: number) {
   const sessions = loadChatSessions();
   if (!sessions.find((s) => s.order_id === order_id)) {
-    sessions.push({ order_id, client_id, courier_id, created_at: new Date().toISOString() });
+    sessions.push({ order_id, customer_id, courier_id, created_at: new Date().toISOString() });
     saveChatSessions(sessions);
   }
 }
@@ -72,7 +72,7 @@ export function getActiveChatByUser(userId: number): OrderChat | undefined {
   const now = Date.now();
   return sessions.find(
     (s) => (!s.expires_at || new Date(s.expires_at).getTime() > now) &&
-      (s.client_id === userId || s.courier_id === userId)
+      (s.customer_id === userId || s.courier_id === userId)
   );
 }
 

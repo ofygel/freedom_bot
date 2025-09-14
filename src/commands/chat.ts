@@ -42,10 +42,10 @@ export default function chatCommands(bot: Telegraf) {
     if (!chat) return next();
     const fromId = ctx.from!.id;
     let toId: number | undefined;
-    if (chat.client_id === fromId) {
+    if (chat.customer_id === fromId) {
       toId = chat.courier_id;
     } else if (chat.courier_id === fromId) {
-      toId = chat.client_id;
+      toId = chat.customer_id;
     }
     if (!toId) {
       return ctx.reply('Собеседник пока не подключен к чату');
