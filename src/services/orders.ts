@@ -3,7 +3,12 @@ import path from 'path';
 import type { Telegraf, Context } from 'telegraf';
 import type { Point } from '../utils/twoGis';
 import { incrementCourierReserve, incrementCourierCancel } from './courierState';
-import { recordCourierMetric, logCourierIssue } from './couriers';
+import {
+  recordCourierMetric,
+  logCourierIssue,
+  getCourier,
+  scheduleCardMessageDeletion,
+} from './couriers';
 
 let botRef: Telegraf<Context> | null = null;
 export function setOrdersBot(bot: Telegraf<Context>) { botRef = bot; }
@@ -134,6 +139,19 @@ function notifyStatus(order: Order) {
     botRef.telegram.sendMessage(order.courier_id, msg.courier).catch(() => {});
 }
 
+function sendCourierCard(order: Order) {
+  if (!botRef || order.pay_type !== 'card' || !order.courier_id) return;
+  const courier = getCourier(order.courier_id);
+  if (!courier?.card) return;
+  const telegram = botRef.telegram;
+  telegram
+    .sendMessage(order.customer_id, `Карта курьера: ${courier.card}`)
+    .then((msg) =>
+      scheduleCardMessageDeletion(telegram, order.customer_id, msg.message_id)
+    )
+    .catch(() => {});
+}
+
 function notifyPayment(order: Order) {
   if (!botRef) return;
   if (order.payment_status === 'paid') {
@@ -143,6 +161,14 @@ function notifyPayment(order: Order) {
     if (order.courier_id)
       botRef.telegram
         .sendMessage(order.courier_id, `Оплата по заказу #${order.id} получена`)
+        .catch(() => {});
+  } else if (order.pay_type === 'card') {
+    botRef.telegram
+      .sendMessage(order.customer_id, `Оплатите заказ #${order.id} переводом курьеру`)
+      .catch(() => {});
+    if (order.courier_id)
+      botRef.telegram
+        .sendMessage(order.courier_id, `Ожидаем оплату по заказу #${order.id}`)
         .catch(() => {});
   }
 }
@@ -281,6 +307,7 @@ export function assignOrder(id: number, courierId: number): Order | undefined {
   list[index] = order;
   writeAll(list);
   notifyStatus(order);
+  sendCourierCard(order);
   logEvent(order.id, 'assigned', courierId, {});
   return order;
 }
@@ -385,6 +412,7 @@ export function updateOrderStatus(
   list[index] = order;
   writeAll(list);
   notifyStatus(order);
+  if (status === 'assigned') sendCourierCard(order);
   logEvent(order.id, 'status_updated', courierId ?? null, { status });
   if (status === 'open' && prevCourier) {
     const { count, warned } = incrementCourierCancel(prevCourier);
