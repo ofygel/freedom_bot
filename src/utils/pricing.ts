@@ -5,11 +5,14 @@ export function calcPrice(
   size: 'S' | 'M' | 'L' = 'M',
   now = new Date(),
   type: 'docs' | 'parcel' | 'food' | 'other' = 'other',
-  options: string[] = []
+  options: string[] = [],
+  waitMinutes = 0
 ): { price: number; nightApplied: boolean } {
   const settings = getSettings();
   const base = settings.base_price ?? 500;
   let perKm = settings.per_km ?? 180;
+  const waitFree = settings.wait_free ?? 0;
+  const waitPerMin = settings.wait_per_min ?? 0;
   const isNight = now.getHours() >= 22 || now.getHours() < 7;
   let nightApplied = false;
   if (isNight && settings.night_active) {
@@ -32,12 +35,14 @@ export function calcPrice(
     (sum, o) => sum + (optionSurcharges[o] || 0),
     0
   );
+  const waitCost = Math.max(0, waitMinutes - waitFree) * waitPerMin;
   let price =
     base +
     perKm * Math.max(1, distanceKm) +
     surcharge +
     typeSurcharge[type] +
-    optionsTotal;
+    optionsTotal +
+    waitCost;
   price = Math.round(price / 10) * 10;
   return { price, nightApplied };
 }

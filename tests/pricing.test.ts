@@ -54,3 +54,23 @@ test('night coefficient is applied when active', () => {
     teardown(dir, prev);
   }
 });
+
+test('waiting over free limit adds to price', () => {
+  const { dir, prev } = setup();
+  try {
+    updateSetting('wait_free', 5);
+    updateSetting('wait_per_min', 20);
+    const { price, nightApplied } = calcPrice(
+      1,
+      'M',
+      new Date('2024-01-01T12:00:00Z'),
+      'other',
+      [],
+      10
+    );
+    assert.equal(price, 780);
+    assert.equal(nightApplied, false);
+  } finally {
+    teardown(dir, prev);
+  }
+});
