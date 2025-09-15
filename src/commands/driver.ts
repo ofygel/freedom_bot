@@ -12,6 +12,8 @@ import {
   openDispute,
   addDisputeMessage,
   logEvent,
+  setOrdersBot,
+  sendInvoiceToReceiver,
 } from '../services/orders';
 import type { OrderStatus } from '../services/orders';
 import {
@@ -71,6 +73,7 @@ function buildOrderKeyboard(status: OrderStatus) {
 }
 
 export default function driverCommands(bot: Telegraf) {
+  setOrdersBot(bot as any);
   bot.command('assign', (ctx) => {
     if (ctx.chat?.type !== 'private') return;
     const parts = ctx.message.text.split(' ');
@@ -441,34 +444,11 @@ function handleTransition(
   }
   updateOrderStatus(order.id, toStatus);
   ctx.reply('Статус обновлён.', buildOrderKeyboard(toStatus));
-  if (
-    (toStatus === 'going_to_dropoff' || toStatus === 'at_dropoff') &&
-    order.pay_type === 'receiver'
-  ) {
-    if (order.payment_status !== 'pending' && order.payment_status !== 'paid') {
-      updateOrder(order.id, { payment_status: 'pending' });
-      if (process.env.PROVIDER_TOKEN) {
-        ctx.telegram
-          .sendInvoice(
-            order.customer_id,
-            'Оплата доставки',
-            `Заказ #${order.id}`,
-            `order-${order.id}`,
-            process.env.PROVIDER_TOKEN,
-            '',
-            'KZT',
-            [
-              {
-                label: 'Доставка',
-                amount: Math.round((order.price || 0) * 100),
-              },
-            ]
-          )
-          .catch(() => {});
-      }
-    }
-    ctx.reply('Ожидайте оплату от получателя.');
-    if (toStatus === 'at_dropoff') {
+  if (order.pay_type === 'receiver') {
+    if (toStatus === 'going_to_dropoff') {
+      sendInvoiceToReceiver(order);
+      ctx.reply('Ожидайте оплату от получателя.');
+    } else if (toStatus === 'at_dropoff') {
       ctx.reply('Передайте получателю, что оплата необходима при получении.');
     }
   }

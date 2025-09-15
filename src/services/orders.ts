@@ -173,6 +173,31 @@ function notifyPayment(order: Order) {
   }
 }
 
+export function sendInvoiceToReceiver(order: Order) {
+  if (order.payment_status === 'pending' || order.payment_status === 'paid') {
+    return;
+  }
+  updateOrder(order.id, { payment_status: 'pending' });
+  if (botRef && process.env.PROVIDER_TOKEN) {
+    botRef.telegram
+      .sendInvoice(order.customer_id, {
+        title: 'Оплата доставки',
+        description: `Заказ #${order.id}`,
+        payload: `order-${order.id}`,
+        provider_token: process.env.PROVIDER_TOKEN,
+        currency: 'KZT',
+        prices: [
+          {
+            label: 'Доставка',
+            amount: Math.round((order.price || 0) * 100),
+          },
+        ],
+      })
+      .catch(() => {});
+  }
+  logEvent(order.id, 'payment.requested', order.courier_id ?? null, {});
+}
+
 function notifyDispute(order: Order, text: string, exclude?: number) {
   if (!botRef) return;
   if (order.customer_id !== exclude)

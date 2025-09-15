@@ -362,17 +362,6 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         }
 
         await ctx.reply(`Заказ #${order.id} создан. Ожидайте курьера.`);
-
-        if (s.payment === 'Получатель платит' && process.env.PROVIDER_TOKEN) {
-          await ctx.replyWithInvoice({
-            title: 'Оплата доставки',
-            description: `Заказ на ~${price} ₸`,
-            provider_token: process.env.PROVIDER_TOKEN,
-            currency: 'KZT',
-            prices: [{ label: 'Доставка', amount: Math.round(price * 100) }],
-            payload: 'order_payment',
-          });
-        }
         sessions.delete(ctx.from!.id);
         break;
     }
