@@ -39,19 +39,43 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Orders table extended for bot workflow
 CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
   client_id UUID REFERENCES users(id),
   courier_id UUID REFERENCES users(id),
-  status TEXT CHECK (status IN ('new','assigned','delivered','canceled')) DEFAULT 'new',
+  status TEXT CHECK (status IN (
+    'open','reserved','assigned',
+    'going_to_pickup','at_pickup','picked',
+    'going_to_dropoff','at_dropoff',
+    'delivered','closed','dispute_open','canceled'
+  )) DEFAULT 'open',
   price INTEGER,
   pickup GEOGRAPHY(Point,4326),
   dropoff GEOGRAPHY(Point,4326),
+  -- when and payment details
+  when_type TEXT CHECK (when_type IN ('now','scheduled')) DEFAULT 'now',
+  scheduled_at TIMESTAMPTZ,
+  pay_type TEXT CHECK (pay_type IN ('cash','p2p','receiver')) DEFAULT 'cash',
+  p2p_client_marked BOOLEAN DEFAULT false,
+  p2p_client_proof TEXT,
+  p2p_courier_confirmed BOOLEAN DEFAULT false,
+  -- human readable addresses
+  pickup_addr TEXT,
+  dropoff_addr TEXT,
+  -- reservation fields
+  reserved_by UUID,
+  reserved_until TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
 CREATE INDEX IF NOT EXISTS orders_pickup_gix ON orders USING GIST (pickup);
 CREATE INDEX IF NOT EXISTS orders_dropoff_gix ON orders USING GIST (dropoff);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_reserved_until ON orders(reserved_until);
+CREATE INDEX IF NOT EXISTS idx_orders_client ON orders(client_id);
+CREATE INDEX IF NOT EXISTS idx_orders_courier ON orders(courier_id);
 
 -- Order events
 CREATE TABLE IF NOT EXISTS order_events (
@@ -172,26 +196,17 @@ ALTER TABLE callback_map ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE metrics_daily ENABLE ROW LEVEL SECURITY;
 
-<<<<<<< HEAD
--- Enable row level security on PostGIS spatial_ref_sys
-ALTER TABLE spatial_ref_sys ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS select_all ON spatial_ref_sys;
-CREATE POLICY select_all ON spatial_ref_sys FOR SELECT USING (true);
-=======
--- Enable row level security on PostGIS spatial_ref_sys if permitted
+-- spatial_ref_sys is a system table; leave it untouched
 DO $$
 BEGIN
-  EXECUTE 'ALTER TABLE spatial_ref_sys ENABLE ROW LEVEL SECURITY';
-  EXECUTE 'DROP POLICY IF EXISTS select_all ON spatial_ref_sys';
-  EXECUTE 'CREATE POLICY select_all ON spatial_ref_sys FOR SELECT USING (true)';
-EXCEPTION
-  WHEN insufficient_privilege THEN
-    RAISE NOTICE 'skipping RLS on spatial_ref_sys due to insufficient privileges';
-  WHEN undefined_table THEN
-    RAISE NOTICE 'spatial_ref_sys table not found';
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'spatial_ref_sys'
+  ) THEN
+    RAISE NOTICE 'leave spatial_ref_sys as-is';
+  END IF;
 END;
 $$;
->>>>>>> 6706910 (Guard spatial_ref_sys RLS setup)
 
 -- Row level security policies
 
@@ -273,3 +288,119 @@ CREATE POLICY service_all ON rate_limits FOR ALL USING (auth.role() = 'service_r
 DROP POLICY IF EXISTS service_all ON metrics_daily;
 CREATE POLICY service_all ON metrics_daily FOR ALL USING (auth.role() = 'service_role');
 
+-- Helper functions for atomic order operations
+
+-- Attempt to reserve an open order for a courier
+CREATE OR REPLACE FUNCTION fn_try_reserve_order(
+  p_order_id INT,
+  p_courier UUID,
+  p_hold_seconds INT DEFAULT 90
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql AS $$
+DECLARE v_rowcount INT;
+BEGIN
+  UPDATE orders
+     SET status='reserved',
+         reserved_by = p_courier,
+         reserved_until = now() + make_interval(secs => p_hold_seconds),
+         updated_at = now()
+   WHERE id = p_order_id
+     AND status = 'open'
+     AND (reserved_until IS NULL OR reserved_until < now());
+
+  GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+  RETURN v_rowcount = 1;
+END$$;
+
+-- Confirm start and assign courier to an order
+CREATE OR REPLACE FUNCTION fn_confirm_start(
+  p_order_id INT,
+  p_courier UUID
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql AS $$
+DECLARE v_rowcount INT;
+BEGIN
+  UPDATE orders
+     SET status='assigned',
+         courier_id = p_courier,
+         updated_at = now()
+   WHERE id = p_order_id
+     AND status = 'reserved'
+     AND reserved_by = p_courier
+     AND reserved_until > now();
+
+  GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+  RETURN v_rowcount = 1;
+END$$;
+
+-- Reopen orders whose reservations have expired
+CREATE OR REPLACE FUNCTION fn_reopen_expired_reservations()
+RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE v_cnt INT;
+BEGIN
+  UPDATE orders
+     SET status='open',
+         reserved_by = NULL,
+         reserved_until = NULL,
+         updated_at = now()
+   WHERE status='reserved' AND reserved_until < now();
+
+  GET DIAGNOSTICS v_cnt = ROW_COUNT;
+  RETURN v_cnt;
+END$$;
+
+-- Validate and advance order status
+CREATE OR REPLACE FUNCTION fn_advance_status(
+  p_order_id INT,
+  p_actor UUID,
+  p_to TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql AS $$
+DECLARE v_from TEXT;
+DECLARE ok BOOLEAN := FALSE;
+BEGIN
+  SELECT status INTO v_from FROM orders WHERE id=p_order_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN FALSE; END IF;
+
+  IF    v_from='assigned'          AND p_to='going_to_pickup'  THEN ok := TRUE;
+  ELSIF v_from='going_to_pickup'   AND p_to='at_pickup'        THEN ok := TRUE;
+  ELSIF v_from='at_pickup'         AND p_to='picked'           THEN ok := TRUE;
+  ELSIF v_from='picked'            AND p_to='going_to_dropoff' THEN ok := TRUE;
+  ELSIF v_from='going_to_dropoff'  AND p_to='at_dropoff'       THEN ok := TRUE;
+  ELSIF v_from='at_dropoff'        AND p_to='delivered'        THEN ok := TRUE;
+  ELSIF v_from='delivered'         AND p_to='closed'           THEN ok := TRUE;
+  END IF;
+
+  IF NOT ok THEN RETURN FALSE; END IF;
+
+  UPDATE orders SET status=p_to, updated_at=now() WHERE id=p_order_id;
+  RETURN TRUE;
+END$$;
+
+-- Mark that client sent P2P payment proof
+CREATE OR REPLACE FUNCTION fn_payment_p2p_mark(
+  p_order_id INT,
+  p_proof TEXT
+)
+RETURNS VOID LANGUAGE sql AS $$
+  UPDATE orders
+     SET p2p_client_marked = TRUE,
+         p2p_client_proof  = p_proof,
+         updated_at = now()
+   WHERE id = p_order_id;
+$$;
+
+-- Courier confirmed P2P payment reception
+CREATE OR REPLACE FUNCTION fn_payment_p2p_confirm(
+  p_order_id INT
+)
+RETURNS VOID LANGUAGE sql AS $$
+  UPDATE orders
+     SET p2p_courier_confirmed = TRUE,
+         updated_at = now()
+   WHERE id = p_order_id;
+$$;
