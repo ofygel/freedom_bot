@@ -11,6 +11,7 @@ import profileCommands from './commands/profile';
 import adminCommands from './commands/admin';
 import { setOrdersBot, expireReservations, expireMovementTimers, expireAwaitingConfirm } from './services/orders';
 import { rollupDailyMetrics } from './services/metrics';
+import { resetTelegramSession } from './utils/telegramSession';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -40,24 +41,6 @@ setInterval(rollupDailyMetrics, 24 * 60 * 60 * 1000);
 
 bot.command('ping', (ctx) => ctx.reply('pong'));
 
-async function resetTelegramSession() {
-  try {
-    await bot.telegram.close();
-    console.warn('Closed previous Telegram session via Telegram API.');
-    return true;
-  } catch (closeError) {
-    console.warn('Failed to close previous Telegram session with close()', closeError);
-    try {
-      await bot.telegram.logOut();
-      console.warn('Logged out previous Telegram session via Telegram API.');
-      return true;
-    } catch (logoutError) {
-      console.error('Unable to reset Telegram session', logoutError);
-      return false;
-    }
-  }
-}
-
 const MAX_LAUNCH_ATTEMPTS = 5;
 const RETRY_DELAY_MS = 1_000;
 
@@ -77,10 +60,10 @@ async function launchBot() {
 
         if (errorCode === 409) {
           console.error('Bot launch failed: another instance is already running.', err);
-          const reset = await resetTelegramSession();
+          const reset = await resetTelegramSession(bot.telegram);
           if (reset && attempt < MAX_LAUNCH_ATTEMPTS) {
             console.warn(`Retrying bot launch after resetting session (attempt ${attempt + 1} of ${MAX_LAUNCH_ATTEMPTS})`);
-            await sleep(RETRY_DELAY_MS);
+            await sleep(RETRY_DELAY_MS * attempt);
             continue;
           }
           if (reset) {
