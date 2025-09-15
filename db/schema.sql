@@ -1,9 +1,9 @@
--- SQL schema for Freedom Bot
+-- Required extensions
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS postgis;
 
--- Users table
 CREATE TABLE IF NOT EXISTS users (
-  id BIGINT PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   role TEXT CHECK (role IN ('client','courier','admin')),
   phone TEXT UNIQUE,
   city TEXT,
@@ -12,9 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Courier profiles
 CREATE TABLE IF NOT EXISTS courier_profiles (
-  user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   full_name TEXT,
   vehicle_type TEXT,
   license_plate TEXT,
@@ -22,10 +21,9 @@ CREATE TABLE IF NOT EXISTS courier_profiles (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Courier verifications
 CREATE TABLE IF NOT EXISTS courier_verifications (
   id SERIAL PRIMARY KEY,
-  courier_id BIGINT REFERENCES courier_profiles(user_id) ON DELETE CASCADE,
+  courier_id UUID REFERENCES courier_profiles(user_id) ON DELETE CASCADE,
   status TEXT CHECK (status IN ('pending','approved','rejected')) DEFAULT 'pending',
   submitted_at TIMESTAMPTZ DEFAULT now(),
   reviewed_at TIMESTAMPTZ,
@@ -41,11 +39,10 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Orders
 CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
-  client_id BIGINT REFERENCES users(id),
-  courier_id BIGINT REFERENCES users(id),
+  client_id UUID REFERENCES users(id),
+  courier_id UUID REFERENCES users(id),
   status TEXT CHECK (status IN ('new','assigned','delivered','canceled')) DEFAULT 'new',
   price INTEGER,
   pickup GEOGRAPHY(Point,4326),
@@ -65,30 +62,27 @@ CREATE TABLE IF NOT EXISTS order_events (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Order messages
 CREATE TABLE IF NOT EXISTS order_messages (
   id SERIAL PRIMARY KEY,
   order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
-  sender_id BIGINT REFERENCES users(id),
+  sender_id UUID REFERENCES users(id),
   message TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Disputes
 CREATE TABLE IF NOT EXISTS disputes (
   id SERIAL PRIMARY KEY,
   order_id INTEGER REFERENCES orders(id),
-  user_id BIGINT REFERENCES users(id),
+  user_id UUID REFERENCES users(id),
   status TEXT CHECK (status IN ('open','resolved','rejected')) DEFAULT 'open',
   description TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Support tickets
 CREATE TABLE IF NOT EXISTS support_tickets (
   id SERIAL PRIMARY KEY,
-  user_id BIGINT REFERENCES users(id),
+  user_id UUID REFERENCES users(id),
   subject TEXT,
   status TEXT CHECK (status IN ('open','pending','closed')) DEFAULT 'open',
   created_at TIMESTAMPTZ DEFAULT now(),
@@ -118,13 +112,16 @@ CREATE TABLE IF NOT EXISTS metrics_daily (
   data JSONB
 );
 
--- Trigger to automatically update updated_at
-CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
 BEGIN
   NEW.updated_at = now();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS trg_users_updated ON users;
 CREATE TRIGGER trg_users_updated
@@ -174,6 +171,11 @@ ALTER TABLE support_tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE callback_map ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE metrics_daily ENABLE ROW LEVEL SECURITY;
+
+-- Enable row level security on PostGIS spatial_ref_sys
+ALTER TABLE spatial_ref_sys ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS select_all ON spatial_ref_sys;
+CREATE POLICY select_all ON spatial_ref_sys FOR SELECT USING (true);
 
 -- Row level security policies
 
