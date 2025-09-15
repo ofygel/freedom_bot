@@ -9,6 +9,7 @@ import {
   getCourier,
   scheduleCardMessageDeletion,
 } from './couriers';
+import { getSettings } from './settings';
 
 let botRef: Telegraf<Context> | null = null;
 export function setOrdersBot(bot: Telegraf<Context>) { botRef = bot; }
@@ -518,6 +519,21 @@ export function openDispute(id: number, logIssue = true): Order | undefined {
   writeAll(list);
   notifyDispute(order, `Открыт спор по заказу #${order.id}`);
   logEvent(order.id, 'dispute_opened', null, {});
+  const settings = getSettings();
+  if (botRef && settings.moderators_channel_id) {
+    const parts = [`Спор по заказу #${order.id}`, `Клиент: <a href="tg://user?id=${order.customer_id}">профиль</a>`];
+    if (order.courier_id) {
+      parts.push(`Курьер: <a href="tg://user?id=${order.courier_id}">профиль</a>`);
+    }
+    botRef.telegram
+      .sendMessage(settings.moderators_channel_id, parts.join('\n'), {
+        parse_mode: 'HTML',
+      })
+      .catch(() => {});
+    logEvent(order.id, 'dispute_notified', null, {
+      channel_id: settings.moderators_channel_id,
+    });
+  }
   if (order.courier_id && logIssue)
     logCourierIssue({ courier_id: order.courier_id, type: 'complaint' });
   return order;
