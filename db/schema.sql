@@ -162,7 +162,6 @@ BEFORE UPDATE ON support_tickets
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- Enable row level security on all tables
-ALTER TABLE spatial_ref_sys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE courier_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE courier_verifications ENABLE ROW LEVEL SECURITY;
