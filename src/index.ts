@@ -81,6 +81,11 @@ async function launchBot() {
             continue;
           }
           console.error('Exceeded retry attempts after Telegram deleteWebhook errors.');
+        } else if (errorCode === 400 || err.description?.includes('Logged out')) {
+          console.error(
+            'Invalid or revoked TELEGRAM_BOT_TOKEN. Request a new token from @BotFather and set it in your environment.',
+          );
+          process.exit(1);
         } else {
           console.error('Bot launch failed', err);
         }
