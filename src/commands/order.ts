@@ -7,6 +7,7 @@ import { calcPrice } from '../utils/pricing';
 import { getSettings } from '../services/settings';
 import { createOrder } from '../services/orders';
 import { geocodeAddress, reverseGeocode } from '../utils/geocode';
+import { formatAddress } from '../utils/address';
 
 type OrderType = 'docs' | 'parcel' | 'food' | 'other';
 
@@ -22,6 +23,17 @@ interface OrderSession {
   payment?: string;
   comment?: string;
   msgId?: number;
+  fromMsgId?: number;
+  toMsgId?: number;
+  fromEntrance?: string;
+  fromFloor?: string;
+  fromFlat?: string;
+  fromIntercom?: string;
+  toEntrance?: string;
+  toFloor?: string;
+  toFlat?: string;
+  toIntercom?: string;
+  addrExtra?: { target: 'from' | 'to'; field: 'entrance' | 'floor' | 'flat' | 'intercom' };
 }
 
 const sessions = new Map<number, OrderSession>();
@@ -79,6 +91,48 @@ function dimsKeyboard(s: OrderSession) {
   ]);
 }
 
+function addrExtraKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('Подъезд', 'order:addr_extra:entrance'),
+      Markup.button.callback('Этаж', 'order:addr_extra:floor'),
+    ],
+    [
+      Markup.button.callback('Кв.', 'order:addr_extra:flat'),
+      Markup.button.callback('Домофон', 'order:addr_extra:intercom'),
+    ],
+  ]);
+}
+
+function getExtras(s: OrderSession, target: 'from' | 'to') {
+  return {
+    entrance: (s as any)[`${target}Entrance`],
+    floor: (s as any)[`${target}Floor`],
+    flat: (s as any)[`${target}Flat`],
+    intercom: (s as any)[`${target}Intercom`],
+  };
+}
+
+async function sendAddrPreview(ctx: Context, s: OrderSession, target: 'from' | 'to') {
+  const point = target === 'from' ? s.from! : s.to!;
+  const addr = await reverseGeocode(point);
+  const text = `${target === 'from' ? 'A' : 'B'}: ${formatAddress(addr, getExtras(s, target))}\nhttps://2gis.kz/almaty?m=${point.lon},${point.lat}`;
+  const msg = await ctx.reply(text, addrExtraKeyboard());
+  if (target === 'from') s.fromMsgId = msg.message_id;
+  else s.toMsgId = msg.message_id;
+}
+
+async function updateAddrPreview(ctx: Context, s: OrderSession, target: 'from' | 'to') {
+  const msgId = target === 'from' ? s.fromMsgId : s.toMsgId;
+  if (!msgId) return;
+  const point = target === 'from' ? s.from! : s.to!;
+  const addr = await reverseGeocode(point);
+  const text = `${target === 'from' ? 'A' : 'B'}: ${formatAddress(addr, getExtras(s, target))}\nhttps://2gis.kz/almaty?m=${point.lon},${point.lat}`;
+  await ctx.telegram.editMessageText(ctx.chat!.id, msgId, undefined, text, {
+    reply_markup: addrExtraKeyboard().reply_markup,
+  });
+}
+
 async function parsePoint(
   input: string
 ): Promise<{ point: Point } | { from: Point; to: Point } | null> {
@@ -114,6 +168,21 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
     const msg: any = ctx.message;
     const text: string | undefined = msg.text;
     const loc = msg.location ? { lat: msg.location.latitude, lon: msg.location.longitude } : undefined;
+
+    if (s.addrExtra) {
+      if (!text) return;
+      const { target, field } = s.addrExtra;
+      const map: Record<string, string> = {
+        entrance: 'Entrance',
+        floor: 'Floor',
+        flat: 'Flat',
+        intercom: 'Intercom',
+      };
+      (s as any)[`${target}${map[field]}`] = text;
+      await updateAddrPreview(ctx, s, target);
+      s.addrExtra = undefined;
+      return;
+    }
 
     switch (s.step) {
       case 1:
@@ -151,13 +220,13 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           }
           s.from = from;
           s.to = to;
-          const addrA = await reverseGeocode(from);
-          const addrB = await reverseGeocode(to);
+          await sendAddrPreview(ctx, s, 'from');
+          await sendAddrPreview(ctx, s, 'to');
           s.step = 4;
           await sendStep(
             ctx,
             s,
-            `A: ${addrA}\nhttps://2gis.kz/almaty?m=${from.lon},${from.lat}\nB: ${addrB}\nhttps://2gis.kz/almaty?m=${to.lon},${to.lat}\nКогда?`,
+            'Когда?',
             Markup.keyboard(['Сейчас', 'К времени']).oneTime().resize()
           );
         } else {
@@ -167,12 +236,12 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
             return;
           }
           s.from = point;
-          const addr = await reverseGeocode(point);
+          await sendAddrPreview(ctx, s, 'from');
           s.step = 3;
           await sendStep(
             ctx,
             s,
-            `A: ${addr}\nhttps://2gis.kz/almaty?m=${point.lon},${point.lat}\nКуда? Пришлите геолокацию, адрес или ссылку 2ГИС`,
+            'Куда? Пришлите геолокацию, адрес или ссылку 2ГИС',
             Markup.inlineKeyboard([
               [Markup.button.callback('Как отправить ссылку из 2ГИС', 'order:2gis')],
             ])
@@ -194,13 +263,13 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           }
           s.from = from;
           s.to = to;
-          const addrA = await reverseGeocode(from);
-          const addrB = await reverseGeocode(to);
+          await sendAddrPreview(ctx, s, 'from');
+          await sendAddrPreview(ctx, s, 'to');
           s.step = 4;
           await sendStep(
             ctx,
             s,
-            `A: ${addrA}\nhttps://2gis.kz/almaty?m=${from.lon},${from.lat}\nB: ${addrB}\nhttps://2gis.kz/almaty?m=${to.lon},${to.lat}\nКогда?`,
+            'Когда?',
             Markup.keyboard(['Сейчас', 'К времени']).oneTime().resize()
           );
         } else {
@@ -210,12 +279,12 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
             return;
           }
           s.to = point;
-          const addr = await reverseGeocode(point);
+          await sendAddrPreview(ctx, s, 'to');
           s.step = 4;
           await sendStep(
             ctx,
             s,
-            `B: ${addr}\nhttps://2gis.kz/almaty?m=${point.lon},${point.lat}\nКогда?`,
+            'Когда?',
             Markup.keyboard(['Сейчас', 'К времени']).oneTime().resize()
           );
         }
@@ -279,8 +348,18 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           s.type!,
           s.options || []
         );
-        const fromAddr = await reverseGeocode(from);
-        const toAddr = await reverseGeocode(to);
+        const fromAddr = formatAddress(await reverseGeocode(from), {
+          entrance: s.fromEntrance,
+          floor: s.fromFloor,
+          flat: s.fromFlat,
+          intercom: s.fromIntercom,
+        });
+        const toAddr = formatAddress(await reverseGeocode(to), {
+          entrance: s.toEntrance,
+          floor: s.toFloor,
+          flat: s.toFlat,
+          intercom: s.toIntercom,
+        });
         const summary = [
           `Тип: ${typeLabels[s.type!]}`,
           `Откуда: ${fromAddr}`,
@@ -321,6 +400,14 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           pay_type: payType,
           comment: s.comment,
           price,
+          from_entrance: s.fromEntrance ?? null,
+          from_floor: s.fromFloor ?? null,
+          from_flat: s.fromFlat ?? null,
+          from_intercom: s.fromIntercom ?? null,
+          to_entrance: s.toEntrance ?? null,
+          to_floor: s.toFloor ?? null,
+          to_flat: s.toFlat ?? null,
+          to_intercom: s.toIntercom ?? null,
         });
 
         const settings = getSettings();
@@ -387,6 +474,26 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
     }
     await ctx.editMessageReplyMarkup(dimsKeyboard(s).reply_markup);
     await ctx.answerCbQuery();
+  });
+
+  bot.action(/order:addr_extra:(.+)/, async (ctx) => {
+    const s = sessions.get(ctx.from!.id);
+    if (!s) return;
+    const field = ctx.match[1] as 'entrance' | 'floor' | 'flat' | 'intercom';
+    const msgId = (ctx.callbackQuery?.message as any)?.message_id;
+    let target: 'from' | 'to' | null = null;
+    if (msgId === s.fromMsgId) target = 'from';
+    else if (msgId === s.toMsgId) target = 'to';
+    if (!target) return;
+    s.addrExtra = { target, field };
+    const labels: Record<typeof field, string> = {
+      entrance: 'подъезд',
+      floor: 'этаж',
+      flat: 'квартиру',
+      intercom: 'домофон',
+    } as any;
+    await ctx.answerCbQuery();
+    await ctx.reply(`Введите ${labels[field]}`);
   });
 
   bot.action('dims:done', async (ctx) => {

@@ -25,6 +25,7 @@ import {
 import { getSettings } from '../services/settings';
 import { routeToDeeplink } from '../utils/twoGis';
 import { reverseGeocode } from '../utils/geocode';
+import { formatAddress } from '../utils/address';
 import { rateLimit } from '../utils/rateLimiter';
 
 interface ProofState {
@@ -169,8 +170,18 @@ export default function driverCommands(bot: Telegraf) {
       await ctx.answerCbQuery('Не найдено');
       return;
     }
-    const fromAddr = await reverseGeocode(order.from);
-    const toAddr = await reverseGeocode(order.to);
+    const fromAddr = formatAddress(await reverseGeocode(order.from), {
+      entrance: order.from_entrance || undefined,
+      floor: order.from_floor || undefined,
+      flat: order.from_flat || undefined,
+      intercom: order.from_intercom || undefined,
+    });
+    const toAddr = formatAddress(await reverseGeocode(order.to), {
+      entrance: order.to_entrance || undefined,
+      floor: order.to_floor || undefined,
+      flat: order.to_flat || undefined,
+      intercom: order.to_intercom || undefined,
+    });
     const pay =
       order.pay_type === 'card'
         ? 'Карта'
