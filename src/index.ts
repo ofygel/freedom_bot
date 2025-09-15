@@ -40,9 +40,16 @@ setInterval(rollupDailyMetrics, 24 * 60 * 60 * 1000);
 
 bot.command('ping', (ctx) => ctx.reply('pong'));
 
-bot.launch().then(() => {
-  console.log('Bot started');
-});
+bot.launch()
+  .then(() => console.log('Bot started'))
+  .catch((err) => {
+    if (err.response?.error_code === 409) {
+      console.error('Bot launch failed: another instance is already running.', err);
+    } else {
+      console.error('Bot launch failed', err);
+    }
+    process.exit(1);
+  });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
