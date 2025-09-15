@@ -13,9 +13,31 @@ async function run() {
 
   const client = await pool.connect();
   try {
-    const sql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf-8');
-    await client.query(sql);
-    console.log('Schema applied');
+    const migrationsDir = path.join(__dirname, 'migrations');
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS schema_migrations (
+         id SERIAL PRIMARY KEY,
+         name TEXT UNIQUE
+       )`,
+    );
+    const files = fs
+      .readdirSync(migrationsDir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort();
+    for (const file of files) {
+      const { rowCount } = await client.query(
+        'SELECT 1 FROM schema_migrations WHERE name=$1',
+        [file],
+      );
+      if (rowCount === 0) {
+        const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
+        await client.query(sql);
+        await client.query('INSERT INTO schema_migrations(name) VALUES($1)', [file]);
+        console.log(`Applied ${file}`);
+      } else {
+        console.log(`Skipping ${file}`);
+      }
+    }
 
     const dataDir = path.join(process.cwd(), 'data');
     try {
