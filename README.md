@@ -12,10 +12,27 @@ npm run migrate
 
 Core bot environment variables are defined in `.env.example`:
 
-- `TELEGRAM_BOT_TOKEN`
-- `COURIERS_CHANNEL_ID`
-- `MODERATORS_CHANNEL_ID`
-- `CITY`
+- `TELEGRAM_BOT_TOKEN` (required): Bot token issued by [@BotFather](https://t.me/BotFather).
+- `ADMIN_ID` (required): Numeric Telegram user ID allowed to execute admin commands.
+- `COURIERS_CHANNEL_ID` (required): Channel chat ID used for courier coordination.
+- `MODERATORS_CHANNEL_ID` (required): Channel chat ID for moderator alerts.
+- `CITY` (optional, default `almaty`): Default service city.
+- `VERIFY_CHANNEL_ID` (optional): Channel chat ID that receives courier verification requests.
+- `PROVIDER_TOKEN` (optional): Telegram payments provider token; leave unset to disable payments.
+- `COURIER_SECRET` (optional, default `default_secret_key_32_bytes_long!`): Secret used to encrypt stored courier card data.
+
+Optional pricing overrides can also be provided through environment variables. Each falls back to the default shown in `.env.example` when not set:
+
+- `BASE_PRICE`
+- `PER_KM`
+- `SURCHARGE_S`
+- `SURCHARGE_M`
+- `SURCHARGE_L`
+- `SURCHARGE_THERMOBOX`
+- `SURCHARGE_CHANGE`
+- `MIN_PRICE`
+- `WAIT_FREE`
+- `WAIT_PER_MIN`
 
 Environment variables for the database are also defined in `.env.example`:
 
