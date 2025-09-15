@@ -1,4 +1,6 @@
 -- SQL schema for Freedom Bot
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT PRIMARY KEY,
