@@ -8,6 +8,7 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
   database: process.env.DB_NAME,
+  options: '-c search_path=public,extensions',
   ...(useSSL ? { ssl: { rejectUnauthorized: false } } : {}),
 });
 
