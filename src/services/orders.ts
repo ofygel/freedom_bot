@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { Telegraf, Context } from 'telegraf';
+import { Markup } from 'telegraf';
 import type { Point } from '../utils/twoGis';
 import { incrementCourierReserve, incrementCourierCancel } from './courierState';
 import {
@@ -157,6 +158,13 @@ function sendCourierCard(order: Order) {
     .sendMessage(order.customer_id, `Карта курьера: ${courier.card}`)
     .then((msg) =>
       scheduleCardMessageDeletion(telegram, order.customer_id, msg.message_id)
+    )
+    .catch(() => {});
+  telegram
+    .sendMessage(
+      order.customer_id,
+      'После оплаты нажмите «Оплатил(а)».',
+      Markup.keyboard([["Оплатил(а)"]]).resize()
     )
     .catch(() => {});
 }
