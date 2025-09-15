@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS orders (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+ALTER TABLE orders
+  ADD COLUMN IF NOT EXISTS reserved_until TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS orders_pickup_gix ON orders USING GIST (pickup);
 CREATE INDEX IF NOT EXISTS orders_dropoff_gix ON orders USING GIST (dropoff);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
