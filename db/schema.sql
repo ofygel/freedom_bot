@@ -175,3 +175,83 @@ ALTER TABLE callback_map ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE metrics_daily ENABLE ROW LEVEL SECURITY;
 
+-- Row level security policies
+
+-- app_settings accessible to all authenticated users
+DROP POLICY IF EXISTS select_all ON app_settings;
+CREATE POLICY select_all ON app_settings FOR SELECT USING (true);
+
+-- users table policies
+DROP POLICY IF EXISTS user_is_owner ON users;
+CREATE POLICY user_is_owner ON users FOR ALL USING (auth.uid() = id);
+DROP POLICY IF EXISTS service_all ON users;
+CREATE POLICY service_all ON users FOR ALL USING (auth.role() = 'service_role');
+
+-- courier_profiles policies
+DROP POLICY IF EXISTS user_is_owner ON courier_profiles;
+CREATE POLICY user_is_owner ON courier_profiles FOR ALL USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS service_all ON courier_profiles;
+CREATE POLICY service_all ON courier_profiles FOR ALL USING (auth.role() = 'service_role');
+
+-- courier_verifications policies
+DROP POLICY IF EXISTS user_is_owner ON courier_verifications;
+CREATE POLICY user_is_owner ON courier_verifications FOR ALL USING (auth.uid() = courier_id);
+DROP POLICY IF EXISTS service_all ON courier_verifications;
+CREATE POLICY service_all ON courier_verifications FOR ALL USING (auth.role() = 'service_role');
+
+-- orders policies
+DROP POLICY IF EXISTS user_is_owner ON orders;
+CREATE POLICY user_is_owner ON orders FOR ALL USING (
+  auth.uid() = client_id OR auth.uid() = courier_id
+);
+DROP POLICY IF EXISTS service_all ON orders;
+CREATE POLICY service_all ON orders FOR ALL USING (auth.role() = 'service_role');
+
+-- order_events policies
+DROP POLICY IF EXISTS user_is_owner ON order_events;
+CREATE POLICY user_is_owner ON order_events FOR ALL USING (
+  EXISTS (
+    SELECT 1 FROM orders o
+    WHERE o.id = order_events.order_id
+      AND (auth.uid() = o.client_id OR auth.uid() = o.courier_id)
+  )
+);
+DROP POLICY IF EXISTS service_all ON order_events;
+CREATE POLICY service_all ON order_events FOR ALL USING (auth.role() = 'service_role');
+
+-- order_messages policies
+DROP POLICY IF EXISTS user_is_owner ON order_messages;
+CREATE POLICY user_is_owner ON order_messages FOR ALL USING (
+  auth.uid() = sender_id OR EXISTS (
+    SELECT 1 FROM orders o
+    WHERE o.id = order_messages.order_id
+      AND (auth.uid() = o.client_id OR auth.uid() = o.courier_id)
+  )
+);
+DROP POLICY IF EXISTS service_all ON order_messages;
+CREATE POLICY service_all ON order_messages FOR ALL USING (auth.role() = 'service_role');
+
+-- disputes policies
+DROP POLICY IF EXISTS user_is_owner ON disputes;
+CREATE POLICY user_is_owner ON disputes FOR ALL USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS service_all ON disputes;
+CREATE POLICY service_all ON disputes FOR ALL USING (auth.role() = 'service_role');
+
+-- support_tickets policies
+DROP POLICY IF EXISTS user_is_owner ON support_tickets;
+CREATE POLICY user_is_owner ON support_tickets FOR ALL USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS service_all ON support_tickets;
+CREATE POLICY service_all ON support_tickets FOR ALL USING (auth.role() = 'service_role');
+
+-- callback_map policies (service role only)
+DROP POLICY IF EXISTS service_all ON callback_map;
+CREATE POLICY service_all ON callback_map FOR ALL USING (auth.role() = 'service_role');
+
+-- rate_limits policies (service role only)
+DROP POLICY IF EXISTS service_all ON rate_limits;
+CREATE POLICY service_all ON rate_limits FOR ALL USING (auth.role() = 'service_role');
+
+-- metrics_daily policies (service role only)
+DROP POLICY IF EXISTS service_all ON metrics_daily;
+CREATE POLICY service_all ON metrics_daily FOR ALL USING (auth.role() = 'service_role');
+
