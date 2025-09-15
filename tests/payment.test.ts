@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import driverCommands from '../src/commands/driver';
+import courierCommands from '../src/commands/courier';
 import orderCommands from '../src/commands/order';
 import {
   createOrder,
@@ -23,7 +23,7 @@ function setup() {
   const invoices: { id: number; title: string }[] = [];
   const bot = createMockBot(messages, invoices);
   orderCommands(bot as any);
-  driverCommands(bot as any);
+  courierCommands(bot as any);
   fs.rmSync(path.join(prev, 'data'), { recursive: true, force: true });
   return { dir, prev, bot, messages, invoices };
 }

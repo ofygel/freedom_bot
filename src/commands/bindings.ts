@@ -5,11 +5,11 @@ export function registerBindingCommands(bot: Telegraf<Context>) {
   bot.on('channel_post', async (ctx) => {
     const text = (ctx.channelPost as any)?.text?.trim();
     if (!text) return;
-    if (text === '/bind_drivers_channel') return bindChannel(ctx, 'drivers_channel_id');
+    if (text === '/bind_couriers_channel') return bindChannel(ctx, 'couriers_channel_id');
     if (text === '/bind_moderators_channel') return bindChannel(ctx, 'moderators_channel_id');
     if (text === '/bind_verify_channel') return bindChannel(ctx, 'verify_channel_id');
   });
-  bot.command('bind_drivers_channel', async (ctx) => bindChannel(ctx, 'drivers_channel_id'));
+  bot.command('bind_couriers_channel', async (ctx) => bindChannel(ctx, 'couriers_channel_id'));
   bot.command('bind_moderators_channel', async (ctx) => bindChannel(ctx, 'moderators_channel_id'));
   bot.command('bind_verify_channel', async (ctx) => bindChannel(ctx, 'verify_channel_id'));
 }

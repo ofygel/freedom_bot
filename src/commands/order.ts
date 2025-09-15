@@ -474,7 +474,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         });
 
         const settings = getSettings();
-        if (settings.drivers_channel_id) {
+        if (settings.couriers_channel_id) {
           const timePart = s.time === 'Сейчас' ? 'сейчас' : `к ${s.time}`;
           const header = `Алматы • ${typeLabels[order.type as OrderType]} • ${
             s.size || 'M'
@@ -492,7 +492,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
             `Цена: ~${price} ₸`,
           ].join('\n');
           await ctx.telegram.sendMessage(
-            settings.drivers_channel_id,
+            settings.couriers_channel_id,
             card,
             Markup.inlineKeyboard([
               [

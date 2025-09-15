@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT PRIMARY KEY,
-  role TEXT CHECK (role IN ('client','driver','courier','admin')),
+  role TEXT CHECK (role IN ('client','courier','admin')),
   phone TEXT UNIQUE,
   city TEXT,
   consent BOOLEAN DEFAULT false,

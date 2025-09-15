@@ -6,7 +6,7 @@ const file = path.join(process.cwd(), 'data', 'settings.json');
 export interface Point { lat: number; lon: number }
 
 export interface Settings {
-  drivers_channel_id?: string;
+  couriers_channel_id?: string;
   moderators_channel_id?: string;
   city?: 'almaty';
   verify_channel_id?: string;
@@ -27,7 +27,7 @@ export interface Settings {
 }
 
 export type BindingKey =
-  | 'drivers_channel_id'
+  | 'couriers_channel_id'
   | 'moderators_channel_id'
   | 'verify_channel_id';
 
@@ -39,7 +39,7 @@ const defaultPolygon: Point[] = [
 ];
 
 const defaults: Settings = {
-  drivers_channel_id: process.env.DRIVERS_CHANNEL_ID || undefined,
+  couriers_channel_id: process.env.COURIERS_CHANNEL_ID || undefined,
   moderators_channel_id: process.env.MODERATORS_CHANNEL_ID || undefined,
   city: (process.env.CITY as any) || 'almaty',
   verify_channel_id: process.env.VERIFY_CHANNEL_ID || undefined,
