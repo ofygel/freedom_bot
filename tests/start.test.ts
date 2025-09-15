@@ -43,7 +43,7 @@ test('phone collection and consent flow', async () => {
         from: { id: 1, is_bot: false, first_name: 'A' },
         chat: { id: 1, type: 'private' },
         date: 0,
-        contact: { phone_number: '+777', first_name: 'A', user_id: 1 },
+        text: 'Заказать доставку',
       } as any,
     });
     await sendUpdate(bot, {
@@ -53,7 +53,7 @@ test('phone collection and consent flow', async () => {
         from: { id: 1, is_bot: false, first_name: 'A' },
         chat: { id: 1, type: 'private' },
         date: 0,
-        text: 'Клиент',
+        contact: { phone_number: '+777', first_name: 'A', user_id: 1 },
       } as any,
     });
     await sendUpdate(bot, {
@@ -73,8 +73,8 @@ test('phone collection and consent flow', async () => {
     assert.deepEqual(
       messages.map((m) => m.text),
       [
-        'Добро пожаловать! Пожалуйста, отправьте ваш номер телефона.',
-        'Вы клиент или курьер?',
+        'Добро пожаловать! Выберите действие:',
+        'Пожалуйста, отправьте ваш номер телефона.',
         'Согласны ли вы с условиями сервиса?',
         'Главное меню',
       ]
