@@ -10,7 +10,14 @@ The bot can now use a PostgreSQL database. Run migrations to create tables and i
 npm run migrate
 ```
 
-Environment variables for the database are defined in `.env.example`:
+Core bot environment variables are defined in `.env.example`:
+
+- `TELEGRAM_BOT_TOKEN`
+- `COURIERS_CHANNEL_ID`
+- `MODERATORS_CHANNEL_ID`
+- `CITY`
+
+Environment variables for the database are also defined in `.env.example`:
 
 - `DB_HOST`
 - `DB_PORT`
