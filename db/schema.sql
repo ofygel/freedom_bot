@@ -172,10 +172,26 @@ ALTER TABLE callback_map ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE metrics_daily ENABLE ROW LEVEL SECURITY;
 
+<<<<<<< HEAD
 -- Enable row level security on PostGIS spatial_ref_sys
 ALTER TABLE spatial_ref_sys ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS select_all ON spatial_ref_sys;
 CREATE POLICY select_all ON spatial_ref_sys FOR SELECT USING (true);
+=======
+-- Enable row level security on PostGIS spatial_ref_sys if permitted
+DO $$
+BEGIN
+  EXECUTE 'ALTER TABLE spatial_ref_sys ENABLE ROW LEVEL SECURITY';
+  EXECUTE 'DROP POLICY IF EXISTS select_all ON spatial_ref_sys';
+  EXECUTE 'CREATE POLICY select_all ON spatial_ref_sys FOR SELECT USING (true)';
+EXCEPTION
+  WHEN insufficient_privilege THEN
+    RAISE NOTICE 'skipping RLS on spatial_ref_sys due to insufficient privileges';
+  WHEN undefined_table THEN
+    RAISE NOTICE 'spatial_ref_sys table not found';
+END;
+$$;
+>>>>>>> 6706910 (Guard spatial_ref_sys RLS setup)
 
 -- Row level security policies
 
