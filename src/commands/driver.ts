@@ -27,6 +27,7 @@ import { routeToDeeplink } from '../utils/twoGis';
 import { reverseGeocode } from '../utils/geocode';
 import { formatAddress } from '../utils/address';
 import { rateLimit } from '../utils/rateLimiter';
+import { createOrderChat, markOrderChatDelivered } from '../services/chat';
 
 interface ProofState {
   orderId: number;
@@ -88,6 +89,7 @@ export default function driverCommands(bot: Telegraf) {
     }
     const order = assignOrder(id, ctx.from!.id);
     if (!order) return ctx.reply('Не удалось назначить заказ.');
+    createOrderChat(order.id, order.customer_id, order.courier_id!);
     ctx.reply(
       `Заказ #${order.id} назначен.`,
       buildOrderKeyboard('assigned')
@@ -154,6 +156,7 @@ export default function driverCommands(bot: Telegraf) {
       await ctx.answerCbQuery('Не удалось назначить.');
       return;
     }
+    createOrderChat(order.id, order.customer_id, order.courier_id!);
     await ctx.answerCbQuery('Назначено');
     await ctx.editMessageReplyMarkup(undefined).catch(() => {});
     await ctx.editMessageText(`Заказ #${order.id} назначен.`).catch(() => {});
@@ -362,12 +365,14 @@ export default function driverCommands(bot: Telegraf) {
           );
         } else if (ord && ord.pay_type !== 'cash') {
           updateOrderStatus(proof.orderId, 'delivered');
+          markOrderChatDelivered(proof.orderId);
           await ctx.reply(
             'Ожидайте оплату от клиента.',
             buildOrderKeyboard('delivered')
           );
         } else {
           updateOrderStatus(proof.orderId, 'closed');
+          markOrderChatDelivered(proof.orderId);
           await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
         }
       }
@@ -400,6 +405,7 @@ export default function driverCommands(bot: Telegraf) {
     }
     updateOrder(order.id, { payment_status: 'paid' });
     updateOrderStatus(order.id, 'closed');
+    markOrderChatDelivered(order.id);
     await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
   });
 
@@ -430,12 +436,14 @@ export default function driverCommands(bot: Telegraf) {
         );
       } else if (ord && ord.pay_type !== 'cash') {
         updateOrderStatus(proof.orderId, 'delivered');
+        markOrderChatDelivered(proof.orderId);
         await ctx.reply(
           'Ожидайте оплату от клиента.',
           buildOrderKeyboard('delivered')
         );
       } else {
         updateOrderStatus(proof.orderId, 'closed');
+        markOrderChatDelivered(proof.orderId);
         await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
       }
     }

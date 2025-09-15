@@ -7,6 +7,7 @@ import driverCommands from '../src/commands/driver';
 import { createOrder, getOrder } from '../src/services/orders';
 import { setCourierOnline } from '../src/services/courierState';
 import { createMockBot, sendUpdate } from './helpers';
+import { markOrderChatDelivered } from '../src/services/chat';
 
 function setup() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'driver-test-'));
@@ -97,6 +98,64 @@ test('details include order options', async () => {
     assert.ok(
       messages.at(-1)?.text.includes('Опции: Хрупкое, Термобокс')
     );
+  } finally {
+    teardown(dir, prev);
+  }
+});
+
+test('chat ttl set after delivery', async () => {
+  const { dir, prev, bot } = setup();
+  try {
+    const order = createOrder({
+      customer_id: 100,
+      from: { lat: 43.2, lon: 76.9 },
+      to: { lat: 43.25, lon: 76.95 },
+      type: 'delivery',
+      time: 'now',
+      options: null,
+      size: 'M',
+      pay_type: 'card',
+      comment: null,
+      price: 10,
+    });
+    setCourierOnline(200, true);
+    const user = { id: 200, is_bot: false, first_name: 'C' };
+    const chat = { id: 200, type: 'private' };
+    await sendUpdate(bot, {
+      update_id: 1,
+      callback_query: {
+        id: '1',
+        from: user,
+        message: {
+          message_id: 10,
+          text: 'card',
+          chat: { id: -100, type: 'channel' },
+        } as any,
+        data: `reserve:${order.id}`,
+      } as any,
+    });
+    await sendUpdate(bot, {
+      update_id: 2,
+      callback_query: {
+        id: '2',
+        from: user,
+        message: {
+          message_id: 10,
+          text: 'card',
+          chat: { id: -100, type: 'channel' },
+        } as any,
+        data: `assign:${order.id}`,
+      } as any,
+    });
+    markOrderChatDelivered(order.id);
+    const raw = fs.readFileSync('data/order_chats.json', 'utf-8');
+    const sessions = JSON.parse(raw);
+    assert.equal(sessions.length, 1);
+    const session = sessions[0];
+    assert.equal(session.order_id, order.id);
+    assert.ok(session.expires_at);
+    const ttl = new Date(session.expires_at).getTime() - Date.now();
+    assert.ok(ttl <= 86_400_000 && ttl > 86_000_000);
   } finally {
     teardown(dir, prev);
   }
