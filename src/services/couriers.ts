@@ -172,5 +172,5 @@ export function scheduleCardMessageDeletion(
 ) {
   setTimeout(() => {
     telegram.deleteMessage(chatId, messageId).catch(() => {});
-  }, 2 * 60 * 60 * 1000);
+  }, 2 * 60 * 60 * 1000).unref?.();
 }
