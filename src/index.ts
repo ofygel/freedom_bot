@@ -9,7 +9,7 @@ import chatCommands from './commands/chat';
 import orderStatusCommands from './commands/orderStatus';
 import profileCommands from './commands/profile';
 import adminCommands from './commands/admin';
-import { setOrdersBot, expireReservations, expireMovementTimers } from './services/orders';
+import { setOrdersBot, expireReservations, expireMovementTimers, expireAwaitingConfirm } from './services/orders';
 import { rollupDailyMetrics } from './services/metrics';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -33,6 +33,7 @@ adminCommands(bot);
 
 setInterval(expireReservations, 30_000);
 setInterval(expireMovementTimers, 30_000);
+setInterval(expireAwaitingConfirm, 30_000);
 
 rollupDailyMetrics();
 setInterval(rollupDailyMetrics, 24 * 60 * 60 * 1000);

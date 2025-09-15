@@ -10,6 +10,7 @@ import {
   updateOrderStatus,
   getOrder,
   updateOrder,
+  expireAwaitingConfirm,
 } from '../src/services/orders';
 import { upsertCourier } from '../src/services/couriers';
 import { createMockBot, sendUpdate } from './helpers';
@@ -182,11 +183,39 @@ test('client sends card payment confirmation', async () => {
         photo: [{ file_id: 'proof' }],
       } as any,
     });
-    assert.equal(getOrder(order.id)?.status, 'awaiting_confirm');
+    const stored = getOrder(order.id);
+    assert.equal(stored?.status, 'awaiting_confirm');
+    assert.equal(stored?.payment_proof, 'proof');
     assert.equal(
       messages.at(-1)?.text,
       'Спасибо! Ожидайте подтверждения.',
     );
+  } finally {
+    teardown(dir, prev);
+  }
+});
+
+test('auto dispute after awaiting_confirm timeout', () => {
+  const { dir, prev } = setup();
+  try {
+    const order = createOrder({
+      customer_id: 100,
+      from: { lat: 43.2, lon: 76.9 },
+      to: { lat: 43.25, lon: 76.95 },
+      type: 'delivery',
+      time: 'now',
+      options: null,
+      size: 'M',
+      pay_type: 'card',
+      comment: null,
+      price: 10,
+    });
+    updateOrderStatus(order.id, 'awaiting_confirm');
+    const stored = getOrder(order.id)!;
+    stored.transitions.find((t) => t.status === 'awaiting_confirm')!.at = new Date(Date.now() - 16 * 60 * 1000).toISOString();
+    updateOrder(order.id, { transitions: stored.transitions } as any);
+    expireAwaitingConfirm();
+    assert.ok(getOrder(order.id)?.dispute);
   } finally {
     teardown(dir, prev);
   }

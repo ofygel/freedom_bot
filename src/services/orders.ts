@@ -115,6 +115,7 @@ export interface Order {
   movement_deadline: string | null;
   pickup_proof?: string | null;
   delivery_proof?: string | null;
+  payment_proof?: string | null;
   payment_status?: 'pending' | 'paid';
   dispute?: Dispute;
   transitions: StatusTransition[];
@@ -282,6 +283,7 @@ export function createOrder(input: CreateOrderInput): Order {
     movement_deadline: null,
     pickup_proof: null,
     delivery_proof: null,
+    payment_proof: null,
     dispute: undefined,
     transitions: [{ status: 'open', at: now }],
     created_at: now,
@@ -442,6 +444,20 @@ export function expireMovementTimers(): void {
   }
 }
 
+export function expireAwaitingConfirm(): void {
+  const list = readAll();
+  const now = Date.now();
+  for (const order of list) {
+    if (order.status !== 'awaiting_confirm') continue;
+    if (order.dispute) continue;
+    const last = [...order.transitions].reverse().find(t => t.status === 'awaiting_confirm');
+    if (!last) continue;
+    if (now - new Date(last.at).getTime() > 15 * 60 * 1000) {
+      openDispute(order.id);
+    }
+  }
+}
+
 export function updateOrderStatus(
   id: number,
   status: OrderStatus,
@@ -512,6 +528,18 @@ export function addDeliveryProof(id: number, proof: string): Order | undefined {
   list[index] = order;
   writeAll(list);
   logEvent(order.id, 'delivery_proof_added', null, { proof });
+  return order;
+}
+
+export function addPaymentProof(id: number, proof: string): Order | undefined {
+  const list = readAll();
+  const index = list.findIndex(o => o.id === id);
+  if (index === -1) return undefined;
+  const order = list[index];
+  order.payment_proof = proof;
+  list[index] = order;
+  writeAll(list);
+  logEvent(order.id, 'payment_proof_added', null, { proof });
   return order;
 }
 
