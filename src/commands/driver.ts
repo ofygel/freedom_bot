@@ -250,11 +250,18 @@ export default function driverCommands(bot: Telegraf) {
     const order = getCourierActiveOrder(ctx.from!.id);
     if (!order || order.status !== 'at_dropoff')
       return ctx.reply('Неверный этап.');
+    if (order.pay_type === 'receiver' && order.payment_status !== 'paid') {
+      openDispute(order.id);
+      if (process.env.PROVIDER_TOKEN) {
+        await ctx.telegram.sendMessage(
+          order.customer_id,
+          `Пожалуйста, оплатите доставку по заказу #${order.id}.`
+        );
+      }
+      await ctx.reply('Оплата не поступила. Спор открыт.');
+    }
     proofPending.set(ctx.from!.id, { orderId: order.id, type: 'delivery' });
     await ctx.reply('Введите код от получателя или отправьте фото.');
-    if (order.pay_type === 'receiver') {
-      await ctx.reply('Инвойс на оплату будет отправлен получателю.');
-    }
   });
 
   bot.hears('Открыть спор', async (ctx) => {
@@ -335,18 +342,6 @@ export default function driverCommands(bot: Telegraf) {
         const ord = getCourierActiveOrder(uid);
         if (ord && ord.pay_type === 'receiver') {
           updateOrderStatus(proof.orderId, 'awaiting_confirm');
-          if (process.env.PROVIDER_TOKEN) {
-            await ctx.telegram.sendInvoice(
-              ord.customer_id,
-              'Оплата доставки',
-              `Заказ #${ord.id}`,
-              `order-${ord.id}`,
-              process.env.PROVIDER_TOKEN,
-              '',
-              'KZT',
-              [{ label: 'Доставка', amount: Math.round((ord.price || 0) * 100) }]
-            );
-          }
           await ctx.reply(
             'Ожидайте оплату от получателя.',
             buildOrderKeyboard('awaiting_confirm')
@@ -415,18 +410,6 @@ export default function driverCommands(bot: Telegraf) {
       const ord = getCourierActiveOrder(uid);
       if (ord && ord.pay_type === 'receiver') {
         updateOrderStatus(proof.orderId, 'awaiting_confirm');
-        if (process.env.PROVIDER_TOKEN) {
-          await ctx.telegram.sendInvoice(
-            ord.customer_id,
-            'Оплата доставки',
-            `Заказ #${ord.id}`,
-            `order-${ord.id}`,
-            process.env.PROVIDER_TOKEN,
-            '',
-            'KZT',
-            [{ label: 'Доставка', amount: Math.round((ord.price || 0) * 100) }]
-          );
-        }
         await ctx.reply(
           'Ожидайте оплату от получателя.',
           buildOrderKeyboard('awaiting_confirm')
@@ -458,7 +441,35 @@ function handleTransition(
   }
   updateOrderStatus(order.id, toStatus);
   ctx.reply('Статус обновлён.', buildOrderKeyboard(toStatus));
-  if (toStatus === 'at_dropoff' && order.pay_type === 'receiver') {
-    ctx.reply('Передайте получателю, что оплата необходима при получении.');
+  if (
+    (toStatus === 'going_to_dropoff' || toStatus === 'at_dropoff') &&
+    order.pay_type === 'receiver'
+  ) {
+    if (order.payment_status !== 'pending' && order.payment_status !== 'paid') {
+      updateOrder(order.id, { payment_status: 'pending' });
+      if (process.env.PROVIDER_TOKEN) {
+        ctx.telegram
+          .sendInvoice(
+            order.customer_id,
+            'Оплата доставки',
+            `Заказ #${order.id}`,
+            `order-${order.id}`,
+            process.env.PROVIDER_TOKEN,
+            '',
+            'KZT',
+            [
+              {
+                label: 'Доставка',
+                amount: Math.round((order.price || 0) * 100),
+              },
+            ]
+          )
+          .catch(() => {});
+      }
+    }
+    ctx.reply('Ожидайте оплату от получателя.');
+    if (toStatus === 'at_dropoff') {
+      ctx.reply('Передайте получателю, что оплата необходима при получении.');
+    }
   }
 }
