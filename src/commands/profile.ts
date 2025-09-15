@@ -171,9 +171,9 @@ export default function profileCommands(bot: Telegraf) {
         ]).resize()
       );
       const settings = getSettings();
-      if (settings.drivers_channel_id) {
+      if (settings.couriers_channel_id) {
         try {
-          const link = await ctx.telegram.exportChatInviteLink(settings.drivers_channel_id);
+          const link = await ctx.telegram.exportChatInviteLink(settings.couriers_channel_id);
           await ctx.telegram.sendMessage(uid, `Лента заказов: ${link}`);
         } catch {
           await ctx.telegram.sendMessage(

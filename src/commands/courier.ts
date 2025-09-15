@@ -74,7 +74,7 @@ function buildOrderKeyboard(status: OrderStatus) {
   return Markup.keyboard(buttons).resize();
 }
 
-export default function driverCommands(bot: Telegraf) {
+export default function courierCommands(bot: Telegraf) {
   setOrdersBot(bot as any);
   bot.command('assign', (ctx) => {
     if (ctx.chat?.type !== 'private') return;

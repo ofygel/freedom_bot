@@ -3,19 +3,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import driverCommands from '../src/commands/driver';
+import courierCommands from '../src/commands/courier';
 import { createOrder, getOrder } from '../src/services/orders';
 import { setCourierOnline } from '../src/services/courierState';
 import { createMockBot, sendUpdate } from './helpers';
 import { markOrderChatDelivered } from '../src/services/chat';
 
 function setup() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'driver-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'courier-test-'));
   const prev = process.cwd();
   process.chdir(dir);
   const messages: { id: number; text: string }[] = [];
   const bot = createMockBot(messages);
-  driverCommands(bot as any);
+  courierCommands(bot as any);
   return { dir, prev, bot, messages };
 }
 

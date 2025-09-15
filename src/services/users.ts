@@ -3,7 +3,7 @@ import path from 'path';
 
 export interface User {
   id: number;
-  role?: 'client' | 'driver' | 'courier';
+  role?: 'client' | 'courier' | 'admin';
   phone?: string;
   city?: string;
   consent?: boolean;
