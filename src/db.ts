@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 const useSSL = process.env.DB_SSL === 'true';
 
@@ -26,7 +26,7 @@ export async function query<T = any>(sql: string, params: any[] = [], retries = 
   return [];
 }
 
-export async function transaction<T>(fn: (client: any) => Promise<T>): Promise<T> {
+export async function transaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -42,4 +42,17 @@ export async function transaction<T>(fn: (client: any) => Promise<T>): Promise<T
   }
 }
 
-export default { query, transaction };
+export function close(): Promise<void>;
+export function close(_signal: NodeJS.Signals): void;
+export function close(_signal?: NodeJS.Signals): Promise<void> | void {
+  if (typeof _signal === 'string') {
+    void pool.end();
+    return;
+  }
+  return pool.end();
+}
+
+process.once('SIGINT', close);
+process.once('SIGTERM', close);
+
+export default { query, transaction, close };
