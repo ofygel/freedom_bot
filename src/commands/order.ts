@@ -500,7 +500,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
                 ),
               ],
               [
-                Markup.button.callback('Резерв', `reserve:${order.id}`),
+                Markup.button.callback('Принять', `reserve:${order.id}`),
                 Markup.button.callback('Детали', `details:${order.id}`),
                 Markup.button.callback('Скрыть на 1 час', `hide:${order.id}`),
               ],
