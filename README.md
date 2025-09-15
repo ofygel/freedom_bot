@@ -19,7 +19,27 @@ Environment variables for the database are defined in `.env.example`:
 - `DB_NAME`
 - `DB_SSL` (set to `true` when using Supabase)
 
-Supabase connections require SSL, so set `DB_SSL=true` in your environment when using Supabase.
+### Using Supabase
+
+To use [Supabase](https://supabase.com) as the database, map the connection details from the Supabase dashboard to these environment variables:
+
+- `DB_HOST`: the host from the connection string (e.g. `db.<project>.supabase.co`)
+- `DB_PORT`: the port number, usually `5432`
+- `DB_USER`: the database user, typically `postgres`
+- `DB_PASS`: the database password
+- `DB_NAME`: the database name, usually `postgres`
+
+Provide the Supabase API keys as well:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Supabase requires SSL connections, so set `DB_SSL=true` (or `PGSSLMODE=require`) before starting the bot or running migrations. With these variables configured, run migrations against Supabase:
+
+```bash
+npm run migrate
+```
 
 A simple backup script is available:
 
