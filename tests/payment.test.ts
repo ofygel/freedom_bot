@@ -4,12 +4,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import driverCommands from '../src/commands/driver';
+import orderCommands from '../src/commands/order';
 import {
   createOrder,
   updateOrderStatus,
   getOrder,
   updateOrder,
 } from '../src/services/orders';
+import { upsertCourier } from '../src/services/couriers';
 import { createMockBot, sendUpdate } from './helpers';
 
 function setup() {
@@ -19,6 +21,7 @@ function setup() {
   const messages: { id: number; text: string }[] = [];
   const invoices: { id: number; title: string }[] = [];
   const bot = createMockBot(messages, invoices);
+  orderCommands(bot as any);
   driverCommands(bot as any);
   fs.rmSync(path.join(prev, 'data'), { recursive: true, force: true });
   return { dir, prev, bot, messages, invoices };
@@ -119,6 +122,72 @@ test('receiver pay generates invoice and closes after confirmation', async () =>
     // no further courier actions emulated
   } finally {
     process.env.PROVIDER_TOKEN = prevToken;
+    teardown(dir, prev);
+  }
+});
+
+test('client sends card payment confirmation', async () => {
+  const { dir, prev, bot, messages } = setup();
+  try {
+    upsertCourier({
+      id: 200,
+      transport: 'bike',
+      fullName: 'C',
+      idPhoto: '',
+      selfie: '',
+      card: '1234',
+      status: 'verified',
+    });
+    const order = createOrder({
+      customer_id: 100,
+      from: { lat: 43.2, lon: 76.9 },
+      to: { lat: 43.25, lon: 76.95 },
+      type: 'delivery',
+      time: 'now',
+      options: null,
+      size: 'M',
+      pay_type: 'card',
+      comment: null,
+      price: 10,
+    });
+    updateOrderStatus(order.id, 'assigned', 200);
+    assert.equal(
+      messages.at(-1)?.text,
+      'После оплаты нажмите «Оплатил(а)».',
+    );
+
+    await sendUpdate(bot, {
+      update_id: 1,
+      message: {
+        message_id: 1,
+        from: { id: 100, is_bot: false, first_name: 'U' },
+        chat: { id: 100, type: 'private' },
+        date: 0,
+        text: 'Оплатил(а)',
+      } as any,
+    });
+    assert.equal(getOrder(order.id)?.payment_status, 'pending');
+    assert.equal(
+      messages.at(-1)?.text,
+      'Отправьте скриншот или ID перевода.',
+    );
+
+    await sendUpdate(bot, {
+      update_id: 2,
+      message: {
+        message_id: 2,
+        from: { id: 100, is_bot: false, first_name: 'U' },
+        chat: { id: 100, type: 'private' },
+        date: 0,
+        photo: [{ file_id: 'proof' }],
+      } as any,
+    });
+    assert.equal(getOrder(order.id)?.status, 'awaiting_confirm');
+    assert.equal(
+      messages.at(-1)?.text,
+      'Спасибо! Ожидайте подтверждения.',
+    );
+  } finally {
     teardown(dir, prev);
   }
 });

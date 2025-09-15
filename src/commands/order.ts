@@ -5,7 +5,13 @@ import { parse2GisLink, routeToDeeplink } from '../utils/twoGis';
 import { distanceKm, etaMinutes, isInAlmaty } from '../utils/geo';
 import { calcPrice } from '../utils/pricing';
 import { getSettings } from '../services/settings';
-import { createOrder } from '../services/orders';
+import {
+  createOrder,
+  getOrdersByClient,
+  updateOrder,
+  getOrder,
+  updateOrderStatus,
+} from '../services/orders';
 import { geocodeAddress, reverseGeocode } from '../utils/geocode';
 import { formatAddress } from '../utils/address';
 
@@ -37,6 +43,7 @@ interface OrderSession {
 }
 
 const sessions = new Map<number, OrderSession>();
+const paymentPending = new Map<number, number>();
 
 const typeButtons = ['Документы', 'Посылка', 'Еда', 'Другое'];
 const typeMap: Record<string, OrderType> = {
@@ -162,10 +169,63 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
     sessions.set(ctx.from!.id, { step: 1, msgId: msg.message_id });
   });
 
+  bot.hears('Оплатил(а)', async (ctx) => {
+    const orders = getOrdersByClient(ctx.from!.id);
+    const order = orders
+      .slice()
+      .reverse()
+      .find(
+        (o) =>
+          o.pay_type === 'card' &&
+          o.payment_status !== 'paid' &&
+          o.status !== 'awaiting_confirm' &&
+          o.status !== 'closed' &&
+          o.status !== 'canceled'
+      );
+    if (!order) {
+      await ctx.reply('Заказ для подтверждения не найден');
+      return;
+    }
+    paymentPending.set(ctx.from!.id, order.id);
+    updateOrder(order.id, { payment_status: 'pending' });
+    await ctx.reply('Отправьте скриншот или ID перевода.');
+  });
+
   bot.on('message', async (ctx, next) => {
+    const pending = paymentPending.get(ctx.from!.id);
+    const msg: any = ctx.message;
+    if (pending) {
+      const order = getOrder(pending);
+      if (order) {
+        if (msg.photo?.length) {
+          const fileId = msg.photo[msg.photo.length - 1].file_id;
+          if (order.courier_id)
+            ctx.telegram
+              .sendPhoto(order.courier_id, fileId, {
+                caption: `Клиент отправил подтверждение оплаты по заказу #${order.id}`,
+              })
+              .catch(() => {});
+        } else if (msg.text) {
+          if (order.courier_id)
+            ctx.telegram
+              .sendMessage(
+                order.courier_id,
+                `Клиент отправил подтверждение оплаты по заказу #${order.id}: ${msg.text}`
+              )
+              .catch(() => {});
+        } else {
+          await ctx.reply('Отправьте скриншот или ID перевода.');
+          return;
+        }
+        updateOrderStatus(order.id, 'awaiting_confirm');
+        await ctx.reply('Спасибо! Ожидайте подтверждения.');
+      }
+      paymentPending.delete(ctx.from!.id);
+      return;
+    }
+
     const s = sessions.get(ctx.from!.id);
     if (!s) return next();
-    const msg: any = ctx.message;
     const text: string | undefined = msg.text;
     const loc = msg.location ? { lat: msg.location.latitude, lon: msg.location.longitude } : undefined;
 
