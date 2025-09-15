@@ -9,6 +9,7 @@ async function run() {
     user: process.env.DB_USER,
     password: process.env.DB_PASS,
     database: process.env.DB_NAME,
+    options: '-c search_path=public,extensions',
   });
 
   const client = await pool.connect();
