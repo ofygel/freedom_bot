@@ -1,11 +1,14 @@
 import { Pool } from 'pg';
 
+const useSSL = process.env.DB_SSL === 'true';
+
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT || 5432),
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
   database: process.env.DB_NAME,
+  ...(useSSL ? { ssl: { rejectUnauthorized: false } } : {}),
 });
 
 export async function query<T = any>(sql: string, params: any[] = [], retries = 3): Promise<T[]> {
