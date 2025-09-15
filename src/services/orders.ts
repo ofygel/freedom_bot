@@ -288,6 +288,10 @@ export function getOrder(id: number): Order | undefined {
   return readAll().find(o => o.id === id);
 }
 
+export function getOrdersByClient(clientId: number): Order[] {
+  return readAll().filter(o => o.customer_id === clientId);
+}
+
 export function getCourierActiveOrder(courierId: number): Order | undefined {
   return readAll().find(
     o => o.courier_id === courierId && !['closed', 'canceled'].includes(o.status)
