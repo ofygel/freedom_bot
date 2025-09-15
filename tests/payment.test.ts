@@ -4,7 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import driverCommands from '../src/commands/driver';
-import { createOrder, updateOrderStatus, getOrder } from '../src/services/orders';
+import {
+  createOrder,
+  updateOrderStatus,
+  getOrder,
+  updateOrder,
+} from '../src/services/orders';
 import { createMockBot, sendUpdate } from './helpers';
 
 function setup() {
@@ -62,8 +67,6 @@ test('receiver pay generates invoice and closes after confirmation', async () =>
     updateOrderStatus(order.id, 'assigned', 200);
     updateOrderStatus(order.id, 'going_to_pickup', 200);
     updateOrderStatus(order.id, 'picked', 200);
-    updateOrderStatus(order.id, 'going_to_dropoff', 200);
-    updateOrderStatus(order.id, 'at_dropoff', 200);
 
     await sendUpdate(bot, {
       update_id: 1,
@@ -72,18 +75,34 @@ test('receiver pay generates invoice and closes after confirmation', async () =>
         from: { id: 200, is_bot: false, first_name: 'C' },
         chat: { id: 200, type: 'private' },
         date: 0,
-        text: 'Доставлено',
+        text: 'В пути',
       } as any,
     });
-    assert.equal(
-      messages.at(-1)?.text,
-      'Инвойс на оплату будет отправлен получателю.'
-    );
+    assert.equal(invoices.length, 1);
+    assert.equal(invoices[0].id, 100);
+
+    updateOrder(order.id, { payment_status: 'paid' });
+    updateOrderStatus(order.id, 'at_dropoff', 200);
 
     await sendUpdate(bot, {
       update_id: 2,
       message: {
         message_id: 2,
+        from: { id: 200, is_bot: false, first_name: 'C' },
+        chat: { id: 200, type: 'private' },
+        date: 0,
+        text: 'Доставлено',
+      } as any,
+    });
+    assert.equal(
+      messages.at(-1)?.text,
+      'Введите код от получателя или отправьте фото.'
+    );
+
+    await sendUpdate(bot, {
+      update_id: 3,
+      message: {
+        message_id: 3,
         from: { id: 200, is_bot: false, first_name: 'C' },
         chat: { id: 200, type: 'private' },
         date: 0,
@@ -95,7 +114,6 @@ test('receiver pay generates invoice and closes after confirmation', async () =>
       'Ожидайте оплату от получателя.'
     );
     assert.equal(invoices.length, 1);
-    assert.equal(invoices[0].id, 100);
     assert.equal(getOrder(order.id)?.status, 'awaiting_confirm');
 
     // no further courier actions emulated
