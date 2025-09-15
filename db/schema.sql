@@ -136,6 +136,21 @@ CREATE TABLE IF NOT EXISTS metrics_daily (
   data JSONB
 );
 
+-- Channel bindings
+CREATE TABLE IF NOT EXISTS channel_bindings (
+  city      TEXT NOT NULL DEFAULT 'almaty',
+  kind      TEXT NOT NULL CHECK (kind IN ('verify','drivers')),
+  chat_id   BIGINT NOT NULL,
+  title     TEXT,
+  bound_by  BIGINT,
+  bound_at  TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (city, kind)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_bindings_chat_kind
+  ON channel_bindings (chat_id, kind);
+
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -182,6 +197,11 @@ CREATE TRIGGER trg_support_tickets_updated
 BEFORE UPDATE ON support_tickets
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_channel_bindings_updated ON channel_bindings;
+CREATE TRIGGER trg_channel_bindings_updated
+BEFORE UPDATE ON channel_bindings
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 -- Enable row level security on all tables
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE courier_profiles ENABLE ROW LEVEL SECURITY;
@@ -195,6 +215,7 @@ ALTER TABLE support_tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE callback_map ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE metrics_daily ENABLE ROW LEVEL SECURITY;
+ALTER TABLE channel_bindings ENABLE ROW LEVEL SECURITY;
 
 -- spatial_ref_sys is a system table; leave it untouched
 DO $$
@@ -276,6 +297,10 @@ CREATE POLICY user_is_owner ON support_tickets FOR ALL USING (auth.uid() = user_
 DROP POLICY IF EXISTS service_all ON support_tickets;
 CREATE POLICY service_all ON support_tickets FOR ALL USING (auth.role() = 'service_role');
 
+-- channel_bindings policies
+DROP POLICY IF EXISTS service_all ON channel_bindings;
+CREATE POLICY service_all ON channel_bindings FOR ALL USING (auth.role() = 'service_role');
+
 -- callback_map policies (service role only)
 DROP POLICY IF EXISTS service_all ON callback_map;
 CREATE POLICY service_all ON callback_map FOR ALL USING (auth.role() = 'service_role');
@@ -287,6 +312,90 @@ CREATE POLICY service_all ON rate_limits FOR ALL USING (auth.role() = 'service_r
 -- metrics_daily policies (service role only)
 DROP POLICY IF EXISTS service_all ON metrics_daily;
 CREATE POLICY service_all ON metrics_daily FOR ALL USING (auth.role() = 'service_role');
+
+-- Channel binding utilities
+CREATE OR REPLACE FUNCTION upsert_setting(p_key TEXT, p_value JSONB)
+RETURNS VOID LANGUAGE sql AS $$
+  INSERT INTO app_settings(key, value)
+  VALUES (p_key, p_value)
+  ON CONFLICT (key) DO UPDATE
+    SET value = EXCLUDED.value,
+        updated_at = now();
+$$;
+
+CREATE OR REPLACE FUNCTION bind_channel(
+  p_kind TEXT,
+  p_city TEXT,
+  p_chat_id BIGINT,
+  p_title TEXT,
+  p_admin_tg_id BIGINT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF p_kind NOT IN ('verify','drivers') THEN
+    RAISE EXCEPTION 'unknown kind: %', p_kind;
+  END IF;
+
+  INSERT INTO channel_bindings(city, kind, chat_id, title, bound_by, bound_at)
+  VALUES (COALESCE(p_city,'almaty'), p_kind, p_chat_id, p_title, p_admin_tg_id, now())
+  ON CONFLICT (city, kind) DO UPDATE
+    SET chat_id   = EXCLUDED.chat_id,
+        title     = EXCLUDED.title,
+        bound_by  = EXCLUDED.bound_by,
+        bound_at  = now(),
+        updated_at= now();
+
+  PERFORM upsert_setting(p_kind || '_channel_id',
+                         jsonb_build_object('chat_id', p_chat_id, 'title', p_title, 'city', COALESCE(p_city,'almaty')));
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION get_channel_binding(p_kind TEXT, p_city TEXT DEFAULT 'almaty')
+RETURNS TABLE (chat_id BIGINT, title TEXT)
+LANGUAGE sql STABLE AS $$
+  SELECT chat_id, title
+  FROM channel_bindings
+  WHERE kind = p_kind AND city = COALESCE(p_city,'almaty');
+$$;
+
+CREATE OR REPLACE VIEW v_channel_bindings AS
+SELECT city, kind, chat_id, title, bound_by, bound_at
+FROM channel_bindings;
+
+-- Views and functions for "My orders"
+CREATE OR REPLACE VIEW v_my_orders_client AS
+SELECT id, status, price, created_at, updated_at, pickup_addr, dropoff_addr
+FROM orders
+WHERE client_id = auth.uid()
+ORDER BY created_at DESC;
+
+CREATE OR REPLACE VIEW v_my_orders_courier AS
+SELECT id, status, price, created_at, updated_at, pickup_addr, dropoff_addr
+FROM orders
+WHERE courier_id = auth.uid()
+ORDER BY created_at DESC;
+
+CREATE OR REPLACE FUNCTION get_orders_for_client(p_client_id UUID, p_limit INT DEFAULT 50)
+RETURNS TABLE (id INT, status TEXT, price INT, created_at TIMESTAMPTZ, pickup_addr TEXT, dropoff_addr TEXT)
+LANGUAGE sql STABLE AS $$
+  SELECT id, status, price, created_at, pickup_addr, dropoff_addr
+  FROM orders
+  WHERE client_id = p_client_id
+  ORDER BY created_at DESC
+  LIMIT p_limit;
+$$;
+
+CREATE OR REPLACE FUNCTION get_orders_for_courier(p_courier_id UUID, p_limit INT DEFAULT 50)
+RETURNS TABLE (id INT, status TEXT, price INT, created_at TIMESTAMPTZ, pickup_addr TEXT, dropoff_addr TEXT)
+LANGUAGE sql STABLE AS $$
+  SELECT id, status, price, created_at, pickup_addr, dropoff_addr
+  FROM orders
+  WHERE courier_id = p_courier_id
+  ORDER BY created_at DESC
+  LIMIT p_limit;
+$$;
 
 -- Helper functions for atomic order operations
 
