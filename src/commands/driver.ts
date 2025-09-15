@@ -62,7 +62,7 @@ function buildOrderKeyboard(status: OrderStatus) {
       break;
     case 'awaiting_confirm':
     case 'delivered':
-      buttons.push(['Оплату получил']);
+      buttons.push(['Оплату получил'], ['Поступление проверил']);
       break;
   }
   buttons.push(
@@ -407,6 +407,15 @@ export default function driverCommands(bot: Telegraf) {
     updateOrderStatus(order.id, 'closed');
     markOrderChatDelivered(order.id);
     await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
+  });
+
+  bot.hears('Поступление проверил', async (ctx) => {
+    const order = getCourierActiveOrder(ctx.from!.id);
+    if (!order || order.status !== 'awaiting_confirm') {
+      return ctx.reply('Неверный этап.');
+    }
+    openDispute(order.id);
+    await ctx.reply('Спор открыт, модераторы свяжутся.', buildOrderKeyboard('awaiting_confirm'));
   });
 
   bot.on('photo', async (ctx) => {

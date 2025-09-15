@@ -11,6 +11,7 @@ import {
   updateOrder,
   getOrder,
   updateOrderStatus,
+  addPaymentProof,
 } from '../services/orders';
 import { geocodeAddress, reverseGeocode } from '../utils/geocode';
 import { formatAddress } from '../utils/address';
@@ -205,6 +206,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
                 caption: `Клиент отправил подтверждение оплаты по заказу #${order.id}`,
               })
               .catch(() => {});
+          addPaymentProof(order.id, fileId);
         } else if (msg.text) {
           if (order.courier_id)
             ctx.telegram
@@ -213,6 +215,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
                 `Клиент отправил подтверждение оплаты по заказу #${order.id}: ${msg.text}`
               )
               .catch(() => {});
+          addPaymentProof(order.id, msg.text);
         } else {
           await ctx.reply('Отправьте скриншот или ID перевода.');
           return;
