@@ -9,14 +9,18 @@
     "start": "node dist/index.js",
     "dev": "ts-node --transpile-only src/index.ts",
     "check": "tsc --noEmit",
-    "test": "node --require ts-node/register --test --test-concurrency=1 $(find tests -name '*.test.ts')"
+    "test": "node --require ts-node/register --test --test-concurrency=1 $(find tests -name '*.test.ts')",
+    "migrate": "ts-node db/migrate.ts",
+    "backup": "bash db/backup.sh"
   },
   "dependencies": {
     "dotenv": "^16.4.0",
+    "pg": "^8.16.3",
     "telegraf": "^4.15.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.17",
+    "@types/pg": "^8.15.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.3"
   }
