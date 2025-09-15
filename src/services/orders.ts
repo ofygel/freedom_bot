@@ -92,6 +92,14 @@ export interface Order {
   courier_id?: number | null;
   from: Point;
   to: Point;
+  from_entrance?: string | null;
+  from_floor?: string | null;
+  from_flat?: string | null;
+  from_intercom?: string | null;
+  to_entrance?: string | null;
+  to_floor?: string | null;
+  to_flat?: string | null;
+  to_intercom?: string | null;
   type: string;
   time: string;
   options: string | null;
@@ -210,6 +218,14 @@ interface CreateOrderInput {
   customer_id: number;
   from: Point;
   to: Point;
+  from_entrance?: string | null;
+  from_floor?: string | null;
+  from_flat?: string | null;
+  from_intercom?: string | null;
+  to_entrance?: string | null;
+  to_floor?: string | null;
+  to_flat?: string | null;
+  to_intercom?: string | null;
   type: string;
   time: string;
   options: string | null;
@@ -236,6 +252,14 @@ export function createOrder(input: CreateOrderInput): Order {
     customer_id: input.customer_id,
     from: input.from,
     to: input.to,
+    from_entrance: input.from_entrance ?? null,
+    from_floor: input.from_floor ?? null,
+    from_flat: input.from_flat ?? null,
+    from_intercom: input.from_intercom ?? null,
+    to_entrance: input.to_entrance ?? null,
+    to_floor: input.to_floor ?? null,
+    to_flat: input.to_flat ?? null,
+    to_intercom: input.to_intercom ?? null,
     type: input.type,
     time: input.time,
     options: input.options,
