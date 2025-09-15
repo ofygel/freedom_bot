@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Telegraf } from 'telegraf';
+import { Telegraf, TelegramError } from 'telegraf';
 import registerStart from './commands/start';
 import { registerBindingCommands } from './commands/bindings';
 import registerOrderCommands from './commands/order';
@@ -40,16 +40,49 @@ setInterval(rollupDailyMetrics, 24 * 60 * 60 * 1000);
 
 bot.command('ping', (ctx) => ctx.reply('pong'));
 
-bot.launch()
-  .then(() => console.log('Bot started'))
-  .catch((err) => {
-    if (err.response?.error_code === 409) {
+async function resetTelegramSession() {
+  try {
+    await bot.telegram.close();
+    console.warn('Closed previous Telegram session via Telegram API.');
+    return true;
+  } catch (closeError) {
+    console.warn('Failed to close previous Telegram session with close()', closeError);
+    try {
+      await bot.telegram.logOut();
+      console.warn('Logged out previous Telegram session via Telegram API.');
+      return true;
+    } catch (logoutError) {
+      console.error('Unable to reset Telegram session', logoutError);
+      return false;
+    }
+  }
+}
+
+async function launchBot() {
+  try {
+    await bot.launch();
+    console.log('Bot started');
+  } catch (err) {
+    if (err instanceof TelegramError && err.response?.error_code === 409) {
       console.error('Bot launch failed: another instance is already running.', err);
+      const reset = await resetTelegramSession();
+      if (reset) {
+        try {
+          await bot.launch();
+          console.log('Bot started after resetting Telegram session');
+          return;
+        } catch (retryError) {
+          console.error('Bot launch failed after resetting Telegram session', retryError);
+        }
+      }
     } else {
       console.error('Bot launch failed', err);
     }
     process.exit(1);
-  });
+  }
+}
+
+launchBot();
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
