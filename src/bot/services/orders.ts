@@ -15,6 +15,7 @@ export const resetClientOrderDraft = (draft: ClientOrderDraftState): void => {
   draft.dropoff = undefined;
   draft.price = undefined;
   draft.confirmationMessageId = undefined;
+  draft.notes = undefined;
 };
 
 export const isOrderDraftComplete = (

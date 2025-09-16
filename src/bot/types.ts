@@ -58,6 +58,7 @@ export type ClientOrderStage =
   | 'idle'
   | 'collectingPickup'
   | 'collectingDropoff'
+  | 'collectingComment'
   | 'awaitingConfirmation'
   | 'creatingOrder';
 
@@ -67,6 +68,7 @@ export interface ClientOrderDraftState {
   dropoff?: OrderLocation;
   price?: OrderPriceDetails;
   confirmationMessageId?: number;
+  notes?: string;
 }
 
 export interface ClientFlowState {

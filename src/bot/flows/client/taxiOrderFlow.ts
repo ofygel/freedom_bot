@@ -1,5 +1,8 @@
 import { Telegraf } from 'telegraf';
-import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
+import type {
+  InlineKeyboardMarkup,
+  Location as TelegramLocation,
+} from 'telegraf/typings/core/types/typegram';
 
 import { publishOrderToDriversChannel, type PublishOrderStatus } from '../../channels/ordersChannel';
 import { logger } from '../../../config';
@@ -12,7 +15,11 @@ import {
   resetClientOrderDraft,
   type CompletedOrderDraft,
 } from '../../services/orders';
-import { geocodeOrderLocation } from '../../services/geocode';
+import {
+  geocodeOrderLocation,
+  geocodeTelegramLocation,
+  isTwoGisLink,
+} from '../../services/geocode';
 import { estimateTaxiPrice, formatPriceAmount } from '../../services/pricing';
 import { rememberEphemeralMessage, clearInlineKeyboard } from '../../services/cleanup';
 import { ensurePrivateCallback, isPrivateChat } from '../../services/access';
@@ -41,17 +48,44 @@ const updateTaxiStep = (
     homeAction: CLIENT_MENU_ACTION,
   });
 
+const ADDRESS_INPUT_HINTS = [
+  '• Отправьте ссылку 2ГИС на точку.',
+  '• Поделитесь геопозицией через Telegram (скрепка → «Геопозиция»).',
+  '• Введите адрес вручную — внимательно проверьте город, улицу и дом.',
+] as const;
+
+const buildAddressPrompt = (lines: string[]): string =>
+  [...lines, ...ADDRESS_INPUT_HINTS].join('\n');
+
+const remindManualAddressAccuracy = async (ctx: BotContext): Promise<void> => {
+  const warning = await ctx.reply(
+    '⚠️ При ручном вводе адреса укажите город, улицу и дом. Если есть ссылка 2ГИС или геопозиция, отправьте её.',
+  );
+  rememberEphemeralMessage(ctx, warning.message_id);
+};
+
+const remindConfirmationActions = async (ctx: BotContext): Promise<void> => {
+  const reminder = await ctx.reply(
+    'Используйте кнопки ниже, чтобы подтвердить или отменить заказ.',
+  );
+  rememberEphemeralMessage(ctx, reminder.message_id);
+};
+
 const requestPickupAddress = async (ctx: BotContext): Promise<void> => {
   await updateTaxiStep(
     ctx,
-    ['Введите адрес подачи такси.', 'Например: «Достык 1, подъезд 3».'].join('\n'),
+    buildAddressPrompt(['Отправьте точку подачи такси одним из способов:']),
   );
 };
 
 const requestDropoffAddress = async (ctx: BotContext, pickup: CompletedOrderDraft['pickup']): Promise<void> => {
   await updateTaxiStep(
     ctx,
-    [`Адрес подачи: ${pickup.address}.`, 'Теперь укажите пункт назначения.'].join('\n'),
+    buildAddressPrompt([
+      `Адрес подачи: ${pickup.address}.`,
+      '',
+      'Теперь отправьте пункт назначения одним из способов:',
+    ]),
   );
 };
 
@@ -62,17 +96,49 @@ const handleGeocodingFailure = async (ctx: BotContext): Promise<void> => {
   rememberEphemeralMessage(ctx, message.message_id);
 };
 
+const applyPickupDetails = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+  pickup: CompletedOrderDraft['pickup'],
+): Promise<void> => {
+  draft.pickup = pickup;
+  draft.stage = 'collectingDropoff';
+
+  await requestDropoffAddress(ctx, pickup);
+};
+
+const applyDropoffDetails = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+  dropoff: CompletedOrderDraft['dropoff'],
+): Promise<void> => {
+  draft.dropoff = dropoff;
+
+  if (!draft.pickup) {
+    logger.warn('Taxi order draft is missing pickup after dropoff geocode');
+    draft.stage = 'idle';
+    return;
+  }
+
+  draft.price = estimateTaxiPrice(draft.pickup, dropoff);
+  draft.stage = 'awaitingConfirmation';
+
+  if (isOrderDraftComplete(draft)) {
+    await showConfirmation(ctx, draft);
+  }
+};
+
 const applyPickupAddress = async (ctx: BotContext, draft: ClientOrderDraftState, text: string) => {
   const pickup = await geocodeOrderLocation(text);
   if (!pickup) {
     await handleGeocodingFailure(ctx);
     return;
   }
+  await applyPickupDetails(ctx, draft, pickup);
 
-  draft.pickup = pickup;
-  draft.stage = 'collectingDropoff';
-
-  await requestDropoffAddress(ctx, pickup);
+  if (!isTwoGisLink(text)) {
+    await remindManualAddressAccuracy(ctx);
+  }
 };
 
 const buildConfirmationKeyboard = () =>
@@ -102,21 +168,39 @@ const applyDropoffAddress = async (
     await handleGeocodingFailure(ctx);
     return;
   }
+  await applyDropoffDetails(ctx, draft, dropoff);
 
-  draft.dropoff = dropoff;
+  if (!isTwoGisLink(text)) {
+    await remindManualAddressAccuracy(ctx);
+  }
+};
 
-  if (!draft.pickup) {
-    logger.warn('Taxi order draft is missing pickup after dropoff geocode');
-    draft.stage = 'idle';
+const applyPickupLocation = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+  location: TelegramLocation,
+): Promise<void> => {
+  const pickup = await geocodeTelegramLocation(location, { label: 'Геопозиция подачи' });
+  if (!pickup) {
+    await handleGeocodingFailure(ctx);
     return;
   }
 
-  draft.price = estimateTaxiPrice(draft.pickup, dropoff);
-  draft.stage = 'awaitingConfirmation';
+  await applyPickupDetails(ctx, draft, pickup);
+};
 
-  if (isOrderDraftComplete(draft)) {
-    await showConfirmation(ctx, draft);
+const applyDropoffLocation = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+  location: TelegramLocation,
+): Promise<void> => {
+  const dropoff = await geocodeTelegramLocation(location, { label: 'Геопозиция назначения' });
+  if (!dropoff) {
+    await handleGeocodingFailure(ctx);
+    return;
   }
+
+  await applyDropoffDetails(ctx, draft, dropoff);
 };
 
 const cancelOrderDraft = async (ctx: BotContext, draft: ClientOrderDraftState): Promise<void> => {
@@ -240,12 +324,41 @@ const handleIncomingText = async (ctx: BotContext, next: () => Promise<void>): P
       if (await processCancellationText(ctx, draft, text)) {
         return;
       }
-      const reminder = await ctx.reply(
-        'Используйте кнопки ниже, чтобы подтвердить или отменить заказ.',
-      );
-      rememberEphemeralMessage(ctx, reminder.message_id);
+      await remindConfirmationActions(ctx);
       break;
     }
+    default:
+      await next();
+  }
+};
+
+const handleIncomingLocation = async (
+  ctx: BotContext,
+  next: () => Promise<void>,
+): Promise<void> => {
+  if (!isPrivateChat(ctx)) {
+    await next();
+    return;
+  }
+
+  const message = ctx.message;
+  if (!message || !('location' in message) || !message.location) {
+    await next();
+    return;
+  }
+
+  const draft = getDraft(ctx);
+
+  switch (draft.stage) {
+    case 'collectingPickup':
+      await applyPickupLocation(ctx, draft, message.location);
+      return;
+    case 'collectingDropoff':
+      await applyDropoffLocation(ctx, draft, message.location);
+      return;
+    case 'awaitingConfirmation':
+      await remindConfirmationActions(ctx);
+      return;
     default:
       await next();
   }
@@ -306,6 +419,10 @@ export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
     resetClientOrderDraft(ctx.session.client.delivery);
 
     await requestPickupAddress(ctx);
+  });
+
+  bot.on('location', async (ctx, next) => {
+    await handleIncomingLocation(ctx, next);
   });
 
   bot.on('text', async (ctx, next) => {

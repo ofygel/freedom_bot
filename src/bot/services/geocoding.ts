@@ -250,6 +250,8 @@ const parse2GisLink = (value: string): Parsed2GisLink | null => {
   return null;
 };
 
+export const isTwoGisLink = (value: string): boolean => Boolean(parse2GisLink(value));
+
 interface TwoGisPoint {
   lat?: number | string;
   lon?: number | string;
@@ -588,6 +590,44 @@ const reverseGeocodeWithNominatim = async (
   }
 };
 
+export interface CoordinateResolutionOptions {
+  query?: string;
+  label?: string;
+}
+
+export const resolveCoordinates = async (
+  latitude: number,
+  longitude: number,
+  options: CoordinateResolutionOptions = {},
+): Promise<GeocodingResult | null> => {
+  if (!isValidCoordinate(latitude, longitude)) {
+    return null;
+  }
+
+  const explicitQuery = options.query?.trim();
+  const normalizedQuery =
+    explicitQuery && explicitQuery.length > 0
+      ? normaliseQuery(explicitQuery)
+      : formatCoordinates(latitude, longitude);
+
+  const fallbackLabel =
+    options.label?.trim() || `Координаты ${formatCoordinates(latitude, longitude)}`;
+
+  const nominatimConfig = getNominatimConfig();
+  const resolvedAddress = await reverseGeocodeWithNominatim(
+    latitude,
+    longitude,
+    nominatimConfig,
+  );
+
+  return {
+    query: normalizedQuery,
+    address: resolvedAddress ?? fallbackLabel,
+    latitude,
+    longitude,
+  } satisfies GeocodingResult;
+};
+
 export const geocodeAddress = async (
   query: string,
 ): Promise<GeocodingResult | null> => {
@@ -605,21 +645,14 @@ export const geocodeAddress = async (
   const nominatimConfig = getNominatimConfig();
   const parsedLink = parse2GisLink(trimmed);
   if (parsedLink) {
-    const { latitude, longitude, label } = parsedLink;
-    const fallbackAddress = label ?? `Координаты ${formatCoordinates(latitude, longitude)}`;
-
-    const resolvedAddress = await reverseGeocodeWithNominatim(
-      latitude,
-      longitude,
-      nominatimConfig,
-    );
-
-    return {
+    const resolved = await resolveCoordinates(parsedLink.latitude, parsedLink.longitude, {
       query: normalizedQuery,
-      address: resolvedAddress ?? fallbackAddress,
-      latitude,
-      longitude,
-    } satisfies GeocodingResult;
+      label: parsedLink.label,
+    });
+
+    if (resolved) {
+      return resolved;
+    }
   }
 
   const providers: Array<() => Promise<GeocodingResult | null>> = [];
