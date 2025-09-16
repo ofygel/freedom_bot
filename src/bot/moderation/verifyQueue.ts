@@ -4,6 +4,12 @@ import { logger } from '../../config';
 
 import type { BotContext } from '../types';
 import {
+  markVerificationApproved,
+  markVerificationRejected,
+  type VerificationApplicant,
+  type VerificationRole,
+} from '../../db/verifications';
+import {
   createModerationQueue,
   type ModerationRejectionContext,
   type ModerationQueue,
@@ -47,16 +53,9 @@ const normaliseSummary = (value?: string | string[]): string[] => {
   return Array.isArray(value) ? value : [value];
 };
 
-export interface VerificationApplicant {
-  telegramId: number;
-  username?: string;
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
-}
-
 export interface VerificationApplication extends ModerationQueueItemBase<VerificationApplication> {
   applicant: VerificationApplicant;
+  role: VerificationRole;
   /**
    * Optional custom title for the moderation message.
    * When omitted, a default heading is used.
@@ -169,11 +168,62 @@ export const publishVerificationApplication = async (
   telegram: Telegram,
   application: VerificationApplication,
 ): Promise<PublishModerationResult> => {
+  const existingOnApprove = application.onApprove;
   const existingOnReject = application.onReject;
 
   const item: VerificationApplication = {
     ...application,
+    onApprove: async (context) => {
+      try {
+        await markVerificationApproved({
+          applicant: application.applicant,
+          role: application.role,
+        });
+      } catch (error) {
+        logger.error(
+          {
+            err: error,
+            applicationId: application.id,
+            applicantId: application.applicant.telegramId,
+            role: application.role,
+          },
+          'Failed to mark verification as approved',
+        );
+      }
+
+      if (existingOnApprove) {
+        try {
+          await existingOnApprove(context);
+        } catch (error) {
+          logger.error(
+            {
+              err: error,
+              applicationId: application.id,
+              applicantId: application.applicant.telegramId,
+            },
+            'Verification approval callback failed',
+          );
+        }
+      }
+    },
     onReject: async (context) => {
+      try {
+        await markVerificationRejected({
+          applicant: application.applicant,
+          role: application.role,
+        });
+      } catch (error) {
+        logger.error(
+          {
+            err: error,
+            applicationId: application.id,
+            applicantId: application.applicant.telegramId,
+            role: application.role,
+          },
+          'Failed to mark verification as rejected',
+        );
+      }
+
       if (existingOnReject) {
         try {
           await existingOnReject(context);

@@ -7,6 +7,7 @@ import {
   type ExecutorFlowState,
   type ExecutorRole,
 } from '../../types';
+import { persistVerificationSubmission } from '../../../db/verifications';
 import {
   EXECUTOR_MENU_ACTION,
   EXECUTOR_VERIFICATION_ACTION,
@@ -76,6 +77,7 @@ const submitForModeration = async (
   const application: VerificationApplication = {
     id: applicationId,
     title: `🆕 Новая заявка на верификацию ${copy.genitive}.`,
+    role,
     summary: summaryLines,
     applicant: {
       telegramId: applicantId,
@@ -123,6 +125,27 @@ const submitForModeration = async (
       }
     },
   };
+
+  try {
+    await persistVerificationSubmission({
+      applicant: application.applicant,
+      role,
+      photosRequired: verification.requiredPhotos,
+      photosUploaded: verification.uploadedPhotos.length,
+    });
+  } catch (error) {
+    logger.error(
+      { err: error, applicationId, role, applicantId },
+      'Failed to persist executor verification submission',
+    );
+    await ui.step(ctx, {
+      id: VERIFICATION_SUBMISSION_FAILED_STEP_ID,
+      text: 'Не удалось отправить документы на проверку. Попробуйте позже.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+    return false;
+  }
 
   try {
     const result = await publishVerificationApplication(ctx.telegram, application);
