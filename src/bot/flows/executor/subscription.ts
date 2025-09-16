@@ -6,7 +6,7 @@ import type {
   PhotoSize,
 } from 'telegraf/typings/core/types/typegram';
 
-import { logger } from '../../../config';
+import { config, logger } from '../../../config';
 import type { BotContext } from '../../types';
 import {
   EXECUTOR_MENU_ACTION,
@@ -35,16 +35,12 @@ const SUBSCRIPTION_SELECT_PERIOD_REMINDER_STEP_ID = 'executor:subscription:selec
 const SUBSCRIPTION_RECEIPT_REMINDER_STEP_ID = 'executor:subscription:receipt-reminder';
 const SUBSCRIPTION_SENDER_UNKNOWN_STEP_ID = 'executor:subscription:sender-unknown';
 
-const KASPI_DETAILS = [
-  'Получатель: Freedom Bot',
-  'Kaspi Gold: 4400 4301 2345 6789',
-  'Телефон: +7 (700) 000-00-00',
-  'Комментарий: Подписка Freedom Bot',
-];
-
 const formatKaspiDetails = (): string[] => [
   'Оплатите через Kaspi по реквизитам:',
-  ...KASPI_DETAILS,
+  `Получатель: ${config.subscriptions.payment.kaspi.name}`,
+  `Kaspi Gold: ${config.subscriptions.payment.kaspi.card}`,
+  `Телефон: ${config.subscriptions.payment.kaspi.phone}`,
+  'Комментарий: Подписка Freedom Bot',
 ];
 
 const buildPeriodKeyboard = (): InlineKeyboardMarkup =>

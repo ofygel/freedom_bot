@@ -1,3 +1,5 @@
+import { config } from '../../config';
+
 export interface GeocodingResult {
   query: string;
   address: string;
@@ -8,10 +10,7 @@ export interface GeocodingResult {
 const MIN_QUERY_LENGTH = 3;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-const DEFAULT_CITY = (() => {
-  const value = process.env.CITY_DEFAULT?.trim();
-  return value && value.length > 0 ? value : null;
-})();
+const DEFAULT_CITY = config.city.default ?? null;
 
 const DEFAULT_CITY_LOWER = DEFAULT_CITY?.toLowerCase() ?? null;
 
@@ -437,16 +436,30 @@ const resolveNominatimApiKeyParam = (hostname: string, explicit?: string | null)
   return 'key';
 };
 
+const buildNominatimEndpoint = (base: string, segment: string): string => {
+  const normalised = base.endsWith('/') ? base : `${base}/`;
+  try {
+    return new URL(segment, normalised).toString();
+  } catch (error) {
+    throw new Error(`Invalid NOMINATIM_BASE value: ${base}`);
+  }
+};
+
 const getNominatimConfig = (): NominatimConfig => {
+  const baseUrl = getFirstDefinedEnv('NOMINATIM_BASE');
   const searchUrl =
     getFirstDefinedEnv('NOMINATIM_SEARCH_URL', 'NOMINATIM_URL', 'GEOCODER_NOMINATIM_URL') ??
-    'https://nominatim.openstreetmap.org/search';
+    (baseUrl ? buildNominatimEndpoint(baseUrl, 'search') : 'https://nominatim.openstreetmap.org/search');
 
-  const reverseUrl =
+  let reverseUrl =
     getFirstDefinedEnv('NOMINATIM_REVERSE_URL', 'GEOCODER_NOMINATIM_REVERSE_URL') ??
-    (searchUrl.includes('/search')
+    (baseUrl ? buildNominatimEndpoint(baseUrl, 'reverse') : undefined);
+
+  if (!reverseUrl) {
+    reverseUrl = searchUrl.includes('/search')
       ? searchUrl.replace(/\/search(?:\.php)?$/u, '/reverse')
-      : 'https://nominatim.openstreetmap.org/reverse');
+      : 'https://nominatim.openstreetmap.org/reverse';
+  }
 
   const apiKey = getFirstDefinedEnv(
     'NOMINATIM_API_KEY',

@@ -3,7 +3,7 @@ import type { LevelWithSilent } from 'pino';
 
 loadEnv();
 
-const REQUIRED_ENV_VARS = ['BOT_TOKEN', 'DATABASE_URL'] as const;
+const REQUIRED_ENV_VARS = ['BOT_TOKEN', 'DATABASE_URL', 'KASPI_CARD', 'KASPI_NAME', 'KASPI_PHONE'] as const;
 
 type RequiredEnvVar = (typeof REQUIRED_ENV_VARS)[number];
 
@@ -17,10 +17,17 @@ const LOG_LEVELS: LevelWithSilent[] = [
   'silent',
 ];
 
-const missingVars = REQUIRED_ENV_VARS.filter((key) => {
+const getTrimmedEnv = (key: string): string | undefined => {
   const value = process.env[key];
-  return value === undefined || value.trim() === '';
-});
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const missingVars = REQUIRED_ENV_VARS.filter((key) => !getTrimmedEnv(key));
 
 if (missingVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
@@ -68,9 +75,9 @@ const parseWarnHours = (value: string | undefined): number => {
 };
 
 const parseTariffValue = (envKey: string, defaultValue: number): number => {
-  const raw = process.env[envKey];
+  const raw = getTrimmedEnv(envKey);
 
-  if (!raw || raw.trim() === '') {
+  if (!raw) {
     return defaultValue;
   }
 
@@ -82,6 +89,46 @@ const parseTariffValue = (envKey: string, defaultValue: number): number => {
   return parsed;
 };
 
+const parsePositiveNumber = (envKey: string, defaultValue: number): number => {
+  const raw = getTrimmedEnv(envKey);
+
+  if (!raw) {
+    return defaultValue;
+  }
+
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${envKey} must be a positive number`);
+  }
+
+  return parsed;
+};
+
+const parseOptionalPositiveNumber = (envKey: string): number | undefined => {
+  const raw = getTrimmedEnv(envKey);
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${envKey} must be a positive number`);
+  }
+
+  return parsed;
+};
+
+const getRequiredString = (key: RequiredEnvVar): string => {
+  const value = getTrimmedEnv(key);
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+
+  return value;
+};
+
+const getOptionalString = (key: string): string | undefined => getTrimmedEnv(key);
+
 export interface TariffConfig {
   baseFare: number;
   perKm: number;
@@ -91,6 +138,12 @@ export interface TariffConfig {
 export interface PricingConfig {
   taxi: TariffConfig;
   delivery: TariffConfig;
+}
+
+export interface TariffRates {
+  base: number;
+  perKm: number;
+  perMin: number;
 }
 
 const DEFAULT_TAXI_TARIFF: TariffConfig = {
@@ -116,6 +169,34 @@ const loadPricingConfig = (): PricingConfig => ({
   delivery: parseTariffConfig('DELIVERY', DEFAULT_DELIVERY_TARIFF),
 });
 
+const parseGeneralTariff = (): TariffRates | null => {
+  const base = parseOptionalPositiveNumber('TARIFF_BASE');
+  const perKm = parseOptionalPositiveNumber('TARIFF_PER_KM');
+  const perMin = parseOptionalPositiveNumber('TARIFF_PER_MIN');
+
+  const definedValues = [base, perKm, perMin].filter((value) => value !== undefined).length;
+  if (definedValues === 0) {
+    return null;
+  }
+
+  if (definedValues !== 3) {
+    throw new Error('TARIFF_BASE, TARIFF_PER_KM and TARIFF_PER_MIN must be defined together');
+  }
+
+  return {
+    base: base as number,
+    perKm: perKm as number,
+    perMin: perMin as number,
+  } satisfies TariffRates;
+};
+
+const parseSubscriptionPrices = () => ({
+  sevenDays: parsePositiveNumber('SUB_PRICE_7', 5000),
+  fifteenDays: parsePositiveNumber('SUB_PRICE_15', 9000),
+  thirtyDays: parsePositiveNumber('SUB_PRICE_30', 16000),
+  currency: 'KZT' as const,
+});
+
 export interface AppConfig {
   nodeEnv: string;
   logLevel: LevelWithSilent;
@@ -126,8 +207,26 @@ export interface AppConfig {
     url: string;
     ssl: boolean;
   };
+  city: {
+    default?: string;
+  };
+  tariff: TariffRates | null;
   subscriptions: {
     warnHoursBefore: number;
+    prices: {
+      sevenDays: number;
+      fifteenDays: number;
+      thirtyDays: number;
+      currency: string;
+    };
+    payment: {
+      kaspi: {
+        card: string;
+        name: string;
+        phone: string;
+      };
+      driversChannelInvite?: string;
+    };
   };
   pricing: PricingConfig;
 }
@@ -142,8 +241,21 @@ export const loadConfig = (): AppConfig => ({
     url: process.env.DATABASE_URL as string,
     ssl: parseBoolean(process.env.DATABASE_SSL),
   },
+  city: {
+    default: getOptionalString('CITY_DEFAULT'),
+  },
+  tariff: parseGeneralTariff(),
   subscriptions: {
     warnHoursBefore: parseWarnHours(process.env.SUB_WARN_HOURS_BEFORE),
+    prices: parseSubscriptionPrices(),
+    payment: {
+      kaspi: {
+        card: getRequiredString('KASPI_CARD'),
+        name: getRequiredString('KASPI_NAME'),
+        phone: getRequiredString('KASPI_PHONE'),
+      },
+      driversChannelInvite: getOptionalString('DRIVERS_CHANNEL_INVITE'),
+    },
   },
   pricing: loadPricingConfig(),
 });
@@ -152,6 +264,13 @@ export const config: AppConfig = loadConfig();
 
 Object.freeze(config.bot);
 Object.freeze(config.database);
+Object.freeze(config.city);
+if (config.tariff) {
+  Object.freeze(config.tariff);
+}
+Object.freeze(config.subscriptions.prices);
+Object.freeze(config.subscriptions.payment.kaspi);
+Object.freeze(config.subscriptions.payment);
 Object.freeze(config.subscriptions);
 Object.freeze(config.pricing.taxi);
 Object.freeze(config.pricing.delivery);

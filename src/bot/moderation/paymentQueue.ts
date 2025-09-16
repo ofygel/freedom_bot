@@ -1,6 +1,6 @@
 import { Telegraf, Telegram } from 'telegraf';
 
-import { logger } from '../../config';
+import { config, logger } from '../../config';
 import { activateSubscription } from '../../db/subscriptions';
 import { getChannelBinding } from '../channels/bindings';
 import { getExecutorRoleCopy } from '../flows/executor/roleCopy';
@@ -323,6 +323,8 @@ const handleSubscriptionApproval = async (
     return;
   }
 
+  const roleCopy = getExecutorRoleCopy(subscription.role);
+  const fallbackInvite = config.subscriptions.payment.driversChannelInvite;
   const binding = await getChannelBinding('drivers');
   if (!binding) {
     logger.error(
@@ -331,10 +333,15 @@ const handleSubscriptionApproval = async (
     );
     if (subscription.telegramId) {
       try {
-        await telegram.sendMessage(
-          subscription.telegramId,
-          'Оплата подтверждена, но канал Freedom Bot временно недоступен. Мы свяжемся с вами после настройки.',
-        );
+        const message = fallbackInvite
+          ? [
+              '✅ Оплата подписки подтверждена.',
+              `Чтобы вступить в ${roleCopy.pluralGenitive}, используйте ссылку: ${fallbackInvite}`,
+              'Если ссылка перестанет работать, запросите новую через меню «Получить ссылку на канал».',
+            ].join('\n')
+          : 'Оплата подтверждена, но канал Freedom Bot временно недоступен. Мы свяжемся с вами после настройки.';
+
+        await telegram.sendMessage(subscription.telegramId, message);
       } catch (error) {
         logger.error(
           { err: error, paymentId: item.id, telegramId: subscription.telegramId },
@@ -408,11 +415,14 @@ const handleSubscriptionApproval = async (
     );
   }
 
+  if (!inviteLink && fallbackInvite) {
+    inviteLink = fallbackInvite;
+  }
+
   if (!subscription.telegramId) {
     return;
   }
 
-  const roleCopy = getExecutorRoleCopy(subscription.role);
   const expiresLabel = activation.nextBillingAt
     ? formatDateTime(activation.nextBillingAt)
     : undefined;
