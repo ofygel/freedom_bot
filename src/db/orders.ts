@@ -217,4 +217,30 @@ export const setOrderChannelMessageId = async (
   );
 };
 
+export const tryClaimOrder = async (
+  client: PoolClient,
+  id: number,
+): Promise<OrderRecord | null> => {
+  const { rows } = await client.query<OrderRow>(
+    `UPDATE orders SET status = 'claimed' WHERE id = $1 AND status = 'new' RETURNING *`,
+    [id],
+  );
+
+  const [row] = rows;
+  return row ? mapOrderRow(row) : null;
+};
+
+export const tryCancelOrder = async (
+  client: PoolClient,
+  id: number,
+): Promise<OrderRecord | null> => {
+  const { rows } = await client.query<OrderRow>(
+    `UPDATE orders SET status = 'cancelled' WHERE id = $1 AND status = 'new' RETURNING *`,
+    [id],
+  );
+
+  const [row] = rows;
+  return row ? mapOrderRow(row) : null;
+};
+
 export { ensureOrdersTable };

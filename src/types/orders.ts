@@ -1,6 +1,6 @@
 export type OrderKind = 'taxi' | 'delivery';
 
-export type OrderStatus = 'new' | 'cancelled';
+export type OrderStatus = 'new' | 'claimed' | 'cancelled';
 
 export interface OrderLocation {
   query: string;
