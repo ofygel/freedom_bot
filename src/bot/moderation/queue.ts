@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { Markup, Telegraf, Telegram } from 'telegraf';
 import type { ExtraEditMessageText, ExtraReplyMessage } from 'telegraf/typings/telegram-types';
 
-import { getChannelBinding, type ChannelType } from '../../channels';
+import { getChannelBinding, type ChannelType } from '../channels/bindings';
 import { logger } from '../../config';
 import type { BotContext } from '../types';
 

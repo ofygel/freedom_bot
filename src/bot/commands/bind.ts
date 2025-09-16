@@ -1,7 +1,7 @@
 import { Telegraf } from 'telegraf';
 import type { MessageEntity } from 'telegraf/types';
 
-import { saveChannelBinding, type ChannelType } from '../../channels';
+import { saveChannelBinding, type ChannelType } from '../channels/bindings';
 import { logger } from '../../config';
 import type { BotContext } from '../types';
 
