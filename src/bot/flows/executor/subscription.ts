@@ -27,8 +27,9 @@ export const registerExecutorSubscription = (bot: Telegraf<BotContext>): void =>
     const state = ensureExecutorState(ctx);
     const copy = getExecutorRoleCopy(state.role);
     const channelLabel = `канал ${copy.pluralGenitive}`;
+    const verification = state.verification[state.role];
 
-    if (state.verification.status !== 'submitted') {
+    if (verification.status !== 'submitted') {
       const message = await ctx.reply('Сначала завершите проверку документов, чтобы получить ссылку на канал.');
       ctx.session.ephemeralMessages.push(message.message_id);
       return;

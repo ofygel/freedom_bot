@@ -16,13 +16,12 @@ export const buildVerificationPrompt = (
 ): string => {
   const required = Math.max(1, options.requiredPhotos ?? EXECUTOR_VERIFICATION_PHOTO_COUNT);
   const lines = [
-    'Для доступа к заказам пришлите фотографии документов:',
-    '1. Удостоверение личности — лицевая сторона.',
-    '2. Удостоверение личности — обратная сторона.',
-    '3. Селфи с удостоверением в руках.',
+    `Для доступа к заказам пришлите ${required} фотографии документов:`,
+    '1. Фото удостоверения личности (лицевая сторона).',
+    '2. Селфи с удостоверением в руках.',
   ];
 
-  if (required > 3) {
+  if (required > 2) {
     lines.push(`Дополнительно требуется всего фотографий: ${required}.`);
   }
 
@@ -41,8 +40,10 @@ export const buildVerificationSummary = (
 ): string => {
   const applicant = ctx.session.user;
   const copy = getExecutorRoleCopy(state.role);
+  const verification = state.verification[state.role];
   const lines = [
     `🆕 Новая заявка на верификацию ${copy.genitive}.`,
+    `Роль: ${copy.noun} (${state.role})`,
     `Telegram ID: ${ctx.from?.id ?? 'неизвестно'}`,
   ];
 
@@ -63,11 +64,11 @@ export const buildVerificationSummary = (
     lines.push(`Телефон: ${ctx.session.phoneNumber}`);
   }
 
-  const uploaded = options.photoCount ?? state.verification.uploadedPhotos.length;
-  lines.push(`Фотографии: ${uploaded}/${state.verification.requiredPhotos}.`);
+  const uploaded = options.photoCount ?? verification.uploadedPhotos.length;
+  lines.push(`Фотографии: ${uploaded}/${verification.requiredPhotos}.`);
 
-  if (state.verification.submittedAt) {
-    lines.push(`Отправлено: ${new Date(state.verification.submittedAt).toLocaleString('ru-RU')}`);
+  if (verification.submittedAt) {
+    lines.push(`Отправлено: ${new Date(verification.submittedAt).toLocaleString('ru-RU')}`);
   }
 
   return lines.join('\n');
@@ -78,11 +79,12 @@ export const remainingVerificationCooldown = (
   now = Date.now(),
   cooldownMs = DEFAULT_COOLDOWN_MS,
 ): number => {
-  if (!state.verification.submittedAt) {
+  const verification = state.verification[state.role];
+  if (!verification.submittedAt) {
     return 0;
   }
 
-  const until = state.verification.submittedAt + cooldownMs;
+  const until = verification.submittedAt + cooldownMs;
   return Math.max(0, remainingTime(until, now) ?? 0);
 };
 

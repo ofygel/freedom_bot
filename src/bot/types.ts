@@ -2,7 +2,11 @@ import type { Context } from 'telegraf';
 
 import type { OrderLocation, OrderPriceDetails } from '../types';
 
-export const EXECUTOR_VERIFICATION_PHOTO_COUNT = 3;
+export const EXECUTOR_VERIFICATION_PHOTO_COUNT = 2;
+
+export type ExecutorRole = 'courier' | 'driver';
+
+export const EXECUTOR_ROLES: readonly ExecutorRole[] = ['courier', 'driver'];
 
 export interface SessionUser {
   id: number;
@@ -18,7 +22,7 @@ export interface ExecutorUploadedPhoto {
 
 export type ExecutorVerificationStatus = 'idle' | 'collecting' | 'submitted';
 
-export interface ExecutorVerificationState {
+export interface ExecutorVerificationRoleState {
   status: ExecutorVerificationStatus;
   requiredPhotos: number;
   uploadedPhotos: ExecutorUploadedPhoto[];
@@ -31,7 +35,7 @@ export interface ExecutorSubscriptionState {
   lastIssuedAt?: number;
 }
 
-export type ExecutorRole = 'courier' | 'taxi_driver';
+export type ExecutorVerificationState = Record<ExecutorRole, ExecutorVerificationRoleState>;
 
 export interface ExecutorFlowState {
   role: ExecutorRole;

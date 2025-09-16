@@ -18,11 +18,11 @@ const ROLE_COPY: Record<ExecutorRole, ExecutorRoleCopy> = {
     genitive: 'курьера',
     pluralGenitive: 'курьеров',
   },
-  taxi_driver: {
-    emoji: '🚕',
-    noun: 'водитель такси',
-    genitive: 'водителя такси',
-    pluralGenitive: 'водителей такси',
+  driver: {
+    emoji: '🚗',
+    noun: 'водитель',
+    genitive: 'водителя',
+    pluralGenitive: 'водителей',
   },
 };
 
