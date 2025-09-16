@@ -1,19 +1,22 @@
 import { Markup, Telegraf } from 'telegraf';
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../../../config';
 import type { BotContext } from '../../types';
 import { START_DELIVERY_ORDER_ACTION } from './deliveryOrderFlow';
 import { START_TAXI_ORDER_ACTION } from './taxiOrderFlow';
+import { ui } from '../../ui';
 
 const ROLE_CLIENT_ACTION = 'role:client';
-const CLIENT_MENU_ACTION = 'client:menu:show';
+export const CLIENT_MENU_ACTION = 'client:menu:show';
+const CLIENT_MENU_STEP_ID = 'client:menu:main';
 
-const buildMenuKeyboard = () =>
+const buildMenuKeyboard = (): InlineKeyboardMarkup =>
   Markup.inlineKeyboard([
     [Markup.button.callback('🚕 Заказать такси', START_TAXI_ORDER_ACTION)],
     [Markup.button.callback('📦 Заказать доставку', START_DELIVERY_ORDER_ACTION)],
     [Markup.button.callback('🔄 Обновить меню', CLIENT_MENU_ACTION)],
-  ]);
+  ]).reply_markup;
 
 const buildMenuText = (): string =>
   [
@@ -32,47 +35,52 @@ const showMenu = async (ctx: BotContext): Promise<void> => {
 
   const keyboard = buildMenuKeyboard();
   const text = buildMenuText();
-  const chatId = ctx.chat.id;
-  const state = ctx.session.client;
 
-  if (state.menuMessageId) {
-    try {
-      await ctx.telegram.editMessageText(chatId, state.menuMessageId, undefined, text, {
-        reply_markup: keyboard.reply_markup,
-      });
-      await ctx.answerCbQuery();
-      return;
-    } catch (error) {
-      logger.debug(
-        { err: error, chatId, messageId: state.menuMessageId },
-        'Failed to update client menu message, sending a new one',
-      );
-      state.menuMessageId = undefined;
-    }
-  }
-
-  const message = await ctx.reply(text, keyboard);
-  state.menuMessageId = message.message_id;
-  await ctx.answerCbQuery();
+  await ui.step(ctx, {
+    id: CLIENT_MENU_STEP_ID,
+    text,
+    keyboard,
+    cleanup: false,
+  });
 };
 
 export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
   bot.action(ROLE_CLIENT_ACTION, async (ctx) => {
-    if (ctx.chat?.type === 'private') {
-      try {
-        await ctx.editMessageReplyMarkup(undefined);
-      } catch (error) {
-        logger.debug(
-          { err: error, chatId: ctx.chat?.id },
-          'Failed to clear role selection keyboard for client',
-        );
-      }
+    if (ctx.chat?.type !== 'private') {
+      await showMenu(ctx);
+      return;
+    }
+
+    try {
+      await ctx.editMessageReplyMarkup(undefined);
+    } catch (error) {
+      logger.debug(
+        { err: error, chatId: ctx.chat?.id },
+        'Failed to clear role selection keyboard for client',
+      );
+    }
+
+    try {
+      await ctx.answerCbQuery();
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to answer client role callback');
     }
 
     await showMenu(ctx);
   });
 
   bot.action(CLIENT_MENU_ACTION, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      await showMenu(ctx);
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery();
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to answer client menu callback');
+    }
+
     await showMenu(ctx);
   });
 
@@ -82,12 +90,6 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    const state = ctx.session.client;
-    state.menuMessageId = undefined;
-
-    const keyboard = buildMenuKeyboard();
-    const text = buildMenuText();
-    const message = await ctx.reply(text, keyboard);
-    state.menuMessageId = message.message_id;
+    await showMenu(ctx);
   });
 };

@@ -1,10 +1,17 @@
 import { Markup, Telegraf } from 'telegraf';
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { getChannelBinding } from '../../../channels';
 import { logger } from '../../../config';
 import type { BotContext } from '../../types';
-import { EXECUTOR_SUBSCRIPTION_ACTION, ensureExecutorState, showExecutorMenu } from './menu';
+import {
+  EXECUTOR_MENU_ACTION,
+  EXECUTOR_SUBSCRIPTION_ACTION,
+  ensureExecutorState,
+  showExecutorMenu,
+} from './menu';
 import { getExecutorRoleCopy } from './roleCopy';
+import { ui } from '../../ui';
 
 const capitalise = (value: string): string =>
   value.length > 0 ? value[0].toUpperCase() + value.slice(1) : value;
@@ -45,15 +52,19 @@ export const registerExecutorSubscription = (bot: Telegraf<BotContext>): void =>
       state.subscription.lastInviteLink = invite.invite_link;
       state.subscription.lastIssuedAt = Date.now();
 
-      await ctx.reply(
-        [
+      const keyboard: InlineKeyboardMarkup = Markup.inlineKeyboard([
+        [Markup.button.url('Отправить заявку', invite.invite_link)],
+      ]).reply_markup;
+
+      await ui.step(ctx, {
+        id: 'executor:subscription:step',
+        text: [
           `Отправьте заявку на вступление в ${channelLabel} Freedom Bot.`,
           'После одобрения вы будете получать новые заказы и уведомления о сменах.',
         ].join('\n'),
-        Markup.inlineKeyboard([
-          [Markup.button.url('Отправить заявку', invite.invite_link)],
-        ]),
-      );
+        keyboard,
+        homeAction: EXECUTOR_MENU_ACTION,
+      });
     } catch (error) {
       logger.error(
         { err: error, chatId: binding.chatId, role: state.role },

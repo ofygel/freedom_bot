@@ -1,4 +1,5 @@
 import { Markup, Telegraf } from 'telegraf';
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../../../config';
 import {
@@ -7,10 +8,12 @@ import {
   type ExecutorFlowState,
 } from '../../types';
 import { getExecutorRoleCopy } from './roleCopy';
+import { ui } from '../../ui';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
+const EXECUTOR_MENU_STEP_ID = 'executor:menu:main';
 
 const ensurePositiveRequirement = (value?: number): number => {
   if (!value || value <= 0) {
@@ -54,12 +57,12 @@ export const resetVerificationState = (state: ExecutorFlowState): void => {
   };
 };
 
-const buildMenuKeyboard = () =>
+const buildMenuKeyboard = (): InlineKeyboardMarkup =>
   Markup.inlineKeyboard([
     [Markup.button.callback('📸 Отправить документы', EXECUTOR_VERIFICATION_ACTION)],
     [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
     [Markup.button.callback('🔄 Обновить меню', EXECUTOR_MENU_ACTION)],
-  ]);
+  ]).reply_markup;
 
 const formatTimestamp = (timestamp: number): string => {
   return new Intl.DateTimeFormat('ru-RU', {
@@ -148,25 +151,12 @@ export const showExecutorMenu = async (ctx: BotContext): Promise<void> => {
   const state = ensureExecutorState(ctx);
   const text = buildMenuText(state);
   const keyboard = buildMenuKeyboard();
-  const chatId = ctx.chat.id;
-
-  if (state.menuMessageId) {
-    try {
-      await ctx.telegram.editMessageText(chatId, state.menuMessageId, undefined, text, {
-        reply_markup: keyboard.reply_markup,
-      });
-      return;
-    } catch (error) {
-      logger.debug(
-        { err: error, chatId, messageId: state.menuMessageId },
-        'Failed to update executor menu message, sending a new one',
-      );
-      state.menuMessageId = undefined;
-    }
-  }
-
-  const message = await ctx.reply(text, keyboard);
-  state.menuMessageId = message.message_id;
+  await ui.step(ctx, {
+    id: EXECUTOR_MENU_STEP_ID,
+    text,
+    keyboard,
+    cleanup: false,
+  });
 };
 
 export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {

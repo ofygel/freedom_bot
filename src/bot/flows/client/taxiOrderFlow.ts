@@ -1,4 +1,5 @@
 import { Telegraf } from 'telegraf';
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { publishOrderToDriversChannel, type PublishOrderStatus } from '../../../channels/ordersChannel';
 import { logger } from '../../../config';
@@ -17,6 +18,8 @@ import { rememberEphemeralMessage, clearInlineKeyboard } from '../../services/cl
 import { ensurePrivateCallback, isPrivateChat } from '../../services/access';
 import { buildConfirmCancelKeyboard } from '../../keyboards/common';
 import type { BotContext, ClientOrderDraftState } from '../../types';
+import { ui } from '../../ui';
+import { CLIENT_MENU_ACTION } from './menu';
 
 export const START_TAXI_ORDER_ACTION = 'client:order:taxi:start';
 const CONFIRM_TAXI_ORDER_ACTION = 'client:order:taxi:confirm';
@@ -24,18 +27,32 @@ const CANCEL_TAXI_ORDER_ACTION = 'client:order:taxi:cancel';
 
 const getDraft = (ctx: BotContext): ClientOrderDraftState => ctx.session.client.taxi;
 
+const TAXI_STEP_ID = 'client:taxi:step';
+
+const updateTaxiStep = (
+  ctx: BotContext,
+  text: string,
+  keyboard?: InlineKeyboardMarkup,
+) =>
+  ui.step(ctx, {
+    id: TAXI_STEP_ID,
+    text,
+    keyboard,
+    homeAction: CLIENT_MENU_ACTION,
+  });
+
 const requestPickupAddress = async (ctx: BotContext): Promise<void> => {
-  const prompt = await ctx.reply(
+  await updateTaxiStep(
+    ctx,
     ['Введите адрес подачи такси.', 'Например: «Достык 1, подъезд 3».'].join('\n'),
   );
-  rememberEphemeralMessage(ctx, prompt.message_id);
 };
 
 const requestDropoffAddress = async (ctx: BotContext, pickup: CompletedOrderDraft['pickup']): Promise<void> => {
-  const prompt = await ctx.reply(
+  await updateTaxiStep(
+    ctx,
     [`Адрес подачи: ${pickup.address}.`, 'Теперь укажите пункт назначения.'].join('\n'),
   );
-  rememberEphemeralMessage(ctx, prompt.message_id);
 };
 
 const handleGeocodingFailure = async (ctx: BotContext): Promise<void> => {
@@ -71,8 +88,8 @@ const showConfirmation = async (ctx: BotContext, draft: CompletedOrderDraft): Pr
   });
 
   const keyboard = buildConfirmationKeyboard();
-  const message = await ctx.reply(summary, { reply_markup: keyboard });
-  draft.confirmationMessageId = message.message_id;
+  const result = await updateTaxiStep(ctx, summary, keyboard);
+  draft.confirmationMessageId = result?.messageId;
 };
 
 const applyDropoffAddress = async (
