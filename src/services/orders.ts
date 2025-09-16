@@ -163,9 +163,14 @@ function notifyStatus(order: Order) {
   if (!botRef) return;
   const msg = statusMessages[order.status];
   if (!msg) return;
-  if (msg.client) botRef.telegram.sendMessage(order.customer_id, msg.client).catch(() => {});
+  if (msg.client)
+    botRef.telegram
+      .sendMessage(order.customer_id, msg.client)
+      .catch(err => console.error('Telegram sendMessage failed', err));
   if (order.courier_id && msg.courier)
-    botRef.telegram.sendMessage(order.courier_id, msg.courier).catch(() => {});
+    botRef.telegram
+      .sendMessage(order.courier_id, msg.courier)
+      .catch(err => console.error('Telegram sendMessage failed', err));
 }
 
 function sendCourierCard(order: Order) {
@@ -178,14 +183,14 @@ function sendCourierCard(order: Order) {
     .then((msg) =>
       scheduleCardMessageDeletion(telegram, order.customer_id, msg.message_id)
     )
-    .catch(() => {});
+    .catch(err => console.error('Telegram sendMessage failed', err));
   telegram
     .sendMessage(
       order.customer_id,
       'После оплаты нажмите «Оплатил(а)».',
       Markup.keyboard([["Оплатил(а)"]]).resize()
     )
-    .catch(() => {});
+    .catch(err => console.error('Telegram sendMessage failed', err));
 }
 
 function notifyPayment(order: Order) {
@@ -193,19 +198,19 @@ function notifyPayment(order: Order) {
   if (order.payment_status === 'paid') {
     botRef.telegram
       .sendMessage(order.customer_id, `Оплата заказа #${order.id} подтверждена`)
-      .catch(() => {});
+      .catch(err => console.error('Telegram sendMessage failed', err));
     if (order.courier_id)
       botRef.telegram
         .sendMessage(order.courier_id, `Оплата по заказу #${order.id} получена`)
-        .catch(() => {});
+        .catch(err => console.error('Telegram sendMessage failed', err));
   } else if (order.pay_type === 'card') {
     botRef.telegram
       .sendMessage(order.customer_id, `Оплатите заказ #${order.id} переводом курьеру`)
-      .catch(() => {});
+      .catch(err => console.error('Telegram sendMessage failed', err));
     if (order.courier_id)
       botRef.telegram
         .sendMessage(order.courier_id, `Ожидаем оплату по заказу #${order.id}`)
-        .catch(() => {});
+        .catch(err => console.error('Telegram sendMessage failed', err));
   }
 }
 
@@ -237,9 +242,13 @@ export async function sendInvoiceToReceiver(order: Order): Promise<void> {
 function notifyDispute(order: Order, text: string, exclude?: number) {
   if (!botRef) return;
   if (order.customer_id !== exclude)
-    botRef.telegram.sendMessage(order.customer_id, text).catch(() => {});
+    botRef.telegram
+      .sendMessage(order.customer_id, text)
+      .catch(err => console.error('Telegram sendMessage failed', err));
   if (order.courier_id && order.courier_id !== exclude)
-    botRef.telegram.sendMessage(order.courier_id, text).catch(() => {});
+    botRef.telegram
+      .sendMessage(order.courier_id, text)
+      .catch(err => console.error('Telegram sendMessage failed', err));
 }
 
 interface CreateOrderInput {
