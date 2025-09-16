@@ -170,7 +170,7 @@ export default function profileCommands(bot: Telegraf) {
           ['Поддержка'],
         ]).resize()
       );
-      const settings = getSettings();
+      const settings = await getSettings();
       if (settings.couriers_channel_id) {
         try {
           const link = await ctx.telegram.exportChatInviteLink(settings.couriers_channel_id);
@@ -194,7 +194,7 @@ export default function profileCommands(bot: Telegraf) {
 async function finalize(ctx: Context, uid: number, data: Required<CourierProfile>) {
   const profile: CourierProfile = { ...data, id: uid, status: 'pending' };
   upsertCourier(profile);
-  const settings = getSettings();
+  const settings = await getSettings();
   if (settings.verify_channel_id) {
     const metrics = getCourierMetrics(uid);
     const metricsText = metrics

@@ -27,7 +27,7 @@ function teardown(dir: string, prev: string) {
 test('reservation holds order for 90 seconds', async () => {
   const { dir, prev, bot, messages } = setup();
   try {
-    const order = createOrder({
+    const order = await createOrder({
       customer_id: 100,
       from: { lat: 43.2, lon: 76.9 },
       to: { lat: 43.25, lon: 76.95 },
@@ -54,7 +54,8 @@ test('reservation holds order for 90 seconds', async () => {
         data: `reserve:${order.id}`,
       } as any,
     });
-    const updated = getOrder(order.id)!;
+    const updated = await getOrder(order.id);
+    if (!updated) throw new Error('Order not found');
     const diff = new Date(updated.reserved_until!).getTime() - before;
     assert.equal(updated.status, 'reserved');
     assert.equal(updated.reserved_by, 200);
@@ -70,7 +71,7 @@ test('reservation holds order for 90 seconds', async () => {
 test('details include order options', async () => {
   const { dir, prev, bot, messages } = setup();
   try {
-    const order = createOrder({
+    const order = await createOrder({
       customer_id: 100,
       from: { lat: 43.2, lon: 76.9 },
       to: { lat: 43.25, lon: 76.95 },
@@ -106,7 +107,7 @@ test('details include order options', async () => {
 test('chat ttl set after delivery', async () => {
   const { dir, prev, bot } = setup();
   try {
-    const order = createOrder({
+    const order = await createOrder({
       customer_id: 100,
       from: { lat: 43.2, lon: 76.9 },
       to: { lat: 43.25, lon: 76.95 },

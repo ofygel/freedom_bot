@@ -153,7 +153,7 @@ async function parsePoint(
 
 export default function registerOrderCommands(bot: Telegraf<Context>) {
   bot.command('order', async (ctx) => {
-    const settings = getSettings();
+    const settings = await getSettings();
     const start = settings.order_hours_start ?? 8;
     const end = settings.order_hours_end ?? 23;
     const hour = new Date().getHours();
@@ -171,7 +171,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
   });
 
   bot.hears('Оплатил(а)', async (ctx) => {
-    const orders = getOrdersByClient(ctx.from!.id);
+    const orders = await getOrdersByClient(ctx.from!.id);
     const order = orders
       .slice()
       .reverse()
@@ -188,7 +188,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
       return;
     }
     paymentPending.set(ctx.from!.id, order.id);
-    updateOrder(order.id, { payment_status: 'pending' });
+    await updateOrder(order.id, { payment_status: 'pending' });
     await ctx.reply('Отправьте скриншот или ID перевода.');
   });
 
@@ -196,7 +196,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
     const pending = paymentPending.get(ctx.from!.id);
     const msg: any = ctx.message;
     if (pending) {
-      const order = getOrder(pending);
+      const order = await getOrder(pending);
       if (order) {
         if (msg.photo?.length) {
           const fileId = msg.photo[msg.photo.length - 1].file_id;
@@ -206,7 +206,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
                 caption: `Клиент отправил подтверждение оплаты по заказу #${order.id}`,
               })
               .catch(() => {});
-          addPaymentProof(order.id, fileId);
+          await addPaymentProof(order.id, fileId);
         } else if (msg.text) {
           if (order.courier_id)
             ctx.telegram
@@ -215,12 +215,12 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
                 `Клиент отправил подтверждение оплаты по заказу #${order.id}: ${msg.text}`
               )
               .catch(() => {});
-          addPaymentProof(order.id, msg.text);
+          await addPaymentProof(order.id, msg.text);
         } else {
           await ctx.reply('Отправьте скриншот или ID перевода.');
           return;
         }
-        updateOrderStatus(order.id, 'awaiting_confirm');
+        await updateOrderStatus(order.id, 'awaiting_confirm');
         await ctx.reply('Спасибо! Ожидайте подтверждения.');
       }
       paymentPending.delete(ctx.from!.id);
@@ -277,7 +277,9 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         }
         if ('from' in parsed) {
           const { from, to } = parsed;
-          if (!isInAlmaty(from) || !isInAlmaty(to)) {
+          const fromInCity = await isInAlmaty(from);
+          const toInCity = await isInAlmaty(to);
+          if (!fromInCity || !toInCity) {
             await ctx.reply('Не удалось определить точку в пределах Алматы. Попробуйте ещё раз.');
             return;
           }
@@ -294,7 +296,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           );
         } else {
           const { point } = parsed;
-          if (!isInAlmaty(point)) {
+          if (!(await isInAlmaty(point))) {
             await ctx.reply('Не удалось определить точку в пределах Алматы. Попробуйте ещё раз.');
             return;
           }
@@ -320,7 +322,9 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         }
         if ('from' in parsed) {
           const { from, to } = parsed;
-          if (!isInAlmaty(from) || !isInAlmaty(to)) {
+          const fromInCity = await isInAlmaty(from);
+          const toInCity = await isInAlmaty(to);
+          if (!fromInCity || !toInCity) {
             await ctx.reply('Не удалось определить точку в пределах Алматы. Попробуйте ещё раз.');
             return;
           }
@@ -337,7 +341,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           );
         } else {
           const { point } = parsed;
-          if (!isInAlmaty(point)) {
+          if (!(await isInAlmaty(point))) {
             await ctx.reply('Не удалось определить точку в пределах Алматы. Попробуйте ещё раз.');
             return;
           }
@@ -404,7 +408,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
         const from = s.from!, to = s.to!;
         const dist = distanceKm(from, to);
         const eta = etaMinutes(dist);
-        const { price, nightApplied } = calcPrice(
+        const { price, nightApplied } = await calcPrice(
           dist,
           s.size || 'M',
           new Date(s.timeAt!),
@@ -452,7 +456,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
             ? 'receiver'
             : 'cash';
 
-        const order = createOrder({
+        const order = await createOrder({
           customer_id: ctx.from!.id,
           from,
           to,
@@ -473,7 +477,7 @@ export default function registerOrderCommands(bot: Telegraf<Context>) {
           to_intercom: s.toIntercom ?? null,
         });
 
-        const settings = getSettings();
+        const settings = await getSettings();
         if (settings.couriers_channel_id) {
           const timePart = s.time === 'Сейчас' ? 'сейчас' : `к ${s.time}`;
           const header = `Алматы • ${typeLabels[order.type as OrderType]} • ${

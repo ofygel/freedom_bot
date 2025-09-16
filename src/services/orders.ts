@@ -1,4 +1,4 @@
-import fs from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 import type { Telegraf, Context } from 'telegraf';
 import { Markup } from 'telegraf';
@@ -32,27 +32,45 @@ export interface OrderEvent {
   created_at: string;
 }
 
-function readEvents(): OrderEvent[] {
+async function readEvents(): Promise<OrderEvent[]> {
   try {
-    return JSON.parse(fs.readFileSync(eventsFile, 'utf-8')) as OrderEvent[];
-  } catch {
+    const raw = await fs.readFile(eventsFile, 'utf-8');
+    return JSON.parse(raw) as OrderEvent[];
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code !== 'ENOENT') {
+      console.error('Failed to read order events file', error);
+    }
     return [];
   }
 }
 
-function writeEvents(list: OrderEvent[]) {
-  fs.mkdirSync(path.dirname(eventsFile), { recursive: true });
-  fs.writeFileSync(eventsFile, JSON.stringify(list, null, 2));
+async function writeEvents(list: OrderEvent[]): Promise<void> {
+  try {
+    await fs.mkdir(path.dirname(eventsFile), { recursive: true });
+    await fs.writeFile(eventsFile, JSON.stringify(list, null, 2));
+  } catch (error) {
+    console.error('Failed to write order events file', error);
+  }
 }
 
-function logEvent(order_id: number, event: string, actor_id: number | null, payload: any) {
-  const list = readEvents();
-  list.push({ order_id, event, actor_id, payload, created_at: new Date().toISOString() });
-  writeEvents(list);
+export async function logEvent(
+  order_id: number,
+  event: string,
+  actor_id: number | null,
+  payload: any,
+): Promise<void> {
+  try {
+    const list = await readEvents();
+    list.push({ order_id, event, actor_id, payload, created_at: new Date().toISOString() });
+    await writeEvents(list);
+  } catch (error) {
+    console.error('Failed to log order event', error);
+  }
 }
 
-export function getOrderEvents(orderId?: number): OrderEvent[] {
-  const list = readEvents();
+export async function getOrderEvents(orderId?: number): Promise<OrderEvent[]> {
+  const list = await readEvents();
   return orderId === undefined ? list : list.filter(e => e.order_id === orderId);
 }
 
@@ -191,11 +209,11 @@ function notifyPayment(order: Order) {
   }
 }
 
-export function sendInvoiceToReceiver(order: Order) {
+export async function sendInvoiceToReceiver(order: Order): Promise<void> {
   if (order.payment_status === 'pending' || order.payment_status === 'paid') {
     return;
   }
-  updateOrder(order.id, { payment_status: 'pending' });
+  await updateOrder(order.id, { payment_status: 'pending' });
   if (botRef && process.env.PROVIDER_TOKEN) {
     botRef.telegram
       .sendInvoice(order.customer_id, {
@@ -213,7 +231,7 @@ export function sendInvoiceToReceiver(order: Order) {
       })
       .catch(() => {});
   }
-  logEvent(order.id, 'payment.requested', order.courier_id ?? null, {});
+  await logEvent(order.id, 'payment.requested', order.courier_id ?? null, {});
 }
 
 function notifyDispute(order: Order, text: string, exclude?: number) {
@@ -245,16 +263,29 @@ interface CreateOrderInput {
   price: number;
 }
 
-function readAll(): Order[] {
-  try { return JSON.parse(fs.readFileSync(file,'utf-8')) as Order[] } catch { return [] }
+async function readAll(): Promise<Order[]> {
+  try {
+    const raw = await fs.readFile(file, 'utf-8');
+    return JSON.parse(raw) as Order[];
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code !== 'ENOENT') {
+      console.error('Failed to read orders file', error);
+    }
+    return [];
+  }
 }
-function writeAll(list: Order[]) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(list, null, 2));
+async function writeAll(list: Order[]): Promise<void> {
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify(list, null, 2));
+  } catch (error) {
+    console.error('Failed to write orders file', error);
+  }
 }
 
-export function createOrder(input: CreateOrderInput): Order {
-  const list = readAll();
+export async function createOrder(input: CreateOrderInput): Promise<Order> {
+  const list = await readAll();
   const id = (list.at(-1)?.id ?? 0) + 1;
   const now = new Date().toISOString();
   const order: Order = {
@@ -289,38 +320,41 @@ export function createOrder(input: CreateOrderInput): Order {
     created_at: now,
   };
   list.push(order);
-  writeAll(list);
-  logEvent(order.id, 'created', order.customer_id, input);
+  await writeAll(list);
+  await logEvent(order.id, 'created', order.customer_id, input);
   return order;
 }
 
-export function getOrder(id: number): Order | undefined {
-  return readAll().find(o => o.id === id);
+export async function getOrder(id: number): Promise<Order | undefined> {
+  const list = await readAll();
+  return list.find(o => o.id === id);
 }
 
-export function getOrdersByClient(clientId: number): Order[] {
-  return readAll().filter(o => o.customer_id === clientId);
+export async function getOrdersByClient(clientId: number): Promise<Order[]> {
+  const list = await readAll();
+  return list.filter(o => o.customer_id === clientId);
 }
 
-export function getCourierActiveOrder(courierId: number): Order | undefined {
-  return readAll().find(
+export async function getCourierActiveOrder(courierId: number): Promise<Order | undefined> {
+  const list = await readAll();
+  return list.find(
     o => o.courier_id === courierId && !['closed', 'canceled'].includes(o.status)
   );
 }
 
-export function updateOrder(id: number, data: Partial<Order>): Order | undefined {
-  const list = readAll();
+export async function updateOrder(id: number, data: Partial<Order>): Promise<Order | undefined> {
+  const list = await readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = { ...list[index], ...data };
   list[index] = order;
-  writeAll(list);
+  await writeAll(list);
   if ('payment_status' in data) notifyPayment(order);
   return order;
 }
 
-export function reserveOrder(id: number, courierId: number): Order | undefined {
-  const list = readAll();
+export async function reserveOrder(id: number, courierId: number): Promise<Order | undefined> {
+  const list = await readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
@@ -337,9 +371,9 @@ export function reserveOrder(id: number, courierId: number): Order | undefined {
   order.reserved_until = new Date(now + 90 * 1000).toISOString();
   order.transitions.push({ status: 'reserved', at: new Date(now).toISOString() });
   list[index] = order;
-  writeAll(list);
+  await writeAll(list);
   notifyStatus(order);
-  logEvent(order.id, 'reserved', courierId, { reserved_until: order.reserved_until });
+  await logEvent(order.id, 'reserved', courierId, { reserved_until: order.reserved_until });
   const { count, warned } = incrementCourierReserve(courierId);
   recordCourierMetric(courierId, 'reserve');
   if (warned) {
@@ -347,13 +381,13 @@ export function reserveOrder(id: number, courierId: number): Order | undefined {
       botRef.telegram
         .sendMessage(courierId, 'Вы слишком часто резервируете заказы')
         .catch(() => {});
-    logEvent(order.id, 'reserve_warn', courierId, { count });
+    await logEvent(order.id, 'reserve_warn', courierId, { count });
   }
   return order;
 }
 
-export function assignOrder(id: number, courierId: number): Order | undefined {
-  const list = readAll();
+export async function assignOrder(id: number, courierId: number): Promise<Order | undefined> {
+  const list = await readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
@@ -369,15 +403,15 @@ export function assignOrder(id: number, courierId: number): Order | undefined {
   order.movement_deadline = new Date(now + MOVEMENT_TIMEOUTS.assigned).toISOString();
   order.transitions.push({ status: 'assigned', at: new Date(now).toISOString() });
   list[index] = order;
-  writeAll(list);
+  await writeAll(list);
   notifyStatus(order);
   sendCourierCard(order);
-  logEvent(order.id, 'assigned', courierId, {});
+  await logEvent(order.id, 'assigned', courierId, {});
   return order;
 }
 
-export function expireReservations(): void {
-  const list = readAll();
+export async function expireReservations(): Promise<void> {
+  const list = await readAll();
   const now = Date.now();
   let changed = false;
   for (const order of list) {
@@ -392,7 +426,7 @@ export function expireReservations(): void {
       order.reserved_until = null;
       order.transitions.push({ status: 'open', at: new Date(now).toISOString() });
       changed = true;
-      logEvent(order.id, 'reservation_expired', prevCourier ?? null, {});
+      await logEvent(order.id, 'reservation_expired', prevCourier ?? null, {});
       if (botRef) {
         botRef.telegram
           .sendMessage(order.customer_id, `Заказ #${order.id} возвращён в ленту`)
@@ -405,19 +439,19 @@ export function expireReservations(): void {
       }
     }
   }
-  if (changed) writeAll(list);
+  if (changed) await writeAll(list);
 }
 
-export function expireMovementTimers(): void {
-  const list = readAll();
+export async function expireMovementTimers(): Promise<void> {
+  const list = await readAll();
   const now = Date.now();
   for (const order of list) {
     if (!order.movement_deadline) continue;
     if (new Date(order.movement_deadline).getTime() > now) continue;
     if (order.status === 'assigned') {
       const prevCourier = order.courier_id;
-      updateOrderStatus(order.id, 'open');
-      logEvent(order.id, 'movement_timeout', prevCourier ?? null, { status: order.status });
+      await updateOrderStatus(order.id, 'open');
+      await logEvent(order.id, 'movement_timeout', prevCourier ?? null, { status: order.status });
       if (botRef) {
         botRef.telegram
           .sendMessage(order.customer_id, `Заказ #${order.id} возвращён в ленту`)
@@ -431,21 +465,21 @@ export function expireMovementTimers(): void {
       order.status === 'going_to_pickup' ||
       order.status === 'going_to_dropoff'
     ) {
-      openDispute(order.id, false);
+      await openDispute(order.id, false);
       if (order.courier_id)
         logCourierIssue({ courier_id: order.courier_id, type: 'no_movement' });
-      updateOrder(order.id, { movement_deadline: null });
-      logEvent(order.id, 'movement_timeout', order.courier_id ?? null, {
+      await updateOrder(order.id, { movement_deadline: null });
+      await logEvent(order.id, 'movement_timeout', order.courier_id ?? null, {
         status: order.status,
       });
     } else {
-      updateOrder(order.id, { movement_deadline: null });
+      await updateOrder(order.id, { movement_deadline: null });
     }
   }
 }
 
-export function expireAwaitingConfirm(): void {
-  const list = readAll();
+export async function expireAwaitingConfirm(): Promise<void> {
+  const list = await readAll();
   const now = Date.now();
   for (const order of list) {
     if (order.status !== 'awaiting_confirm') continue;
@@ -453,17 +487,17 @@ export function expireAwaitingConfirm(): void {
     const last = [...order.transitions].reverse().find(t => t.status === 'awaiting_confirm');
     if (!last) continue;
     if (now - new Date(last.at).getTime() > 15 * 60 * 1000) {
-      openDispute(order.id);
+      await openDispute(order.id);
     }
   }
 }
 
-export function updateOrderStatus(
+export async function updateOrderStatus(
   id: number,
   status: OrderStatus,
   courierId?: number | null
-): Order | undefined {
-  const list = readAll();
+): Promise<Order | undefined> {
+  const list = await readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
@@ -488,10 +522,10 @@ export function updateOrderStatus(
   }
   order.transitions.push({ status, at: new Date().toISOString() });
   list[index] = order;
-  writeAll(list);
+  await writeAll(list);
   notifyStatus(order);
   if (status === 'assigned') sendCourierCard(order);
-  logEvent(order.id, 'status_updated', courierId ?? null, { status });
+  await logEvent(order.id, 'status_updated', courierId ?? null, { status });
   if (status === 'open' && prevCourier) {
     const { count, warned } = incrementCourierCancel(prevCourier);
     recordCourierMetric(prevCourier, 'cancel');
@@ -501,50 +535,50 @@ export function updateOrderStatus(
         botRef.telegram
           .sendMessage(prevCourier, 'Вы слишком часто отменяете заказы')
           .catch(() => {});
-      logEvent(order.id, 'cancel_warn', prevCourier, { count });
+      await logEvent(order.id, 'cancel_warn', prevCourier, { count });
     }
   }
   return order;
 }
 
-export function addPickupProof(id: number, proof: string): Order | undefined {
-  const list = readAll();
+export async function addPickupProof(id: number, proof: string): Promise<Order | undefined> {
+  const list = await readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
   order.pickup_proof = proof;
   list[index] = order;
-  writeAll(list);
-  logEvent(order.id, 'pickup_proof_added', null, { proof });
+  await writeAll(list);
+  await logEvent(order.id, 'pickup_proof_added', null, { proof });
   return order;
 }
 
-export function addDeliveryProof(id: number, proof: string): Order | undefined {
-  const list = readAll();
+export async function addDeliveryProof(id: number, proof: string): Promise<Order | undefined> {
+  const list = await readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
   order.delivery_proof = proof;
   list[index] = order;
-  writeAll(list);
-  logEvent(order.id, 'delivery_proof_added', null, { proof });
+  await writeAll(list);
+  await logEvent(order.id, 'delivery_proof_added', null, { proof });
   return order;
 }
 
-export function addPaymentProof(id: number, proof: string): Order | undefined {
-  const list = readAll();
+export async function addPaymentProof(id: number, proof: string): Promise<Order | undefined> {
+  const list = await readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
   order.payment_proof = proof;
   list[index] = order;
-  writeAll(list);
-  logEvent(order.id, 'payment_proof_added', null, { proof });
+  await writeAll(list);
+  await logEvent(order.id, 'payment_proof_added', null, { proof });
   return order;
 }
 
-export function openDispute(id: number, logIssue = true): Order | undefined {
-  const list = readAll();
+export async function openDispute(id: number, logIssue = true): Promise<Order | undefined> {
+  const list = await readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
@@ -556,10 +590,10 @@ export function openDispute(id: number, logIssue = true): Order | undefined {
     };
   }
   list[index] = order;
-  writeAll(list);
+  await writeAll(list);
   notifyDispute(order, `Открыт спор по заказу #${order.id}`);
-  logEvent(order.id, 'dispute_opened', null, {});
-  const settings = getSettings();
+  await logEvent(order.id, 'dispute_opened', null, {});
+  const settings = await getSettings();
   if (botRef && settings.moderators_channel_id) {
     const parts = [`Спор по заказу #${order.id}`, `Клиент: <a href="tg://user?id=${order.customer_id}">профиль</a>`];
     if (order.courier_id) {
@@ -570,7 +604,7 @@ export function openDispute(id: number, logIssue = true): Order | undefined {
         parse_mode: 'HTML',
       })
       .catch(() => {});
-    logEvent(order.id, 'dispute_notified', null, {
+    await logEvent(order.id, 'dispute_notified', null, {
       channel_id: settings.moderators_channel_id,
     });
   }
@@ -579,19 +613,19 @@ export function openDispute(id: number, logIssue = true): Order | undefined {
   return order;
 }
 
-export function addDisputeMessage(
+export async function addDisputeMessage(
   id: number,
   author: 'courier' | 'client' | 'moderator',
   text: string,
-): Order | undefined {
-  const list = readAll();
+): Promise<Order | undefined> {
+  const list = await readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
   if (!order.dispute) return undefined;
   order.dispute.messages.push({ author, text, created_at: new Date().toISOString() });
   list[index] = order;
-  writeAll(list);
+  await writeAll(list);
   const prefix =
     author === 'courier'
       ? 'Сообщение от курьера'
@@ -611,12 +645,12 @@ export function addDisputeMessage(
       : author === 'client'
       ? order.customer_id
       : null;
-  logEvent(order.id, 'dispute_message', actorId, { author, text });
+  await logEvent(order.id, 'dispute_message', actorId, { author, text });
   return order;
 }
 
-export function resolveDispute(id: number): Order | undefined {
-  const list = readAll();
+export async function resolveDispute(id: number): Promise<Order | undefined> {
+  const list = await readAll();
   const index = list.findIndex(o => o.id === id);
   if (index === -1) return undefined;
   const order = list[index];
@@ -624,8 +658,8 @@ export function resolveDispute(id: number): Order | undefined {
   order.dispute.status = 'resolved';
   order.dispute.resolved_at = new Date().toISOString();
   list[index] = order;
-  writeAll(list);
+  await writeAll(list);
   notifyDispute(order, `Спор по заказу #${order.id} завершён`);
-  logEvent(order.id, 'dispute_resolved', null, {});
+  await logEvent(order.id, 'dispute_resolved', null, {});
   return order;
 }

@@ -18,12 +18,12 @@ function teardown(dir: string, prev: string) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-test('option surcharges are added to price', () => {
+test('option surcharges are added to price', async () => {
   const { dir, prev } = setup();
   try {
-    updateSetting('surcharge_thermobox', 100);
-    updateSetting('surcharge_change', 50);
-    const { price, nightApplied } = calcPrice(
+    await updateSetting('surcharge_thermobox', 100);
+    await updateSetting('surcharge_change', 50);
+    const { price, nightApplied } = await calcPrice(
       1,
       'M',
       new Date('2024-01-01T12:00:00Z'),
@@ -37,11 +37,11 @@ test('option surcharges are added to price', () => {
   }
 });
 
-test('night coefficient is applied when active', () => {
+test('night coefficient is applied when active', async () => {
   const { dir, prev } = setup();
   try {
-    updateSetting('night_active', true);
-    const { price, nightApplied } = calcPrice(
+    await updateSetting('night_active', true);
+    const { price, nightApplied } = await calcPrice(
       1,
       'M',
       new Date('2024-01-01T23:00:00Z'),
@@ -55,12 +55,12 @@ test('night coefficient is applied when active', () => {
   }
 });
 
-test('waiting over free limit adds to price', () => {
+test('waiting over free limit adds to price', async () => {
   const { dir, prev } = setup();
   try {
-    updateSetting('wait_free', 5);
-    updateSetting('wait_per_min', 20);
-    const { price, nightApplied } = calcPrice(
+    await updateSetting('wait_free', 5);
+    await updateSetting('wait_per_min', 20);
+    const { price, nightApplied } = await calcPrice(
       1,
       'M',
       new Date('2024-01-01T12:00:00Z'),

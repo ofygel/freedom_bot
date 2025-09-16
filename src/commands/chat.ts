@@ -18,7 +18,7 @@ export default function chatCommands(bot: Telegraf) {
       return ctx.reply('Неверный номер заказа');
     }
     const text = args.slice(1).join(' ');
-    const order = getOrder(orderId);
+    const order = await getOrder(orderId);
     if (!order) {
       return ctx.reply('Заказ не найден');
     }

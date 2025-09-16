@@ -34,10 +34,10 @@ function teardown(dir: string, prev: string) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-test('dispute open respond and resolve', () => {
+test('dispute open respond and resolve', async () => {
   const { dir, prev, messages } = setup();
   try {
-    const order = createOrder({
+    const order = await createOrder({
       customer_id: 100,
       from: { lat: 0, lon: 0 },
       to: { lat: 1, lon: 1 },
@@ -49,29 +49,30 @@ test('dispute open respond and resolve', () => {
       comment: null,
       price: 10,
     });
-    updateOrderStatus(order.id, 'assigned', 200);
+    await updateOrderStatus(order.id, 'assigned', 200);
     messages.splice(0);
 
-    openDispute(order.id);
+    await openDispute(order.id);
     assert.deepEqual(messages, [
       { id: 100, text: `Открыт спор по заказу #${order.id}` },
       { id: 200, text: `Открыт спор по заказу #${order.id}` },
     ]);
 
     messages.splice(0);
-    addDisputeMessage(order.id, 'client', 'привет');
+    await addDisputeMessage(order.id, 'client', 'привет');
     assert.deepEqual(messages, [
       { id: 200, text: 'Сообщение от клиента: привет' },
     ]);
 
     messages.splice(0);
-    resolveDispute(order.id);
+    await resolveDispute(order.id);
     assert.deepEqual(messages, [
       { id: 100, text: `Спор по заказу #${order.id} завершён` },
       { id: 200, text: `Спор по заказу #${order.id} завершён` },
     ]);
 
-    const updated = getOrder(order.id)!;
+    const updated = await getOrder(order.id);
+    if (!updated) throw new Error('Order not found');
     assert.equal(updated.dispute?.status, 'resolved');
   } finally {
     teardown(dir, prev);

@@ -17,7 +17,7 @@ export default function orderStatusCommands(bot: Telegraf) {
     const statusMap = { new: 'open', assigned: 'assigned', delivered: 'delivered' } as const;
     const status = statusMap[statusArg as keyof typeof statusMap];
     const courierId = statusArg === 'assigned' ? ctx.from!.id : undefined;
-    const order = updateOrderStatus(id, status, courierId);
+    const order = await updateOrderStatus(id, status, courierId);
     if (!order) return ctx.reply('Order not found');
     await ctx.reply('Статус обновлён');
     await ctx.telegram.sendMessage(order.customer_id, `Статус заказа #${order.id}: ${order.status}`);

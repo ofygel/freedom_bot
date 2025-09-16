@@ -1,14 +1,14 @@
 import { getSettings } from '../services/settings';
 
-export function calcPrice(
+export async function calcPrice(
   distanceKm: number,
   size: 'S' | 'M' | 'L' = 'M',
   now = new Date(),
   type: 'docs' | 'parcel' | 'food' | 'other' = 'other',
   options: string[] = [],
   waitMinutes = 0
-): { price: number; nightApplied: boolean } {
-  const settings = getSettings();
+): Promise<{ price: number; nightApplied: boolean }> {
+  const settings = await getSettings();
   const base = settings.base_price ?? 500;
   let perKm = settings.per_km ?? 180;
   const waitFree = settings.wait_free ?? 0;

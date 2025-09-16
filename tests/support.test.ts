@@ -56,7 +56,7 @@ test('create ticket with photo', () => {
 test('support wizard lists client orders', async () => {
   const { dir, prev } = setup();
   try {
-    const order1 = createOrder({
+    const order1 = await createOrder({
       customer_id: 1,
       from: { lat: 0, lon: 0 },
       to: { lat: 1, lon: 1 },
@@ -68,7 +68,7 @@ test('support wizard lists client orders', async () => {
       comment: null,
       price: 10,
     });
-    const order2 = createOrder({
+    const order2 = await createOrder({
       customer_id: 1,
       from: { lat: 0, lon: 0 },
       to: { lat: 1, lon: 1 },
@@ -80,7 +80,7 @@ test('support wizard lists client orders', async () => {
       comment: null,
       price: 10,
     });
-    createOrder({
+    await createOrder({
       customer_id: 2,
       from: { lat: 0, lon: 0 },
       to: { lat: 1, lon: 1 },
