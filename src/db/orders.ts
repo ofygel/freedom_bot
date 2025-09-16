@@ -32,40 +32,6 @@ interface OrderRow {
   created_at: Date | string;
 }
 
-let ordersTableEnsured = false;
-
-const ensureOrdersTable = async (): Promise<void> => {
-  if (ordersTableEnsured) {
-    return;
-  }
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS orders (
-      id BIGSERIAL PRIMARY KEY,
-      kind text NOT NULL,
-      status text NOT NULL DEFAULT 'new',
-      client_id bigint,
-      client_phone text,
-      pickup_query text NOT NULL,
-      pickup_address text NOT NULL,
-      pickup_lat double precision NOT NULL,
-      pickup_lon double precision NOT NULL,
-      dropoff_query text NOT NULL,
-      dropoff_address text NOT NULL,
-      dropoff_lat double precision NOT NULL,
-      dropoff_lon double precision NOT NULL,
-      price_amount integer NOT NULL,
-      price_currency text NOT NULL,
-      distance_km double precision NOT NULL,
-      metadata jsonb,
-      channel_message_id bigint,
-      created_at timestamptz NOT NULL DEFAULT now()
-    )
-  `);
-
-  ordersTableEnsured = true;
-};
-
 const parseNumeric = (value: string | number | null | undefined): number | undefined => {
   if (value === null || value === undefined) {
     return undefined;
@@ -112,8 +78,6 @@ const mapOrderRow = (row: OrderRow): OrderRecord => ({
 });
 
 export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord> => {
-  await ensureOrdersTable();
-
   const { rows } = await pool.query<OrderRow>(
     `
       INSERT INTO orders (
@@ -182,8 +146,6 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
 };
 
 export const getOrderById = async (id: number): Promise<OrderRecord | null> => {
-  await ensureOrdersTable();
-
   const { rows } = await pool.query<OrderRow>(
     `SELECT * FROM orders WHERE id = $1 LIMIT 1`,
     [id],
@@ -243,4 +205,3 @@ export const tryCancelOrder = async (
   return row ? mapOrderRow(row) : null;
 };
 
-export { ensureOrdersTable };
