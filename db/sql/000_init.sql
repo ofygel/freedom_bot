@@ -200,6 +200,16 @@ CREATE TABLE IF NOT EXISTS callback_map (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Persistent session storage for the bot finite state machine.
+CREATE TABLE IF NOT EXISTS sessions (
+    scope text NOT NULL,
+    scope_id bigint NOT NULL,
+    state jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (scope, scope_id)
+);
+
 -- Support conversations between users and moderators.
 CREATE TABLE IF NOT EXISTS support_threads (
     id text PRIMARY KEY,

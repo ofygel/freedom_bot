@@ -197,6 +197,84 @@ CREATE TABLE IF NOT EXISTS callback_map (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+    scope text NOT NULL,
+    scope_id bigint NOT NULL,
+    state jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (scope, scope_id)
+);
+
+ALTER TABLE sessions
+    ADD COLUMN IF NOT EXISTS scope text,
+    ADD COLUMN IF NOT EXISTS scope_id bigint,
+    ADD COLUMN IF NOT EXISTS state jsonb,
+    ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now(),
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE sessions ALTER COLUMN scope SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            RAISE NOTICE 'Skipping NOT NULL on sessions.scope due to existing null values.';
+    END;
+
+    BEGIN
+        ALTER TABLE sessions ALTER COLUMN scope_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            RAISE NOTICE 'Skipping NOT NULL on sessions.scope_id due to existing null values.';
+    END;
+
+    BEGIN
+        ALTER TABLE sessions ALTER COLUMN state SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            RAISE NOTICE 'Skipping NOT NULL on sessions.state due to existing null values.';
+    END;
+END
+$$;
+
+ALTER TABLE sessions
+    ALTER COLUMN created_at SET DEFAULT now(),
+    ALTER COLUMN updated_at SET DEFAULT now();
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE sessions ALTER COLUMN created_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            RAISE NOTICE 'Skipping NOT NULL on sessions.created_at due to existing null values.';
+    END;
+
+    BEGIN
+        ALTER TABLE sessions ALTER COLUMN updated_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            RAISE NOTICE 'Skipping NOT NULL on sessions.updated_at due to existing null values.';
+    END;
+END
+$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'sessions'::regclass
+          AND contype = 'p'
+    )
+    THEN
+        ALTER TABLE sessions
+            ADD CONSTRAINT sessions_pkey PRIMARY KEY (scope, scope_id);
+    END IF;
+END
+$$;
+
 CREATE TABLE IF NOT EXISTS support_threads (
     id text PRIMARY KEY,
     user_chat_id bigint NOT NULL,
