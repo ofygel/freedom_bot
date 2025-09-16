@@ -123,7 +123,9 @@ const submitForModeration = async (
   return true;
 };
 
-const handleVerificationAction = async (ctx: BotContext): Promise<void> => {
+export const startExecutorVerification = async (
+  ctx: BotContext,
+): Promise<void> => {
   ensureExecutorState(ctx);
   const state = ctx.session.executor;
   const role = state.role;
@@ -142,7 +144,7 @@ const handleVerificationAction = async (ctx: BotContext): Promise<void> => {
   const prompt = await ctx.reply(promptText);
   ctx.session.ephemeralMessages.push(prompt.message_id);
 
-  await showExecutorMenu(ctx);
+  await showExecutorMenu(ctx, { skipAccessCheck: true });
 };
 
 const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
@@ -189,11 +191,11 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
 
   if (uploaded >= required) {
     await submitForModeration(ctx, state);
-    await showExecutorMenu(ctx);
+    await showExecutorMenu(ctx, { skipAccessCheck: true });
     return;
   }
 
-  await showExecutorMenu(ctx);
+  await showExecutorMenu(ctx, { skipAccessCheck: true });
 };
 
 const handleTextDuringCollection = async (ctx: BotContext, next: () => Promise<void>): Promise<void> => {
@@ -233,7 +235,7 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
     }
 
     await ctx.answerCbQuery();
-    await handleVerificationAction(ctx);
+    await startExecutorVerification(ctx);
   });
 
   bot.on('photo', async (ctx) => {

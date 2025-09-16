@@ -1,17 +1,24 @@
 import { Markup, Telegraf } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
+import { logger } from '../../../config';
+import { hasActiveSubscription } from '../../../db/subscriptions';
+import { isExecutorVerified } from '../../../db/verifications';
 import {
   EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
   type BotContext,
   type ExecutorFlowState,
+  type ExecutorRole,
   type ExecutorSubscriptionState,
   type ExecutorVerificationRoleState,
 } from '../../types';
-import { getExecutorRoleCopy } from './roleCopy';
+import { getChannelBinding } from '../../channels/bindings';
 import { ui } from '../../ui';
+import { startExecutorSubscription } from './subscription';
+import { getExecutorRoleCopy } from './roleCopy';
 import { findSubscriptionPeriodOption } from './subscriptionPlans';
+import { startExecutorVerification } from './verification';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
@@ -161,7 +168,91 @@ const formatTimestamp = (timestamp: number): string => {
   }).format(new Date(timestamp));
 };
 
-const buildVerificationSection = (state: ExecutorFlowState): string[] => {
+interface ExecutorAccessStatus {
+  isVerified: boolean;
+  hasActiveSubscription: boolean;
+}
+
+const determineExecutorAccessStatus = async (
+  role: ExecutorRole,
+  telegramId: number | undefined,
+): Promise<ExecutorAccessStatus> => {
+  if (telegramId === undefined) {
+    return { isVerified: false, hasActiveSubscription: false } satisfies ExecutorAccessStatus;
+  }
+
+  let verified = false;
+  try {
+    verified = await isExecutorVerified(telegramId, role);
+  } catch (error) {
+    logger.error(
+      { err: error, telegramId, role },
+      'Failed to determine executor verification status',
+    );
+    return { isVerified: false, hasActiveSubscription: false } satisfies ExecutorAccessStatus;
+  }
+
+  if (!verified) {
+    return { isVerified: false, hasActiveSubscription: false } satisfies ExecutorAccessStatus;
+  }
+
+  try {
+    const binding = await getChannelBinding('drivers');
+    if (!binding) {
+      return { isVerified: true, hasActiveSubscription: false } satisfies ExecutorAccessStatus;
+    }
+
+    const active = await hasActiveSubscription(binding.chatId, telegramId);
+    return { isVerified: true, hasActiveSubscription: active } satisfies ExecutorAccessStatus;
+  } catch (error) {
+    logger.error(
+      { err: error, telegramId, role },
+      'Failed to determine executor subscription status',
+    );
+    return { isVerified: true, hasActiveSubscription: false } satisfies ExecutorAccessStatus;
+  }
+};
+
+const shouldRedirectToVerification = (
+  state: ExecutorFlowState,
+  access: ExecutorAccessStatus,
+): boolean => {
+  if (access.isVerified) {
+    return false;
+  }
+
+  const verification = state.verification[state.role];
+  return verification.status === 'idle';
+};
+
+const shouldRedirectToSubscription = (
+  state: ExecutorFlowState,
+  access: ExecutorAccessStatus,
+): boolean => {
+  if (!access.isVerified || access.hasActiveSubscription) {
+    return false;
+  }
+
+  return state.subscription.status === 'idle';
+};
+
+export interface ShowExecutorMenuOptions {
+  skipAccessCheck?: boolean;
+}
+
+const buildVerificationSection = (
+  state: ExecutorFlowState,
+  access: ExecutorAccessStatus,
+): string[] => {
+  const copy = getExecutorRoleCopy(state.role);
+
+  if (access.isVerified) {
+    return [
+      'Статус проверки: подтверждена.',
+      `Документы ${copy.genitive} успешно проверены. Можете переходить к заказам.`,
+    ];
+  }
+
   const verification = state.verification[state.role];
   const uploaded = verification.uploadedPhotos.length;
   const required = ensurePositiveRequirement(verification.requiredPhotos);
@@ -197,13 +288,15 @@ const buildVerificationSection = (state: ExecutorFlowState): string[] => {
   return lines;
 };
 
-const buildSubscriptionSection = (state: ExecutorFlowState): string[] => {
-  const verification = state.verification[state.role];
+const buildSubscriptionSection = (
+  state: ExecutorFlowState,
+  access: ExecutorAccessStatus,
+): string[] => {
   const { subscription } = state;
   const copy = getExecutorRoleCopy(state.role);
   const channelLabel = `канал ${copy.pluralGenitive}`;
 
-  if (verification.status !== 'submitted') {
+  if (!access.isVerified) {
     return [`Ссылка на ${channelLabel} станет доступна после отправки документов.`];
   }
 
@@ -220,6 +313,21 @@ const buildSubscriptionSection = (state: ExecutorFlowState): string[] => {
     return ['Мы проверяем ваш чек об оплате. Ожидайте решения модератора.'];
   }
 
+  if (access.hasActiveSubscription) {
+    if (subscription.lastInviteLink) {
+      const issued = subscription.lastIssuedAt
+        ? ` (выдана ${formatTimestamp(subscription.lastIssuedAt)})`
+        : '';
+      return [
+        `Ссылка на канал уже выдана${issued}. При необходимости запросите новую с помощью кнопки ниже.`,
+      ];
+    }
+
+    return [
+      `Подписка активна. Если нужна новая ссылка на ${channelLabel}, используйте кнопку ниже.`,
+    ];
+  }
+
   if (subscription.lastInviteLink) {
     const issued = subscription.lastIssuedAt
       ? ` (выдана ${formatTimestamp(subscription.lastIssuedAt)})`
@@ -234,26 +342,47 @@ const buildSubscriptionSection = (state: ExecutorFlowState): string[] => {
   ];
 };
 
-const buildMenuText = (state: ExecutorFlowState): string => {
+const buildMenuText = (
+  state: ExecutorFlowState,
+  access: ExecutorAccessStatus,
+): string => {
   const copy = getExecutorRoleCopy(state.role);
   const parts = [
     `${copy.emoji} Меню ${copy.genitive} Freedom Bot`,
     '',
-    ...buildVerificationSection(state),
+    ...buildVerificationSection(state, access),
     '',
-    ...buildSubscriptionSection(state),
+    ...buildSubscriptionSection(state, access),
   ];
 
   return parts.join('\n');
 };
 
-export const showExecutorMenu = async (ctx: BotContext): Promise<void> => {
+export const showExecutorMenu = async (
+  ctx: BotContext,
+  options: ShowExecutorMenuOptions = {},
+): Promise<void> => {
   if (!ctx.chat) {
     return;
   }
 
   const state = ensureExecutorState(ctx);
-  const text = buildMenuText(state);
+  const telegramId = ctx.from?.id;
+  const access = await determineExecutorAccessStatus(state.role, telegramId);
+
+  if (!options.skipAccessCheck && telegramId !== undefined) {
+    if (shouldRedirectToVerification(state, access)) {
+      await startExecutorVerification(ctx);
+      return;
+    }
+
+    if (shouldRedirectToSubscription(state, access)) {
+      await startExecutorSubscription(ctx, { skipVerificationCheck: true });
+      return;
+    }
+  }
+
+  const text = buildMenuText(state, access);
   const keyboard = buildMenuKeyboard();
   await ui.step(ctx, {
     id: EXECUTOR_MENU_STEP_ID,

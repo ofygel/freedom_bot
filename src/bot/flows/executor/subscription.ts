@@ -66,12 +66,19 @@ const buildSelectionText = (roleCopy: ReturnType<typeof getExecutorRoleCopy>): s
   return lines.join('\n');
 };
 
-const showSubscriptionStep = async (ctx: BotContext): Promise<void> => {
+export interface StartExecutorSubscriptionOptions {
+  skipVerificationCheck?: boolean;
+}
+
+export const startExecutorSubscription = async (
+  ctx: BotContext,
+  options: StartExecutorSubscriptionOptions = {},
+): Promise<void> => {
   const state = ensureExecutorState(ctx);
   const verification = state.verification[state.role];
   const copy = getExecutorRoleCopy(state.role);
 
-  if (verification.status !== 'submitted') {
+  if (!options.skipVerificationCheck && verification.status !== 'submitted') {
     const message = await ctx.reply(
       'Сначала завершите проверку документов, чтобы получить ссылку на канал.',
     );
@@ -131,7 +138,7 @@ const handlePeriodSelection = async (
   const confirmation = await ctx.reply(buildPeriodConfirmationMessage(period, copy));
   ctx.session.ephemeralMessages.push(confirmation.message_id);
 
-  await showExecutorMenu(ctx);
+  await showExecutorMenu(ctx, { skipAccessCheck: true });
 };
 
 interface ReceiptPayload {
@@ -242,7 +249,7 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
     subscription.moderationMessageId = result.messageId;
 
     await notifyReceiptAccepted(ctx);
-    await showExecutorMenu(ctx);
+    await showExecutorMenu(ctx, { skipAccessCheck: true });
   } catch (error) {
     logger.error(
       { err: error, paymentId, telegramId: ctx.from.id },
@@ -262,7 +269,7 @@ export const registerExecutorSubscription = (bot: Telegraf<BotContext>): void =>
     }
 
     await ctx.answerCbQuery();
-    await showSubscriptionStep(ctx);
+    await startExecutorSubscription(ctx);
   });
 
   const periodPattern = new RegExp(`^${SUBSCRIPTION_PERIOD_ACTION_PREFIX}:(\\d+)$`);
