@@ -1,12 +1,19 @@
 import { Telegraf, Telegram } from 'telegraf';
 
-import type { BotContext } from '../types';
+import { logger } from '../../config';
+import { activateSubscription } from '../../db/subscriptions';
+import { getChannelBinding } from '../channels/bindings';
+import { getExecutorRoleCopy } from '../flows/executor/roleCopy';
+import type { BotContext, ExecutorRole } from '../types';
 import {
   createModerationQueue,
+  type ModerationDecisionContext,
   type ModerationQueue,
   type ModerationQueueItemBase,
+  type ModerationRejectionContext,
   type PublishModerationResult,
 } from './queue';
+import type { SubscriptionPeriodOption } from '../flows/executor/subscriptionPlans';
 
 const DEFAULT_TITLE = '💳 Проверка платежа по подписке';
 const DEFAULT_REASONS = [
@@ -55,6 +62,32 @@ export interface PaymentPayer {
   phone?: string;
 }
 
+interface SubscriptionReceiptInfo {
+  chatId: number;
+  messageId: number;
+  fileId: string;
+  type: 'photo' | 'document';
+}
+
+interface SubscriptionPaymentMetadata {
+  role: ExecutorRole;
+  telegramId: number;
+  chatId: number;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  period: SubscriptionPeriodOption;
+  paymentId: string;
+  submittedAt: Date;
+  receipt: SubscriptionReceiptInfo;
+  moderation?: {
+    chatId?: number;
+    messageId?: number;
+    token?: string;
+  };
+}
+
 export interface PaymentReviewItem extends ModerationQueueItemBase<PaymentReviewItem> {
   /** Identifier of the payment under review. */
   id: string | number;
@@ -78,6 +111,24 @@ export interface PaymentReviewItem extends ModerationQueueItemBase<PaymentReview
   notes?: string[];
   /** Optional summary text inserted before the notes. */
   summary?: string | string[];
+  /** Additional subscription context used when processing moderation decisions. */
+  subscription?: SubscriptionPaymentMetadata;
+}
+
+export interface SubscriptionPaymentRequest {
+  paymentId: string;
+  period: SubscriptionPeriodOption;
+  submittedAt: Date;
+  executor: {
+    role: ExecutorRole;
+    telegramId: number;
+    chatId: number;
+    username?: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+  };
+  receipt: SubscriptionReceiptInfo;
 }
 
 const buildPayerSection = (payer?: PaymentPayer): string[] => {
@@ -181,6 +232,222 @@ const buildPaymentMessage = (payment: PaymentReviewItem): string => {
   return lines.join('\n');
 };
 
+const estimatePeriodEnd = (start: Date, days: number): Date =>
+  new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
+
+const createSubscriptionPaymentReviewItem = (
+  request: SubscriptionPaymentRequest,
+): PaymentReviewItem => {
+  const submittedAt = request.submittedAt ?? new Date();
+  const periodEnd = estimatePeriodEnd(submittedAt, request.period.days);
+  const roleCopy = getExecutorRoleCopy(request.executor.role);
+  const summaryLines = [
+    `Исполнитель: ${roleCopy.noun} (${request.executor.role})`,
+    `Период: ${request.period.label}`,
+    `Отправлено: ${formatDateTime(submittedAt) ?? 'неизвестно'}`,
+  ];
+
+  const notes: string[] = [];
+  if (request.executor.phone) {
+    notes.push(`Контактный телефон: ${request.executor.phone}`);
+  }
+  notes.push('Чек прикреплён отдельным сообщением.');
+
+  return {
+    id: request.paymentId,
+    title: `💳 Оплата подписки (${request.period.label})`,
+    amount: { value: request.period.amount, currency: request.period.currency },
+    payer: {
+      telegramId: request.executor.telegramId,
+      username: request.executor.username,
+      firstName: request.executor.firstName,
+      lastName: request.executor.lastName,
+      phone: request.executor.phone,
+    },
+    description: 'Квитанция приложена отдельным сообщением ниже.',
+    paidAt: submittedAt,
+    period: { start: submittedAt, end: periodEnd },
+    summary: summaryLines,
+    notes,
+    subscription: {
+      role: request.executor.role,
+      telegramId: request.executor.telegramId,
+      chatId: request.executor.chatId,
+      username: request.executor.username,
+      firstName: request.executor.firstName,
+      lastName: request.executor.lastName,
+      phone: request.executor.phone,
+      period: request.period,
+      paymentId: request.paymentId,
+      submittedAt,
+      receipt: request.receipt,
+    },
+  } satisfies PaymentReviewItem;
+};
+
+const copyReceiptToModerationChannel = async (
+  telegram: Telegram,
+  receipt: SubscriptionReceiptInfo,
+  targetChatId: number,
+  paymentId: string,
+): Promise<void> => {
+  try {
+    await telegram.copyMessage(targetChatId, receipt.chatId, receipt.messageId);
+  } catch (error) {
+    logger.warn(
+      { err: error, chatId: targetChatId, paymentId },
+      'Failed to copy subscription receipt to moderation channel',
+    );
+  }
+};
+
+const handleSubscriptionApproval = async (
+  context: ModerationDecisionContext<PaymentReviewItem>,
+): Promise<void> => {
+  const { item, telegram } = context;
+  const subscription = item.subscription;
+  if (!subscription) {
+    return;
+  }
+
+  const binding = await getChannelBinding('drivers');
+  if (!binding) {
+    logger.error(
+      { paymentId: item.id },
+      'Drivers channel is not configured, cannot issue invite link',
+    );
+    if (subscription.telegramId) {
+      try {
+        await telegram.sendMessage(
+          subscription.telegramId,
+          'Оплата подтверждена, но канал Freedom Bot временно недоступен. Мы свяжемся с вами после настройки.',
+        );
+      } catch (error) {
+        logger.error(
+          { err: error, paymentId: item.id, telegramId: subscription.telegramId },
+          'Failed to notify user about missing drivers channel',
+        );
+      }
+    }
+    return;
+  }
+
+  const paymentMetadata: Record<string, unknown> = {
+    receipt: {
+      type: subscription.receipt.type,
+      fileId: subscription.receipt.fileId,
+      chatId: subscription.receipt.chatId,
+      messageId: subscription.receipt.messageId,
+    },
+    moderation: subscription.moderation,
+    source: 'manual_review',
+  };
+
+  let activation;
+  try {
+    activation = await activateSubscription({
+      telegramId: subscription.telegramId,
+      username: subscription.username,
+      firstName: subscription.firstName,
+      lastName: subscription.lastName,
+      phone: subscription.phone,
+      chatId: binding.chatId,
+      periodDays: subscription.period.days,
+      periodLabel: subscription.period.label,
+      amount: item.amount.value,
+      currency: item.amount.currency,
+      paymentId: subscription.paymentId,
+      submittedAt: subscription.submittedAt,
+      paymentMetadata,
+    });
+  } catch (error) {
+    logger.error(
+      { err: error, paymentId: item.id, telegramId: subscription.telegramId },
+      'Failed to activate subscription after payment approval',
+    );
+    if (subscription.telegramId) {
+      try {
+        await telegram.sendMessage(
+          subscription.telegramId,
+          'Оплата подтверждена, но не удалось активировать подписку. Свяжитесь с поддержкой, пожалуйста.',
+        );
+      } catch (notifyError) {
+        logger.error(
+          { err: notifyError, paymentId: item.id, telegramId: subscription.telegramId },
+          'Failed to notify user about activation failure',
+        );
+      }
+    }
+    return;
+  }
+
+  let inviteLink: string | undefined;
+  try {
+    const invite = await telegram.createChatInviteLink(binding.chatId, {
+      creates_join_request: true,
+      name: `Subscription ${subscription.telegramId} ${subscription.period.days}d`,
+    });
+    inviteLink = invite.invite_link;
+  } catch (error) {
+    logger.error(
+      { err: error, paymentId: item.id, chatId: binding.chatId },
+      'Failed to create invite link after subscription activation',
+    );
+  }
+
+  if (!subscription.telegramId) {
+    return;
+  }
+
+  const roleCopy = getExecutorRoleCopy(subscription.role);
+  const expiresLabel = activation.nextBillingAt
+    ? formatDateTime(activation.nextBillingAt)
+    : undefined;
+
+  const parts = [
+    '✅ Оплата подписки подтверждена.',
+    expiresLabel ? `Подписка активна до ${expiresLabel}.` : undefined,
+    inviteLink
+      ? `Чтобы вступить в ${roleCopy.pluralGenitive}, отправьте заявку: ${inviteLink}`
+      : 'Ссылка на канал будет отправлена дополнительно. Свяжитесь с поддержкой, если не получили её в ближайшее время.',
+    'Если ссылка перестанет работать, запросите новую через меню «Получить ссылку на канал».',
+  ].filter((value): value is string => Boolean(value && value.trim().length > 0));
+
+  try {
+    await telegram.sendMessage(subscription.telegramId, parts.join('\n'));
+  } catch (error) {
+    logger.error(
+      { err: error, paymentId: item.id, telegramId: subscription.telegramId },
+      'Failed to notify user about approved subscription payment',
+    );
+  }
+};
+
+const handleSubscriptionRejection = async (
+  context: ModerationRejectionContext<PaymentReviewItem>,
+): Promise<void> => {
+  const { item, telegram, reason } = context;
+  const subscription = item.subscription;
+  if (!subscription?.telegramId) {
+    return;
+  }
+
+  const message = [
+    '❌ Оплата подписки не подтверждена.',
+    `Причина: ${reason}.`,
+    'Проверьте данные и отправьте новый чек через меню «Получить ссылку на канал».',
+  ].join('\n');
+
+  try {
+    await telegram.sendMessage(subscription.telegramId, message);
+  } catch (error) {
+    logger.error(
+      { err: error, paymentId: item.id, telegramId: subscription.telegramId },
+      'Failed to notify user about rejected subscription payment',
+    );
+  }
+};
+
 const queue: ModerationQueue<PaymentReviewItem> = createModerationQueue<PaymentReviewItem>({
   type: 'payment',
   channelType: 'verify',
@@ -192,6 +459,36 @@ export const publishPaymentReview = async (
   telegram: Telegram,
   payment: PaymentReviewItem,
 ): Promise<PublishModerationResult> => queue.publish(telegram, payment);
+
+export const submitSubscriptionPaymentReview = async (
+  telegram: Telegram,
+  request: SubscriptionPaymentRequest,
+): Promise<PublishModerationResult> => {
+  const payment = createSubscriptionPaymentReviewItem(request);
+  payment.onApprove = handleSubscriptionApproval;
+  payment.onReject = handleSubscriptionRejection;
+
+  const result = await queue.publish(telegram, payment);
+
+  if (result.status === 'published' && payment.subscription) {
+    payment.subscription.moderation = {
+      chatId: result.chatId,
+      messageId: result.messageId,
+      token: result.token,
+    };
+
+    if (result.chatId !== undefined) {
+      await copyReceiptToModerationChannel(
+        telegram,
+        payment.subscription.receipt,
+        result.chatId,
+        request.paymentId,
+      );
+    }
+  }
+
+  return result;
+};
 
 export const registerPaymentModerationQueue = (bot: Telegraf<BotContext>): void => {
   queue.register(bot);

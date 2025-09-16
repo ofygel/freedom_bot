@@ -171,6 +171,7 @@ export interface ModerationDecisionContext<T> {
   item: T;
   moderator: ModeratorInfo;
   decidedAt: number;
+  telegram: Telegram;
 }
 
 export interface ModerationRejectionContext<T> extends ModerationDecisionContext<T> {
@@ -350,14 +351,16 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
           item: entry.item,
           moderator,
           decidedAt,
-        } as ModerationDecisionContext<T>);
+          telegram: ctx.telegram,
+        });
       } else {
         await entry.item.onReject?.({
           item: entry.item,
           moderator,
           decidedAt,
+          telegram: ctx.telegram,
           reason: normaliseReason(reason),
-        } as ModerationRejectionContext<T>);
+        });
       }
     } catch (callbackError) {
       logger.error(

@@ -2,6 +2,7 @@ import { Telegraf } from 'telegraf';
 import type { ChatJoinRequest } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../../config';
+import { hasActiveSubscription } from '../../db/subscriptions';
 import type { BotContext } from '../types';
 
 export interface JoinRequestDecisionContext {
@@ -22,7 +23,8 @@ export interface JoinRequestsOptions {
   onDecline?: (context: JoinRequestDecisionContext) => void | Promise<void>;
 }
 
-const defaultChecker: SubscriptionChecker = async () => false;
+const defaultChecker: SubscriptionChecker = async (userId, chatId) =>
+  hasActiveSubscription(chatId, userId);
 
 const formatUserForLog = (request: ChatJoinRequest): string => {
   const username = request.from.username ? `@${request.from.username}` : undefined;

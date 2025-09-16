@@ -6,10 +6,12 @@ import {
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
   type BotContext,
   type ExecutorFlowState,
+  type ExecutorSubscriptionState,
   type ExecutorVerificationRoleState,
 } from '../../types';
 import { getExecutorRoleCopy } from './roleCopy';
 import { ui } from '../../ui';
+import { findSubscriptionPeriodOption } from './subscriptionPlans';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
@@ -34,6 +36,16 @@ const createRoleVerificationState = (): ExecutorVerificationRoleState => ({
   uploadedPhotos: [],
   submittedAt: undefined,
   moderationThreadMessageId: undefined,
+});
+
+const createSubscriptionState = (): ExecutorSubscriptionState => ({
+  status: 'idle',
+  selectedPeriodId: undefined,
+  pendingPaymentId: undefined,
+  moderationChatId: undefined,
+  moderationMessageId: undefined,
+  lastInviteLink: undefined,
+  lastIssuedAt: undefined,
 });
 
 const normaliseRoleVerificationState = (
@@ -92,12 +104,24 @@ const normaliseVerificationState = (
   return verification;
 };
 
+const normaliseSubscriptionState = (
+  value: Partial<ExecutorSubscriptionState> | undefined,
+): ExecutorSubscriptionState => ({
+  status: value?.status ?? 'idle',
+  selectedPeriodId: value?.selectedPeriodId,
+  pendingPaymentId: value?.pendingPaymentId,
+  moderationChatId: value?.moderationChatId,
+  moderationMessageId: value?.moderationMessageId,
+  lastInviteLink: value?.lastInviteLink,
+  lastIssuedAt: value?.lastIssuedAt,
+});
+
 export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
   if (!ctx.session.executor) {
     ctx.session.executor = {
       role: 'courier',
       verification: createDefaultVerificationState(),
-      subscription: {},
+      subscription: createSubscriptionState(),
     } satisfies ExecutorFlowState;
   } else {
     if (!ctx.session.executor.role || !EXECUTOR_ROLES.includes(ctx.session.executor.role)) {
@@ -105,6 +129,9 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
     }
     ctx.session.executor.verification = normaliseVerificationState(
       ctx.session.executor.verification,
+    );
+    ctx.session.executor.subscription = normaliseSubscriptionState(
+      ctx.session.executor.subscription,
     );
   }
 
@@ -178,6 +205,19 @@ const buildSubscriptionSection = (state: ExecutorFlowState): string[] => {
 
   if (verification.status !== 'submitted') {
     return [`Ссылка на ${channelLabel} станет доступна после отправки документов.`];
+  }
+
+  if (subscription.status === 'awaitingReceipt' && subscription.selectedPeriodId) {
+    const period = findSubscriptionPeriodOption(subscription.selectedPeriodId);
+    const label = period?.label ?? `${subscription.selectedPeriodId} дней`;
+    return [
+      `Выбран период подписки: ${label}.`,
+      'Оплатите выбранный период и отправьте чек в этот чат для проверки.',
+    ];
+  }
+
+  if (subscription.status === 'pendingModeration') {
+    return ['Мы проверяем ваш чек об оплате. Ожидайте решения модератора.'];
   }
 
   if (subscription.lastInviteLink) {

@@ -7,6 +7,7 @@ import {
   type ClientFlowState,
   type ClientOrderDraftState,
   type ExecutorFlowState,
+  type ExecutorSubscriptionState,
   type ExecutorVerificationState,
   type SessionState,
   type UiSessionState,
@@ -24,10 +25,14 @@ const createVerificationState = (): ExecutorVerificationState => {
   return verification;
 };
 
+const createSubscriptionState = (): ExecutorSubscriptionState => ({
+  status: 'idle',
+});
+
 const createExecutorState = (): ExecutorFlowState => ({
   role: 'courier',
   verification: createVerificationState(),
-  subscription: {},
+  subscription: createSubscriptionState(),
 });
 
 const createClientOrderDraft = (): ClientOrderDraftState => ({

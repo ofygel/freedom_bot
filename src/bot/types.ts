@@ -30,7 +30,18 @@ export interface ExecutorVerificationRoleState {
   moderationThreadMessageId?: number;
 }
 
+export type ExecutorSubscriptionStatus =
+  | 'idle'
+  | 'selectingPeriod'
+  | 'awaitingReceipt'
+  | 'pendingModeration';
+
 export interface ExecutorSubscriptionState {
+  status: ExecutorSubscriptionStatus;
+  selectedPeriodId?: string;
+  pendingPaymentId?: string;
+  moderationChatId?: number;
+  moderationMessageId?: number;
   lastInviteLink?: string;
   lastIssuedAt?: number;
 }
