@@ -19,30 +19,6 @@ const CHANNEL_COLUMNS: Record<ChannelType, ChannelColumn> = {
   drivers: 'drivers_channel_id',
 };
 
-let channelsTableEnsured = false;
-
-const ensureChannelsTable = async (): Promise<void> => {
-  if (channelsTableEnsured) {
-    return;
-  }
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS channels (
-      id boolean PRIMARY KEY DEFAULT true,
-      verify_channel_id bigint,
-      drivers_channel_id bigint
-    )
-  `);
-
-  await pool.query(`
-    INSERT INTO channels (id)
-    VALUES (true)
-    ON CONFLICT (id) DO NOTHING
-  `);
-
-  channelsTableEnsured = true;
-};
-
 const parseChatId = (value: string | number): number => {
   if (typeof value === 'number') {
     return value;
@@ -59,8 +35,6 @@ const parseChatId = (value: string | number): number => {
 export const saveChannelBinding = async (
   binding: ChannelBinding,
 ): Promise<void> => {
-  await ensureChannelsTable();
-
   const column = CHANNEL_COLUMNS[binding.type];
 
   await pool.query(
@@ -77,8 +51,6 @@ export const saveChannelBinding = async (
 export const getChannelBinding = async (
   type: ChannelType,
 ): Promise<ChannelBinding | null> => {
-  await ensureChannelsTable();
-
   const column = CHANNEL_COLUMNS[type];
 
   const { rows } = await pool.query<ChannelsRow>(
