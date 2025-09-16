@@ -73,6 +73,19 @@ export const buildOrderMessage = (order: OrderRecord): string => {
   return lines.join('\n');
 };
 
+const buildOrderDirectMessage = (order: OrderRecord): string => {
+  const baseMessage = buildOrderMessage(order);
+  const pickupLink = buildLocationLink(order.pickup);
+  const dropoffLink = buildLocationLink(order.dropoff);
+
+  return [
+    baseMessage,
+    '',
+    `🅰️ 2ГИС: ${pickupLink}`,
+    `🅱️ 2ГИС: ${dropoffLink}`,
+  ].join('\n');
+};
+
 type OrderChannelStatus = 'pending' | 'claimed' | 'declined';
 
 interface UserInfo {
@@ -465,7 +478,27 @@ const handleOrderDecision = async (
         decidedAt: Date.now(),
       };
       await updateOrderMessage(ctx.telegram, state);
-      await ctx.answerCbQuery('Вы взяли этот заказ.');
+      let answerMessage = 'Вы взяли этот заказ. Проверьте личные сообщения.';
+
+      const moderatorTelegramId = ctx.from?.id;
+      if (typeof moderatorTelegramId === 'number') {
+        const directMessage = buildOrderDirectMessage(result.order);
+        try {
+          await ctx.telegram.sendMessage(moderatorTelegramId, directMessage);
+        } catch (error) {
+          logger.warn(
+            { err: error, orderId, moderatorId: moderatorTelegramId },
+            'Failed to send order summary to moderator',
+          );
+          answerMessage =
+            'Вы взяли этот заказ, но не удалось отправить детали в личные сообщения. Пожалуйста, убедитесь, что бот не заблокирован.';
+        }
+      } else {
+        answerMessage =
+          'Вы взяли этот заказ, но не удалось отправить детали в личные сообщения.';
+      }
+
+      await ctx.answerCbQuery(answerMessage);
       return;
     }
     case 'dismissed': {
