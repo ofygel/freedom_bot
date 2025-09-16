@@ -6,7 +6,7 @@ import { ensureExecutorState, showExecutorMenu } from './menu';
 import { getExecutorRoleCopy } from './roleCopy';
 
 const ROLE_COURIER_ACTION = 'role:courier';
-const ROLE_TAXI_DRIVER_ACTION = 'role:taxi_driver';
+const ROLE_DRIVER_ACTION = 'role:driver';
 
 const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise<void> => {
   if (ctx.chat?.type !== 'private') {
@@ -37,7 +37,7 @@ export const registerExecutorRoleSelect = (bot: Telegraf<BotContext>): void => {
     await handleRoleSelection(ctx, 'courier');
   });
 
-  bot.action(ROLE_TAXI_DRIVER_ACTION, async (ctx) => {
-    await handleRoleSelection(ctx, 'taxi_driver');
+  bot.action(ROLE_DRIVER_ACTION, async (ctx) => {
+    await handleRoleSelection(ctx, 'driver');
   });
 };

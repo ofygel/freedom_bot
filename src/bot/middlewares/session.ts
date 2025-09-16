@@ -1,22 +1,32 @@
 import type { MiddlewareFn } from 'telegraf';
 
 import {
+  EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
   type BotContext,
   type ClientFlowState,
   type ClientOrderDraftState,
   type ExecutorFlowState,
+  type ExecutorVerificationState,
   type SessionState,
   type UiSessionState,
 } from '../types';
 
+const createVerificationState = (): ExecutorVerificationState => {
+  const verification = {} as ExecutorVerificationState;
+  for (const role of EXECUTOR_ROLES) {
+    verification[role] = {
+      status: 'idle',
+      requiredPhotos: EXECUTOR_VERIFICATION_PHOTO_COUNT,
+      uploadedPhotos: [],
+    };
+  }
+  return verification;
+};
+
 const createExecutorState = (): ExecutorFlowState => ({
   role: 'courier',
-  verification: {
-    status: 'idle',
-    requiredPhotos: EXECUTOR_VERIFICATION_PHOTO_COUNT,
-    uploadedPhotos: [],
-  },
+  verification: createVerificationState(),
   subscription: {},
 });
 

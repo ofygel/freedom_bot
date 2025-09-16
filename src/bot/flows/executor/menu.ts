@@ -1,11 +1,12 @@
 import { Markup, Telegraf } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
-import { logger } from '../../../config';
 import {
+  EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
   type BotContext,
   type ExecutorFlowState,
+  type ExecutorVerificationRoleState,
 } from '../../types';
 import { getExecutorRoleCopy } from './roleCopy';
 import { ui } from '../../ui';
@@ -15,21 +16,81 @@ export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
 const EXECUTOR_MENU_STEP_ID = 'executor:menu:main';
 
-const ensurePositiveRequirement = (value?: number): number => {
-  if (!value || value <= 0) {
-    return EXECUTOR_VERIFICATION_PHOTO_COUNT;
+const ensurePositiveRequirement = (_value?: number): number => EXECUTOR_VERIFICATION_PHOTO_COUNT;
+
+const cloneUploadedPhotos = (
+  photos?: ExecutorVerificationRoleState['uploadedPhotos'],
+): ExecutorVerificationRoleState['uploadedPhotos'] => {
+  if (!Array.isArray(photos) || photos.length === 0) {
+    return [];
   }
 
-  return value;
+  return photos.map((photo) => ({ ...photo }));
 };
 
-const createDefaultVerificationState = () => ({
-  status: 'idle' as const,
+const createRoleVerificationState = (): ExecutorVerificationRoleState => ({
+  status: 'idle',
   requiredPhotos: EXECUTOR_VERIFICATION_PHOTO_COUNT,
   uploadedPhotos: [],
-  submittedAt: undefined as number | undefined,
-  moderationThreadMessageId: undefined as number | undefined,
+  submittedAt: undefined,
+  moderationThreadMessageId: undefined,
 });
+
+const normaliseRoleVerificationState = (
+  value?: Partial<ExecutorVerificationRoleState>,
+): ExecutorVerificationRoleState => ({
+  status: value?.status ?? 'idle',
+  requiredPhotos: ensurePositiveRequirement(value?.requiredPhotos),
+  uploadedPhotos: cloneUploadedPhotos(value?.uploadedPhotos),
+  submittedAt: value?.submittedAt,
+  moderationThreadMessageId: value?.moderationThreadMessageId,
+});
+
+const createDefaultVerificationState = () => {
+  const verification = {} as ExecutorFlowState['verification'];
+  for (const role of EXECUTOR_ROLES) {
+    verification[role] = createRoleVerificationState();
+  }
+  return verification;
+};
+
+const hasRoleEntries = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return EXECUTOR_ROLES.some((role) => role in candidate);
+};
+
+const normaliseVerificationState = (
+  value: ExecutorFlowState['verification'] | ExecutorVerificationRoleState | undefined,
+): ExecutorFlowState['verification'] => {
+  const verification = createDefaultVerificationState();
+
+  if (!value) {
+    return verification;
+  }
+
+  if (hasRoleEntries(value)) {
+    const map = value as Partial<Record<string, Partial<ExecutorVerificationRoleState>>>;
+    for (const role of EXECUTOR_ROLES) {
+      const roleState = map[role] ?? verification[role];
+      verification[role] = normaliseRoleVerificationState(roleState);
+    }
+    return verification;
+  }
+
+  const fallback = normaliseRoleVerificationState(value as Partial<ExecutorVerificationRoleState>);
+  for (const role of EXECUTOR_ROLES) {
+    verification[role] = {
+      ...fallback,
+      uploadedPhotos: cloneUploadedPhotos(fallback.uploadedPhotos),
+    };
+  }
+
+  return verification;
+};
 
 export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
   if (!ctx.session.executor) {
@@ -39,11 +100,11 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
       subscription: {},
     } satisfies ExecutorFlowState;
   } else {
-    if (!ctx.session.executor.role) {
+    if (!ctx.session.executor.role || !EXECUTOR_ROLES.includes(ctx.session.executor.role)) {
       ctx.session.executor.role = 'courier';
     }
-    ctx.session.executor.verification.requiredPhotos = ensurePositiveRequirement(
-      ctx.session.executor.verification.requiredPhotos,
+    ctx.session.executor.verification = normaliseVerificationState(
+      ctx.session.executor.verification,
     );
   }
 
@@ -51,9 +112,11 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
 };
 
 export const resetVerificationState = (state: ExecutorFlowState): void => {
-  state.verification = {
-    ...createDefaultVerificationState(),
-    requiredPhotos: ensurePositiveRequirement(state.verification.requiredPhotos),
+  const role = state.role;
+  const current = state.verification[role];
+  state.verification[role] = {
+    ...createRoleVerificationState(),
+    requiredPhotos: ensurePositiveRequirement(current?.requiredPhotos),
   };
 };
 
@@ -72,7 +135,7 @@ const formatTimestamp = (timestamp: number): string => {
 };
 
 const buildVerificationSection = (state: ExecutorFlowState): string[] => {
-  const { verification } = state;
+  const verification = state.verification[state.role];
   const uploaded = verification.uploadedPhotos.length;
   const required = ensurePositiveRequirement(verification.requiredPhotos);
 
@@ -108,7 +171,8 @@ const buildVerificationSection = (state: ExecutorFlowState): string[] => {
 };
 
 const buildSubscriptionSection = (state: ExecutorFlowState): string[] => {
-  const { verification, subscription } = state;
+  const verification = state.verification[state.role];
+  const { subscription } = state;
   const copy = getExecutorRoleCopy(state.role);
   const channelLabel = `канал ${copy.pluralGenitive}`;
 
