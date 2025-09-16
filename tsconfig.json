@@ -12,12 +12,13 @@
   },
   "include": [
     "src/index.ts",
-    "src/commands/start.ts",
-    "src/commands/bindings.ts",
-    "src/commands/order.ts",
-    "src/services/settings.ts",
-    "src/services/orders.ts",
-    "src/services/users.ts",
+    "src/bot/**/*.ts",
+    "src/channels/**/*.ts",
+    "src/config/**/*.ts",
+    "src/db/**/*.ts",
+    "src/jobs/**/*.ts",
+    "src/services/**/*.ts",
+    "src/types/**/*.ts",
     "src/utils/**/*.ts"
   ]
 }
