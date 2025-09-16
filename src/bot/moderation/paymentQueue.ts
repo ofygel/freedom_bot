@@ -371,6 +371,7 @@ const handleSubscriptionApproval = async (
       firstName: subscription.firstName,
       lastName: subscription.lastName,
       phone: subscription.phone,
+      role: subscription.role,
       chatId: binding.chatId,
       periodDays: subscription.period.days,
       periodLabel: subscription.period.label,

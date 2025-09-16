@@ -65,11 +65,12 @@ const normaliseExpiration = (
 const upsertVerificationApplicant = async (
   client: PoolClient,
   applicant: VerificationApplicant,
+  role: VerificationRole,
 ): Promise<number> => {
   const { rows } = await client.query<{ id: string | number }>(
     `
       INSERT INTO users (
-        telegram_id,
+        tg_id,
         username,
         first_name,
         last_name,
@@ -77,14 +78,14 @@ const upsertVerificationApplicant = async (
         role,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, 'executor', now())
-      ON CONFLICT (telegram_id) DO UPDATE
+      VALUES ($1, $2, $3, $4, $5, $6, now())
+      ON CONFLICT (tg_id) DO UPDATE
       SET
         username = COALESCE(EXCLUDED.username, users.username),
         first_name = COALESCE(EXCLUDED.first_name, users.first_name),
         last_name = COALESCE(EXCLUDED.last_name, users.last_name),
         phone = COALESCE(EXCLUDED.phone, users.phone),
-        role = CASE WHEN users.role = 'moderator' THEN users.role ELSE 'executor' END,
+        role = CASE WHEN users.role = 'moderator' THEN users.role ELSE EXCLUDED.role END,
         updated_at = now()
       RETURNING id
     `,
@@ -94,6 +95,7 @@ const upsertVerificationApplicant = async (
       applicant.firstName ?? null,
       applicant.lastName ?? null,
       applicant.phone ?? null,
+      role,
     ],
   );
 
@@ -230,7 +232,11 @@ const applyVerificationDecision = async (
   payload: VerificationDecisionPayload,
 ): Promise<void> => {
   await withTx(async (client) => {
-    const userId = await upsertVerificationApplicant(client, payload.applicant);
+    const userId = await upsertVerificationApplicant(
+      client,
+      payload.applicant,
+      payload.role,
+    );
     const expiresAt = status === 'approved' ? normaliseExpiration(payload.expiresAt) : null;
 
     await updateVerificationStatus(client, userId, payload.role, status, expiresAt);
@@ -251,7 +257,11 @@ export const persistVerificationSubmission = async (
   payload: VerificationSubmissionPayload,
 ): Promise<void> => {
   await withTx(async (client) => {
-    const userId = await upsertVerificationApplicant(client, payload.applicant);
+    const userId = await upsertVerificationApplicant(
+      client,
+      payload.applicant,
+      payload.role,
+    );
     await upsertVerificationRecord(client, userId, payload);
   });
 };
@@ -288,7 +298,7 @@ export const isExecutorVerified = async (
             AND (v.expires_at IS NULL OR v.expires_at > now())
         ) AS is_verified
       FROM users u
-      WHERE u.telegram_id = $1
+      WHERE u.tg_id = $1
       LIMIT 1
     `,
     [telegramId, role],
