@@ -5,7 +5,7 @@ import type { BotContext } from '../../types';
 import { START_DELIVERY_ORDER_ACTION } from './deliveryOrderFlow';
 import { START_TAXI_ORDER_ACTION } from './taxiOrderFlow';
 
-const ROLE_CUSTOMER_ACTION = 'role:customer';
+const ROLE_CLIENT_ACTION = 'role:client';
 const CLIENT_MENU_ACTION = 'client:menu:show';
 
 const buildMenuKeyboard = () =>
@@ -17,7 +17,7 @@ const buildMenuKeyboard = () =>
 
 const buildMenuText = (): string =>
   [
-    '🎯 Меню заказчика Freedom Bot',
+    '🎯 Меню клиента Freedom Bot',
     '',
     'Выберите, что хотите оформить:',
     '• 🚕 Такси — подача машины и поездка по указанному адресу.',
@@ -57,14 +57,14 @@ const showMenu = async (ctx: BotContext): Promise<void> => {
 };
 
 export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
-  bot.action(ROLE_CUSTOMER_ACTION, async (ctx) => {
+  bot.action(ROLE_CLIENT_ACTION, async (ctx) => {
     if (ctx.chat?.type === 'private') {
       try {
         await ctx.editMessageReplyMarkup(undefined);
       } catch (error) {
         logger.debug(
           { err: error, chatId: ctx.chat?.id },
-          'Failed to clear role selection keyboard for customer',
+          'Failed to clear role selection keyboard for client',
         );
       }
     }

@@ -1,6 +1,8 @@
 import type { BotContext, ExecutorFlowState } from '../types';
 import { EXECUTOR_VERIFICATION_PHOTO_COUNT } from '../types';
 
+import { getExecutorRoleCopy } from '../flows/executor/roleCopy';
+
 import { MINUTE, remainingTime } from '../../utils/time';
 
 const DEFAULT_COOLDOWN_MS = 10 * MINUTE;
@@ -38,8 +40,9 @@ export const buildVerificationSummary = (
   options: VerificationSummaryOptions = {},
 ): string => {
   const applicant = ctx.session.user;
+  const copy = getExecutorRoleCopy(state.role);
   const lines = [
-    '🆕 Новая заявка на верификацию курьера.',
+    `🆕 Новая заявка на верификацию ${copy.genitive}.`,
     `Telegram ID: ${ctx.from?.id ?? 'неизвестно'}`,
   ];
 

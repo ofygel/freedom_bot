@@ -6,6 +6,7 @@ import {
   type BotContext,
   type ExecutorFlowState,
 } from '../../types';
+import { getExecutorRoleCopy } from './roleCopy';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
@@ -30,10 +31,14 @@ const createDefaultVerificationState = () => ({
 export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
   if (!ctx.session.executor) {
     ctx.session.executor = {
+      role: 'courier',
       verification: createDefaultVerificationState(),
       subscription: {},
     } satisfies ExecutorFlowState;
   } else {
+    if (!ctx.session.executor.role) {
+      ctx.session.executor.role = 'courier';
+    }
     ctx.session.executor.verification.requiredPhotos = ensurePositiveRequirement(
       ctx.session.executor.verification.requiredPhotos,
     );
@@ -101,9 +106,11 @@ const buildVerificationSection = (state: ExecutorFlowState): string[] => {
 
 const buildSubscriptionSection = (state: ExecutorFlowState): string[] => {
   const { verification, subscription } = state;
+  const copy = getExecutorRoleCopy(state.role);
+  const channelLabel = `канал ${copy.pluralGenitive}`;
 
   if (verification.status !== 'submitted') {
-    return ['Ссылка на канал станет доступна после отправки документов.'];
+    return [`Ссылка на ${channelLabel} станет доступна после отправки документов.`];
   }
 
   if (subscription.lastInviteLink) {
@@ -115,12 +122,15 @@ const buildSubscriptionSection = (state: ExecutorFlowState): string[] => {
     ];
   }
 
-  return ['Получите ссылку на канал курьеров после проверки — используйте кнопку ниже.'];
+  return [
+    `Получите ссылку на ${channelLabel} после проверки — используйте кнопку ниже.`,
+  ];
 };
 
 const buildMenuText = (state: ExecutorFlowState): string => {
+  const copy = getExecutorRoleCopy(state.role);
   const parts = [
-    '🚗 Меню курьера Freedom Bot',
+    `${copy.emoji} Меню ${copy.genitive} Freedom Bot`,
     '',
     ...buildVerificationSection(state),
     '',
