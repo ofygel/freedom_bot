@@ -53,7 +53,7 @@ describe('pricing service', () => {
       setTariffEnv(tariffSetA);
 
       const { loadConfig } = await import('../src/config/env');
-      const { createPricingService, calculateDistanceKm } = await import('../src/services/pricing');
+      const { createPricingService, calculateDistanceKm } = await import('../src/bot/services/pricing');
 
       const configA = loadConfig();
       assert.equal(configA.pricing.taxi.baseFare, tariffSetA.taxi.baseFare);

@@ -13,11 +13,9 @@
   "include": [
     "src/index.ts",
     "src/bot/**/*.ts",
-    "src/channels/**/*.ts",
     "src/config/**/*.ts",
     "src/db/**/*.ts",
     "src/jobs/**/*.ts",
-    "src/services/**/*.ts",
     "src/types/**/*.ts",
     "src/utils/**/*.ts"
   ]

@@ -1,6 +1,6 @@
 import { Markup, Telegraf, Telegram } from 'telegraf';
 
-import { getChannelBinding } from '../../channels';
+import { getChannelBinding } from './bindings';
 import { logger } from '../../config';
 import { withTx } from '../../db/client';
 import {

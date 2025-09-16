@@ -1,4 +1,4 @@
-import { geocodeAddress, type GeocodingResult } from '../../services/geocoding';
+import { geocodeAddress, type GeocodingResult } from './geocoding';
 import type { OrderLocation } from '../../types';
 
 export const toOrderLocation = (result: GeocodingResult): OrderLocation => ({

@@ -1,7 +1,7 @@
 import { Markup, Telegraf } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
-import { getChannelBinding } from '../../../channels';
+import { getChannelBinding } from '../../channels/bindings';
 import { logger } from '../../../config';
 import type { BotContext } from '../../types';
 import {

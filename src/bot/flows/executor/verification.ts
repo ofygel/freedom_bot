@@ -1,6 +1,6 @@
 import type { Telegraf } from 'telegraf';
 
-import { getChannelBinding } from '../../../channels';
+import { getChannelBinding } from '../../channels/bindings';
 import { logger } from '../../../config';
 import type { BotContext, ExecutorFlowState } from '../../types';
 import {

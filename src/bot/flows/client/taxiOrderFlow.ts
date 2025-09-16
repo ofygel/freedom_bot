@@ -1,7 +1,7 @@
 import { Telegraf } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
-import { publishOrderToDriversChannel, type PublishOrderStatus } from '../../../channels/ordersChannel';
+import { publishOrderToDriversChannel, type PublishOrderStatus } from '../../channels/ordersChannel';
 import { logger } from '../../../config';
 import { createOrder } from '../../../db/orders';
 import type { OrderRecord } from '../../../types';
