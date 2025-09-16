@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 
 import { Markup, Telegraf, Telegram } from 'telegraf';
+import type { ForceReply } from 'telegraf/typings/core/types/typegram';
 import type { ExtraEditMessageText, ExtraReplyMessage } from 'telegraf/typings/telegram-types';
 
 import { getChannelBinding, type ChannelType } from '../channels/bindings';
@@ -236,6 +237,59 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
   const acceptAction = `mod:${config.type}:accept`;
   const rejectAction = `mod:${config.type}:reject`;
   const state = new Map<string, PendingModerationItem<T>>();
+  const pendingRejectionPrompts = new Map<string, { token: string; moderatorId?: number }>();
+  const promptsByToken = new Map<string, Set<string>>();
+
+  const buildPromptKey = (chatId: number, messageId: number): string =>
+    `${chatId.toString(10)}:${messageId.toString(10)}`;
+
+  const registerPrompt = (
+    token: string,
+    chatId: number,
+    messageId: number,
+    moderatorId?: number,
+  ): void => {
+    const key = buildPromptKey(chatId, messageId);
+    pendingRejectionPrompts.set(key, { token, moderatorId });
+
+    let promptKeys = promptsByToken.get(token);
+    if (!promptKeys) {
+      promptKeys = new Set<string>();
+      promptsByToken.set(token, promptKeys);
+    }
+    promptKeys.add(key);
+  };
+
+  const clearPromptByKey = (key: string): void => {
+    const prompt = pendingRejectionPrompts.get(key);
+    if (!prompt) {
+      return;
+    }
+
+    pendingRejectionPrompts.delete(key);
+
+    const promptKeys = promptsByToken.get(prompt.token);
+    if (!promptKeys) {
+      return;
+    }
+
+    promptKeys.delete(key);
+    if (promptKeys.size === 0) {
+      promptsByToken.delete(prompt.token);
+    }
+  };
+
+  const clearPendingPromptsForToken = (token: string): void => {
+    const keys = promptsByToken.get(token);
+    if (!keys) {
+      return;
+    }
+
+    for (const key of keys) {
+      pendingRejectionPrompts.delete(key);
+    }
+    promptsByToken.delete(token);
+  };
 
   const publish = async (telegram: Telegram, item: T): Promise<PublishModerationResult> => {
     const binding = await getChannelBinding(config.channelType);
@@ -315,6 +369,55 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     }
   };
 
+  const applyDecision = async (
+    telegram: Telegram,
+    entry: PendingModerationItem<T>,
+    decision: ModerationDecision,
+    moderator: ModeratorInfo,
+    decidedAt: number,
+    reason?: string,
+  ): Promise<string> => {
+    entry.status = decision;
+    entry.decision = {
+      status: decision,
+      moderator,
+      reason,
+      decidedAt,
+    };
+
+    await updateMessage(telegram, entry, decision, moderator, reason);
+
+    try {
+      if (decision === 'approved') {
+        await entry.item.onApprove?.({
+          item: entry.item,
+          moderator,
+          decidedAt,
+          telegram,
+        });
+      } else {
+        await entry.item.onReject?.({
+          item: entry.item,
+          moderator,
+          decidedAt,
+          telegram,
+          reason: normaliseReason(reason),
+        });
+      }
+    } catch (callbackError) {
+      logger.error(
+        { err: callbackError, queue: config.type, itemId: entry.item.id },
+        'Error while running moderation decision callback',
+      );
+    }
+
+    clearPendingPromptsForToken(entry.token);
+
+    return decision === 'approved'
+      ? 'Заявка одобрена.'
+      : `Заявка отклонена (${normaliseReason(reason)}).`;
+  };
+
   const resolveDecision = async (
     ctx: BotContext,
     token: string,
@@ -334,46 +437,58 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
 
     const moderator = toModeratorInfo(ctx.from);
     const decidedAt = Date.now();
-
-    entry.status = decision;
-    entry.decision = {
-      status: decision,
+    const responseMessage = await applyDecision(
+      ctx.telegram,
+      entry,
+      decision,
       moderator,
-      reason,
       decidedAt,
-    };
+      reason,
+    );
+    await ctx.answerCbQuery(responseMessage);
+  };
 
-    await updateMessage(ctx.telegram, entry, decision, moderator, reason);
-
-    try {
-      if (decision === 'approved') {
-        await entry.item.onApprove?.({
-          item: entry.item,
-          moderator,
-          decidedAt,
-          telegram: ctx.telegram,
-        });
-      } else {
-        await entry.item.onReject?.({
-          item: entry.item,
-          moderator,
-          decidedAt,
-          telegram: ctx.telegram,
-          reason: normaliseReason(reason),
-        });
-      }
-    } catch (callbackError) {
-      logger.error(
-        { err: callbackError, queue: config.type, itemId: entry.item.id },
-        'Error while running moderation decision callback',
-      );
+  const promptRejectionReason = async (
+    ctx: BotContext,
+    token: string,
+    reasonIndex: number,
+  ): Promise<void> => {
+    const entry = state.get(token);
+    if (!entry) {
+      await ctx.answerCbQuery('Не удалось найти заявку. Вероятно, она уже обработана.');
+      return;
     }
 
-    const responseMessage =
-      decision === 'approved'
-        ? 'Заявка одобрена.'
-        : `Заявка отклонена (${normaliseReason(reason)}).`;
-    await ctx.answerCbQuery(responseMessage);
+    if (entry.status !== 'pending') {
+      await ctx.answerCbQuery(buildAlreadyProcessedResponse(entry));
+      return;
+    }
+
+    const chatId = ctx.chat?.id;
+    if (chatId === undefined) {
+      await ctx.answerCbQuery('Не удалось запросить причину отклонения. Попробуйте ещё раз.');
+      return;
+    }
+
+    const suggestion = entry.rejectionReasons?.[reasonIndex];
+    const promptLines = [
+      'Укажите причину отклонения заявки в ответ на это сообщение.',
+      suggestion ? `Предложенный вариант: ${suggestion}` : undefined,
+    ].filter((value): value is string => Boolean(value && value.trim().length > 0));
+    const promptText = promptLines.join('\n') || 'Укажите причину отклонения заявки в ответ на это сообщение.';
+
+    try {
+      const forceReply: ForceReply = { force_reply: true, selective: true };
+      const prompt = await ctx.reply(promptText, { reply_markup: forceReply });
+      registerPrompt(token, prompt.chat.id, prompt.message_id, ctx.from?.id);
+      await ctx.answerCbQuery('Отправьте причину отклонения сообщением.');
+    } catch (error) {
+      logger.error(
+        { err: error, queue: config.type, chatId, token },
+        'Failed to request moderation rejection reason',
+      );
+      await ctx.answerCbQuery('Не удалось запросить причину. Попробуйте ещё раз.');
+    }
   };
 
   const register = (bot: Telegraf<BotContext>): void => {
@@ -400,10 +515,106 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
         return;
       }
 
-      const entry = state.get(token);
       const index = Number.parseInt(indexText, 10);
-      const reason = entry?.rejectionReasons?.[index];
-      await resolveDecision(ctx, token, 'rejected', reason);
+      if (Number.isNaN(index)) {
+        await ctx.answerCbQuery('Некорректное действие.');
+        return;
+      }
+
+      await promptRejectionReason(ctx, token, index);
+    });
+
+    bot.on('text', async (ctx, next) => {
+      const replyTo = ctx.message.reply_to_message;
+      const chatId = ctx.chat?.id;
+      if (!replyTo || chatId === undefined) {
+        if (next) {
+          await next();
+        }
+        return;
+      }
+
+      const promptKey = buildPromptKey(chatId, replyTo.message_id);
+      const prompt = pendingRejectionPrompts.get(promptKey);
+      if (!prompt) {
+        if (next) {
+          await next();
+        }
+        return;
+      }
+
+      if (prompt.moderatorId !== undefined && ctx.from?.id !== prompt.moderatorId) {
+        if (next) {
+          await next();
+        }
+        return;
+      }
+
+      const entry = state.get(prompt.token);
+      if (!entry) {
+        clearPendingPromptsForToken(prompt.token);
+        await ctx.reply('Заявка уже обработана.', {
+          reply_parameters: {
+            message_id: ctx.message.message_id,
+            allow_sending_without_reply: true,
+          },
+        });
+        return;
+      }
+
+      if (entry.status !== 'pending') {
+        clearPendingPromptsForToken(prompt.token);
+        await ctx.reply(buildAlreadyProcessedResponse(entry), {
+          reply_parameters: {
+            message_id: ctx.message.message_id,
+            allow_sending_without_reply: true,
+          },
+        });
+        return;
+      }
+
+      const reason = ctx.message.text?.trim();
+      if (!reason) {
+        await ctx.reply('Причина отклонения не может быть пустой. Укажите её, пожалуйста.', {
+          reply_parameters: {
+            message_id: replyTo.message_id,
+            allow_sending_without_reply: true,
+          },
+        });
+        return;
+      }
+
+      clearPromptByKey(promptKey);
+
+      const moderator = toModeratorInfo(ctx.from);
+      const decidedAt = Date.now();
+      const responseMessage = await applyDecision(
+        ctx.telegram,
+        entry,
+        'rejected',
+        moderator,
+        decidedAt,
+        reason,
+      );
+
+      try {
+        await ctx.reply(responseMessage, {
+          reply_parameters: {
+            message_id: ctx.message.message_id,
+            allow_sending_without_reply: true,
+          },
+        });
+      } catch (error) {
+        logger.warn(
+          {
+            err: error,
+            queue: config.type,
+            chatId,
+            token: prompt.token,
+          },
+          'Failed to acknowledge moderation decision in chat',
+        );
+      }
     });
   };
 
