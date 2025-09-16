@@ -1,4 +1,4 @@
-import { Telegraf, Telegram } from 'telegraf';
+import { Markup, Telegraf, Telegram } from 'telegraf';
 
 import { config, logger } from '../../config';
 import { activateSubscription } from '../../db/subscriptions';
@@ -402,12 +402,16 @@ const handleSubscriptionApproval = async (
   }
 
   let inviteLink: string | undefined;
+  let inviteLinkIsFresh = false;
   try {
+    const expireDate = Math.floor(activation.nextBillingAt.getTime() / 1000);
     const invite = await telegram.createChatInviteLink(binding.chatId, {
-      creates_join_request: true,
       name: `Subscription ${subscription.telegramId} ${subscription.period.days}d`,
+      expire_date: expireDate,
+      member_limit: 1,
     });
     inviteLink = invite.invite_link;
+    inviteLinkIsFresh = true;
   } catch (error) {
     logger.error(
       { err: error, paymentId: item.id, chatId: binding.chatId },
@@ -427,17 +431,29 @@ const handleSubscriptionApproval = async (
     ? formatDateTime(activation.nextBillingAt)
     : undefined;
 
+  const inviteInstructions = inviteLinkIsFresh && inviteLink
+    ? `Чтобы вступить в ${roleCopy.pluralGenitive}, нажмите кнопку «Вступить».`
+    : inviteLink
+    ? `Чтобы вступить в ${roleCopy.pluralGenitive}, используйте ссылку: ${inviteLink}`
+    : 'Ссылка на канал будет отправлена дополнительно. Свяжитесь с поддержкой, если не получили её в ближайшее время.';
+
   const parts = [
     '✅ Оплата подписки подтверждена.',
     expiresLabel ? `Подписка активна до ${expiresLabel}.` : undefined,
-    inviteLink
-      ? `Чтобы вступить в ${roleCopy.pluralGenitive}, отправьте заявку: ${inviteLink}`
-      : 'Ссылка на канал будет отправлена дополнительно. Свяжитесь с поддержкой, если не получили её в ближайшее время.',
+    inviteInstructions,
     'Если ссылка перестанет работать, запросите новую через меню «Получить ссылку на канал».',
   ].filter((value): value is string => Boolean(value && value.trim().length > 0));
 
+  const extra = inviteLinkIsFresh && inviteLink
+    ? {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.url('Вступить', inviteLink)],
+        ]).reply_markup,
+      }
+    : undefined;
+
   try {
-    await telegram.sendMessage(subscription.telegramId, parts.join('\n'));
+    await telegram.sendMessage(subscription.telegramId, parts.join('\n'), extra);
   } catch (error) {
     logger.error(
       { err: error, paymentId: item.id, telegramId: subscription.telegramId },
