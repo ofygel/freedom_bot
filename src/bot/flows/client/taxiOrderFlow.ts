@@ -21,7 +21,7 @@ import {
   isTwoGisLink,
 } from '../../services/geocode';
 import { estimateTaxiPrice, formatPriceAmount } from '../../services/pricing';
-import { rememberEphemeralMessage, clearInlineKeyboard } from '../../services/cleanup';
+import { clearInlineKeyboard } from '../../services/cleanup';
 import { ensurePrivateCallback, isPrivateChat } from '../../services/access';
 import { buildConfirmCancelKeyboard } from '../../keyboards/common';
 import type { BotContext, ClientOrderDraftState } from '../../types';
@@ -35,6 +35,13 @@ const CANCEL_TAXI_ORDER_ACTION = 'client:order:taxi:cancel';
 const getDraft = (ctx: BotContext): ClientOrderDraftState => ctx.session.client.taxi;
 
 const TAXI_STEP_ID = 'client:taxi:step';
+const TAXI_MANUAL_ADDRESS_HINT_STEP_ID = 'client:taxi:hint:manual-address';
+const TAXI_CONFIRMATION_HINT_STEP_ID = 'client:taxi:hint:confirmation';
+const TAXI_GEOCODE_ERROR_STEP_ID = 'client:taxi:error:geocode';
+const TAXI_CANCELLED_STEP_ID = 'client:taxi:cancelled';
+const TAXI_CREATED_STEP_ID = 'client:taxi:created';
+const TAXI_CONFIRM_ERROR_STEP_ID = 'client:taxi:error:confirm';
+const TAXI_CREATE_ERROR_STEP_ID = 'client:taxi:error:create';
 
 const updateTaxiStep = (
   ctx: BotContext,
@@ -58,17 +65,19 @@ const buildAddressPrompt = (lines: string[]): string =>
   [...lines, ...ADDRESS_INPUT_HINTS].join('\n');
 
 const remindManualAddressAccuracy = async (ctx: BotContext): Promise<void> => {
-  const warning = await ctx.reply(
-    '⚠️ При ручном вводе адреса укажите город, улицу и дом. Если есть ссылка 2ГИС или геопозиция, отправьте её.',
-  );
-  rememberEphemeralMessage(ctx, warning.message_id);
+  await ui.step(ctx, {
+    id: TAXI_MANUAL_ADDRESS_HINT_STEP_ID,
+    text: '⚠️ При ручном вводе адреса укажите город, улицу и дом. Если есть ссылка 2ГИС или геопозиция, отправьте её.',
+    cleanup: true,
+  });
 };
 
 const remindConfirmationActions = async (ctx: BotContext): Promise<void> => {
-  const reminder = await ctx.reply(
-    'Используйте кнопки ниже, чтобы подтвердить или отменить заказ.',
-  );
-  rememberEphemeralMessage(ctx, reminder.message_id);
+  await ui.step(ctx, {
+    id: TAXI_CONFIRMATION_HINT_STEP_ID,
+    text: 'Используйте кнопки ниже, чтобы подтвердить или отменить заказ.',
+    cleanup: true,
+  });
 };
 
 const requestPickupAddress = async (ctx: BotContext): Promise<void> => {
@@ -90,10 +99,11 @@ const requestDropoffAddress = async (ctx: BotContext, pickup: CompletedOrderDraf
 };
 
 const handleGeocodingFailure = async (ctx: BotContext): Promise<void> => {
-  const message = await ctx.reply(
-    'Не удалось распознать адрес. Пожалуйста, уточните формулировку и попробуйте снова.',
-  );
-  rememberEphemeralMessage(ctx, message.message_id);
+  await ui.step(ctx, {
+    id: TAXI_GEOCODE_ERROR_STEP_ID,
+    text: 'Не удалось распознать адрес. Пожалуйста, уточните формулировку и попробуйте снова.',
+    cleanup: true,
+  });
 };
 
 const applyPickupDetails = async (
@@ -207,8 +217,12 @@ const cancelOrderDraft = async (ctx: BotContext, draft: ClientOrderDraftState): 
   await clearInlineKeyboard(ctx, draft.confirmationMessageId);
   resetClientOrderDraft(draft);
 
-  const message = await ctx.reply('Оформление заказа отменено.');
-  rememberEphemeralMessage(ctx, message.message_id);
+  await ui.step(ctx, {
+    id: TAXI_CANCELLED_STEP_ID,
+    text: 'Оформление заказа отменено.',
+    cleanup: true,
+    homeAction: CLIENT_MENU_ACTION,
+  });
 };
 
 const notifyOrderCreated = async (
@@ -225,14 +239,21 @@ const notifyOrderCreated = async (
     lines.push('⚠️ Канал курьеров не настроен. Мы свяжемся с вами вручную.');
   }
 
-  const message = await ctx.reply(lines.join('\n'));
-  rememberEphemeralMessage(ctx, message.message_id);
+  await ui.step(ctx, {
+    id: TAXI_CREATED_STEP_ID,
+    text: lines.join('\n'),
+    cleanup: true,
+    homeAction: CLIENT_MENU_ACTION,
+  });
 };
 
 const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Promise<void> => {
   if (!isOrderDraftComplete(draft)) {
-    const warning = await ctx.reply('Не удалось подтвердить заказ: отсутствуют данные адресов.');
-    rememberEphemeralMessage(ctx, warning.message_id);
+    await ui.step(ctx, {
+      id: TAXI_CONFIRM_ERROR_STEP_ID,
+      text: 'Не удалось подтвердить заказ: отсутствуют данные адресов.',
+      cleanup: true,
+    });
     resetClientOrderDraft(draft);
     return;
   }
@@ -262,8 +283,11 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
     await notifyOrderCreated(ctx, order, publishResult.status);
   } catch (error) {
     logger.error({ err: error }, 'Failed to create taxi order');
-    const failure = await ctx.reply('Не удалось создать заказ. Попробуйте позже.');
-    rememberEphemeralMessage(ctx, failure.message_id);
+    await ui.step(ctx, {
+      id: TAXI_CREATE_ERROR_STEP_ID,
+      text: 'Не удалось создать заказ. Попробуйте позже.',
+      cleanup: true,
+    });
   } finally {
     await clearInlineKeyboard(ctx, draft.confirmationMessageId);
     resetClientOrderDraft(draft);

@@ -10,6 +10,7 @@ import { ui } from '../../ui';
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
 const CLIENT_MENU_STEP_ID = 'client:menu:main';
+const CLIENT_MENU_PRIVATE_WARNING_STEP_ID = 'client:menu:private-only';
 
 const buildMenuKeyboard = (): InlineKeyboardMarkup =>
   Markup.inlineKeyboard([
@@ -86,7 +87,11 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
 
   bot.command('order', async (ctx) => {
     if (ctx.chat?.type !== 'private') {
-      await ctx.reply('Меню доступно только в личном чате с ботом.');
+      await ui.step(ctx, {
+        id: CLIENT_MENU_PRIVATE_WARNING_STEP_ID,
+        text: 'Меню доступно только в личном чате с ботом.',
+        cleanup: true,
+      });
       return;
     }
 
