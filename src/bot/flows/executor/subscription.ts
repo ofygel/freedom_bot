@@ -26,6 +26,14 @@ import { createShortId } from '../../../utils/ids';
 import { submitSubscriptionPaymentReview } from '../../moderation/paymentQueue';
 
 const SUBSCRIPTION_PERIOD_ACTION_PREFIX = 'executor:subscription:period';
+const SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID =
+  'executor:subscription:verification-required';
+const SUBSCRIPTION_CONFIRMATION_STEP_ID = 'executor:subscription:confirmation';
+const SUBSCRIPTION_RECEIPT_ACCEPTED_STEP_ID = 'executor:subscription:receipt-accepted';
+const SUBSCRIPTION_RECEIPT_FAILED_STEP_ID = 'executor:subscription:receipt-failed';
+const SUBSCRIPTION_SELECT_PERIOD_REMINDER_STEP_ID = 'executor:subscription:select-period';
+const SUBSCRIPTION_RECEIPT_REMINDER_STEP_ID = 'executor:subscription:receipt-reminder';
+const SUBSCRIPTION_SENDER_UNKNOWN_STEP_ID = 'executor:subscription:sender-unknown';
 
 const KASPI_DETAILS = [
   'Получатель: Freedom Bot',
@@ -79,10 +87,12 @@ export const startExecutorSubscription = async (
   const copy = getExecutorRoleCopy(state.role);
 
   if (!options.skipVerificationCheck && verification.status !== 'submitted') {
-    const message = await ctx.reply(
-      'Сначала завершите проверку документов, чтобы получить ссылку на канал.',
-    );
-    ctx.session.ephemeralMessages.push(message.message_id);
+    await ui.step(ctx, {
+      id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
+      text: 'Сначала завершите проверку документов, чтобы получить ссылку на канал.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
     return;
   }
 
@@ -135,8 +145,12 @@ const handlePeriodSelection = async (
   await ctx.answerCbQuery(`Период: ${period.label}`);
 
   const copy = getExecutorRoleCopy(state.role);
-  const confirmation = await ctx.reply(buildPeriodConfirmationMessage(period, copy));
-  ctx.session.ephemeralMessages.push(confirmation.message_id);
+  await ui.step(ctx, {
+    id: SUBSCRIPTION_CONFIRMATION_STEP_ID,
+    text: buildPeriodConfirmationMessage(period, copy),
+    cleanup: true,
+    homeAction: EXECUTOR_MENU_ACTION,
+  });
 
   await showExecutorMenu(ctx, { skipAccessCheck: true });
 };
@@ -162,15 +176,21 @@ const extractReceipt = (message: Message): ReceiptPayload | null => {
 };
 
 const notifyReceiptAccepted = async (ctx: BotContext): Promise<void> => {
-  const message = await ctx.reply(
-    'Спасибо! Мы передали чек модераторам. Ожидайте решения, и мы пришлём ссылку после одобрения.',
-  );
-  ctx.session.ephemeralMessages.push(message.message_id);
+  await ui.step(ctx, {
+    id: SUBSCRIPTION_RECEIPT_ACCEPTED_STEP_ID,
+    text: 'Спасибо! Мы передали чек модераторам. Ожидайте решения, и мы пришлём ссылку после одобрения.',
+    cleanup: true,
+    homeAction: EXECUTOR_MENU_ACTION,
+  });
 };
 
 const notifyReceiptFailed = async (ctx: BotContext): Promise<void> => {
-  const message = await ctx.reply('Не удалось отправить чек на проверку. Попробуйте позже.');
-  ctx.session.ephemeralMessages.push(message.message_id);
+  await ui.step(ctx, {
+    id: SUBSCRIPTION_RECEIPT_FAILED_STEP_ID,
+    text: 'Не удалось отправить чек на проверку. Попробуйте позже.',
+    cleanup: true,
+    homeAction: EXECUTOR_MENU_ACTION,
+  });
 };
 
 const buildPaymentId = (): string => `manual-${Date.now()}-${createShortId({ length: 6 })}`;
@@ -194,21 +214,33 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
 
   const period = findSubscriptionPeriodOption(subscription.selectedPeriodId);
   if (!period) {
-    const reminder = await ctx.reply('Выберите период подписки с помощью кнопок в меню.');
-    ctx.session.ephemeralMessages.push(reminder.message_id);
+    await ui.step(ctx, {
+      id: SUBSCRIPTION_SELECT_PERIOD_REMINDER_STEP_ID,
+      text: 'Выберите период подписки с помощью кнопок в меню.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
     return;
   }
 
   const receipt = extractReceipt(message);
   if (!receipt) {
-    const reminder = await ctx.reply('Отправьте, пожалуйста, фотографию или файл с чеком.');
-    ctx.session.ephemeralMessages.push(reminder.message_id);
+    await ui.step(ctx, {
+      id: SUBSCRIPTION_RECEIPT_REMINDER_STEP_ID,
+      text: 'Отправьте, пожалуйста, фотографию или файл с чеком.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
     return;
   }
 
   if (!ctx.from) {
-    const reminder = await ctx.reply('Не удалось определить отправителя. Попробуйте ещё раз позже.');
-    ctx.session.ephemeralMessages.push(reminder.message_id);
+    await ui.step(ctx, {
+      id: SUBSCRIPTION_SENDER_UNKNOWN_STEP_ID,
+      text: 'Не удалось определить отправителя. Попробуйте ещё раз позже.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
     return;
   }
 

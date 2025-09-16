@@ -9,12 +9,14 @@ import {
   type ExecutorRole,
 } from '../../types';
 import {
+  EXECUTOR_MENU_ACTION,
   EXECUTOR_VERIFICATION_ACTION,
   ensureExecutorState,
   resetVerificationState,
   showExecutorMenu,
 } from './menu';
 import { getExecutorRoleCopy } from './roleCopy';
+import { ui } from '../../ui';
 
 const ROLE_PROMPTS: Record<ExecutorRole, string[]> = {
   courier: [
@@ -33,6 +35,16 @@ const buildVerificationPrompt = (role: ExecutorRole): string => {
   const lines = ROLE_PROMPTS[role] ?? ROLE_PROMPTS.courier;
   return [...lines, '', 'Отправляйте фотографии по одному сообщению в этот чат.'].join('\n');
 };
+
+const VERIFICATION_CHANNEL_MISSING_STEP_ID = 'executor:verification:channel-missing';
+const VERIFICATION_SUBMISSION_FAILED_STEP_ID = 'executor:verification:submission-failed';
+const VERIFICATION_SUBMITTED_STEP_ID = 'executor:verification:submitted';
+const VERIFICATION_ALREADY_SUBMITTED_STEP_ID = 'executor:verification:already-submitted';
+const VERIFICATION_PROMPT_STEP_ID = 'executor:verification:prompt';
+const VERIFICATION_ALREADY_ON_REVIEW_STEP_ID = 'executor:verification:on-review';
+const VERIFICATION_START_REMINDER_STEP_ID = 'executor:verification:start-reminder';
+const VERIFICATION_PROGRESS_STEP_ID = 'executor:verification:progress';
+const VERIFICATION_PHOTO_REMINDER_STEP_ID = 'executor:verification:photo-reminder';
 
 const buildModerationSummary = (ctx: BotContext, state: ExecutorFlowState): string => {
   const user = ctx.session.user;
@@ -78,8 +90,12 @@ const submitForModeration = async (
 
   const verifyChannel = await getChannelBinding('verify');
   if (!verifyChannel) {
-    const message = await ctx.reply('Канал верификации пока не настроен. Попробуйте позже.');
-    ctx.session.ephemeralMessages.push(message.message_id);
+    await ui.step(ctx, {
+      id: VERIFICATION_CHANNEL_MISSING_STEP_ID,
+      text: 'Канал верификации пока не настроен. Попробуйте позже.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
     return false;
   }
 
@@ -108,17 +124,24 @@ const submitForModeration = async (
       { err: error, chatId: verifyChannel.chatId, role },
       'Failed to submit executor verification to verification channel',
     );
-    const message = await ctx.reply('Не удалось отправить документы на проверку. Попробуйте позже.');
-    ctx.session.ephemeralMessages.push(message.message_id);
+    await ui.step(ctx, {
+      id: VERIFICATION_SUBMISSION_FAILED_STEP_ID,
+      text: 'Не удалось отправить документы на проверку. Попробуйте позже.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
     return false;
   }
 
   verification.status = 'submitted';
   verification.submittedAt = Date.now();
 
-  await ctx.reply(
-    'Спасибо! Мы получили ваши документы и передали их модераторам. Ожидайте решения.',
-  );
+  await ui.step(ctx, {
+    id: VERIFICATION_SUBMITTED_STEP_ID,
+    text: 'Спасибо! Мы получили ваши документы и передали их модераторам. Ожидайте решения.',
+    cleanup: true,
+    homeAction: EXECUTOR_MENU_ACTION,
+  });
 
   return true;
 };
@@ -132,8 +155,12 @@ export const startExecutorVerification = async (
   const verification = state.verification[role];
 
   if (verification.status === 'submitted') {
-    const message = await ctx.reply('Мы уже отправили ваши документы на проверку. Ожидайте решения.');
-    ctx.session.ephemeralMessages.push(message.message_id);
+    await ui.step(ctx, {
+      id: VERIFICATION_ALREADY_SUBMITTED_STEP_ID,
+      text: 'Мы уже отправили ваши документы на проверку. Ожидайте решения.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
     return;
   }
 
@@ -141,8 +168,12 @@ export const startExecutorVerification = async (
   state.verification[role].status = 'collecting';
 
   const promptText = buildVerificationPrompt(role);
-  const prompt = await ctx.reply(promptText);
-  ctx.session.ephemeralMessages.push(prompt.message_id);
+  await ui.step(ctx, {
+    id: VERIFICATION_PROMPT_STEP_ID,
+    text: promptText,
+    cleanup: true,
+    homeAction: EXECUTOR_MENU_ACTION,
+  });
 
   await showExecutorMenu(ctx, { skipAccessCheck: true });
 };
@@ -158,16 +189,22 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
   const copy = getExecutorRoleCopy(role);
 
   if (verification.status === 'submitted') {
-    const message = await ctx.reply('Документы уже на проверке. Мы свяжемся с вами после решения модераторов.');
-    ctx.session.ephemeralMessages.push(message.message_id);
+    await ui.step(ctx, {
+      id: VERIFICATION_ALREADY_ON_REVIEW_STEP_ID,
+      text: 'Документы уже на проверке. Мы свяжемся с вами после решения модераторов.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
     return;
   }
 
   if (verification.status !== 'collecting') {
-    const message = await ctx.reply(
-      `Начните проверку через меню ${copy.genitive}, чтобы отправить документы.`,
-    );
-    ctx.session.ephemeralMessages.push(message.message_id);
+    await ui.step(ctx, {
+      id: VERIFICATION_START_REMINDER_STEP_ID,
+      text: `Начните проверку через меню ${copy.genitive}, чтобы отправить документы.`,
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
     return;
   }
 
@@ -186,8 +223,11 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
 
   const uploaded = verification.uploadedPhotos.length;
   const required = verification.requiredPhotos;
-  const info = await ctx.reply(`Фото ${uploaded}/${required} получено.`);
-  ctx.session.ephemeralMessages.push(info.message_id);
+  await ui.step(ctx, {
+    id: VERIFICATION_PROGRESS_STEP_ID,
+    text: `Фото ${uploaded}/${required} получено.`,
+    cleanup: true,
+  });
 
   if (uploaded >= required) {
     await submitForModeration(ctx, state);
@@ -223,8 +263,11 @@ const handleTextDuringCollection = async (ctx: BotContext, next: () => Promise<v
     return;
   }
 
-  const reminder = await ctx.reply('Отправьте, пожалуйста, фотографию документа.');
-  ctx.session.ephemeralMessages.push(reminder.message_id);
+  await ui.step(ctx, {
+    id: VERIFICATION_PHOTO_REMINDER_STEP_ID,
+    text: 'Отправьте, пожалуйста, фотографию документа.',
+    cleanup: true,
+  });
 };
 
 export const registerExecutorVerification = (bot: Telegraf<BotContext>): void => {

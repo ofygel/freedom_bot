@@ -21,6 +21,20 @@ const ensureUiState = (ctx: BotContext): UiSessionState => {
   return ctx.session.ui;
 };
 
+const isMessageNotModifiedError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const description = (error as { description?: unknown }).description;
+  if (typeof description === 'string' && description.includes('message is not modified')) {
+    return true;
+  }
+
+  const message = (error as { message?: unknown }).message;
+  return typeof message === 'string' && message.includes('message is not modified');
+};
+
 const registerHomeAction = (state: UiSessionState, action: string): void => {
   if (!state.homeActions.includes(action)) {
     state.homeActions.push(action);
@@ -65,6 +79,13 @@ export interface UiStepResult {
   sent: boolean;
 }
 
+export interface UiClearOptions {
+  /** Identifiers of the steps to clear. */
+  ids?: string | string[];
+  /** Whether only steps marked for cleanup should be removed. */
+  cleanupOnly?: boolean;
+}
+
 export const ui = {
   step: async (ctx: BotContext, options: UiStepOptions): Promise<UiStepResult | undefined> => {
     const chatId = ctx.chat?.id;
@@ -92,6 +113,15 @@ export const ui = {
         existing.cleanup = cleanup;
         return { messageId: existing.messageId, sent: false };
       } catch (error) {
+        if (isMessageNotModifiedError(error)) {
+          logger.debug(
+            { chatId, messageId: existing.messageId, stepId: options.id },
+            'Step message not modified, skipping edit',
+          );
+          existing.cleanup = cleanup;
+          return { messageId: existing.messageId, sent: false };
+        }
+
         logger.debug(
           { err: error, chatId, messageId: existing.messageId, stepId: options.id },
           'Failed to edit step message, sending a new one',
@@ -108,5 +138,46 @@ export const ui = {
     const messageId = message.message_id;
     state.steps[options.id] = { chatId, messageId, cleanup };
     return { messageId, sent: true };
+  },
+  clear: async (ctx: BotContext, options: UiClearOptions = {}): Promise<void> => {
+    const state = ensureUiState(ctx);
+    const entries = Object.entries(state.steps);
+    if (entries.length === 0) {
+      return;
+    }
+
+    const ids =
+      options.ids === undefined
+        ? undefined
+        : Array.isArray(options.ids)
+          ? options.ids
+          : [options.ids];
+    const cleanupOnly = options.cleanupOnly ?? true;
+
+    for (const [stepId, step] of entries) {
+      if (!step) {
+        delete state.steps[stepId];
+        continue;
+      }
+
+      if (ids && !ids.includes(stepId)) {
+        continue;
+      }
+
+      if (cleanupOnly && !step.cleanup) {
+        continue;
+      }
+
+      try {
+        await ctx.telegram.deleteMessage(step.chatId, step.messageId);
+      } catch (error) {
+        logger.debug(
+          { err: error, chatId: step.chatId, messageId: step.messageId, stepId },
+          'Failed to delete step message',
+        );
+      }
+
+      delete state.steps[stepId];
+    }
   },
 };

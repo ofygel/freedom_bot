@@ -24,7 +24,7 @@ import {
   estimateDeliveryPrice,
   formatPriceAmount,
 } from '../../services/pricing';
-import { rememberEphemeralMessage, clearInlineKeyboard } from '../../services/cleanup';
+import { clearInlineKeyboard } from '../../services/cleanup';
 import { ensurePrivateCallback, isPrivateChat } from '../../services/access';
 import { buildConfirmCancelKeyboard } from '../../keyboards/common';
 import type { BotContext, ClientOrderDraftState } from '../../types';
@@ -38,6 +38,15 @@ const CANCEL_DELIVERY_ORDER_ACTION = 'client:order:delivery:cancel';
 const getDraft = (ctx: BotContext): ClientOrderDraftState => ctx.session.client.delivery;
 
 const DELIVERY_STEP_ID = 'client:delivery:step';
+const DELIVERY_MANUAL_ADDRESS_HINT_STEP_ID = 'client:delivery:hint:manual-address';
+const DELIVERY_CONFIRMATION_HINT_STEP_ID = 'client:delivery:hint:confirmation';
+const DELIVERY_COMMENT_REMINDER_STEP_ID = 'client:delivery:hint:comment';
+const DELIVERY_GEOCODE_ERROR_STEP_ID = 'client:delivery:error:geocode';
+const DELIVERY_SAVE_ERROR_STEP_ID = 'client:delivery:error:save';
+const DELIVERY_CANCELLED_STEP_ID = 'client:delivery:cancelled';
+const DELIVERY_CREATED_STEP_ID = 'client:delivery:created';
+const DELIVERY_CONFIRM_ERROR_STEP_ID = 'client:delivery:error:confirm';
+const DELIVERY_CREATE_ERROR_STEP_ID = 'client:delivery:error:create';
 
 const updateDeliveryStep = (
   ctx: BotContext,
@@ -61,24 +70,27 @@ const buildAddressPrompt = (lines: string[]): string =>
   [...lines, ...ADDRESS_INPUT_HINTS].join('\n');
 
 const remindManualAddressAccuracy = async (ctx: BotContext): Promise<void> => {
-  const warning = await ctx.reply(
-    '⚠️ При ручном вводе адреса укажите город, улицу, дом и ориентиры. Если есть ссылка 2ГИС или геопозиция, отправьте её.',
-  );
-  rememberEphemeralMessage(ctx, warning.message_id);
+  await ui.step(ctx, {
+    id: DELIVERY_MANUAL_ADDRESS_HINT_STEP_ID,
+    text: '⚠️ При ручном вводе адреса укажите город, улицу, дом и ориентиры. Если есть ссылка 2ГИС или геопозиция, отправьте её.',
+    cleanup: true,
+  });
 };
 
 const remindConfirmationActions = async (ctx: BotContext): Promise<void> => {
-  const reminder = await ctx.reply(
-    'Используйте кнопки ниже, чтобы подтвердить или отменить заказ.',
-  );
-  rememberEphemeralMessage(ctx, reminder.message_id);
+  await ui.step(ctx, {
+    id: DELIVERY_CONFIRMATION_HINT_STEP_ID,
+    text: 'Используйте кнопки ниже, чтобы подтвердить или отменить заказ.',
+    cleanup: true,
+  });
 };
 
 const remindDeliveryCommentRequirement = async (ctx: BotContext): Promise<void> => {
-  const warning = await ctx.reply(
-    'Комментарий обязателен. Опишите, что передать курьеру и кому, укажите подъезд, код домофона и контакты.',
-  );
-  rememberEphemeralMessage(ctx, warning.message_id);
+  await ui.step(ctx, {
+    id: DELIVERY_COMMENT_REMINDER_STEP_ID,
+    text: 'Комментарий обязателен. Опишите, что передать курьеру и кому, укажите подъезд, код домофона и контакты.',
+    cleanup: true,
+  });
 };
 
 const requestPickupAddress = async (ctx: BotContext): Promise<void> => {
@@ -122,10 +134,11 @@ const requestDeliveryComment = async (
 };
 
 const handleGeocodingFailure = async (ctx: BotContext): Promise<void> => {
-  const message = await ctx.reply(
-    'Не удалось распознать адрес. Пожалуйста, уточните формулировку и попробуйте снова.',
-  );
-  rememberEphemeralMessage(ctx, message.message_id);
+  await ui.step(ctx, {
+    id: DELIVERY_GEOCODE_ERROR_STEP_ID,
+    text: 'Не удалось распознать адрес. Пожалуйста, уточните формулировку и попробуйте снова.',
+    cleanup: true,
+  });
 };
 
 const applyPickupDetails = async (
@@ -258,16 +271,23 @@ const applyDeliveryComment = async (
 
   logger.warn('Delivery order draft is incomplete after collecting comment');
   draft.stage = 'idle';
-  const failure = await ctx.reply('Не удалось сохранить заказ. Попробуйте начать заново.');
-  rememberEphemeralMessage(ctx, failure.message_id);
+  await ui.step(ctx, {
+    id: DELIVERY_SAVE_ERROR_STEP_ID,
+    text: 'Не удалось сохранить заказ. Попробуйте начать заново.',
+    cleanup: true,
+  });
 };
 
 const cancelOrderDraft = async (ctx: BotContext, draft: ClientOrderDraftState): Promise<void> => {
   await clearInlineKeyboard(ctx, draft.confirmationMessageId);
   resetClientOrderDraft(draft);
 
-  const message = await ctx.reply('Оформление доставки отменено.');
-  rememberEphemeralMessage(ctx, message.message_id);
+  await ui.step(ctx, {
+    id: DELIVERY_CANCELLED_STEP_ID,
+    text: 'Оформление доставки отменено.',
+    cleanup: true,
+    homeAction: CLIENT_MENU_ACTION,
+  });
 };
 
 const notifyOrderCreated = async (
@@ -284,14 +304,21 @@ const notifyOrderCreated = async (
     lines.push('⚠️ Канал курьеров не настроен. Мы свяжемся с вами вручную.');
   }
 
-  const message = await ctx.reply(lines.join('\n'));
-  rememberEphemeralMessage(ctx, message.message_id);
+  await ui.step(ctx, {
+    id: DELIVERY_CREATED_STEP_ID,
+    text: lines.join('\n'),
+    cleanup: true,
+    homeAction: CLIENT_MENU_ACTION,
+  });
 };
 
 const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Promise<void> => {
   if (!isOrderDraftComplete(draft)) {
-    const warning = await ctx.reply('Не удалось подтвердить заказ: отсутствуют данные адресов.');
-    rememberEphemeralMessage(ctx, warning.message_id);
+    await ui.step(ctx, {
+      id: DELIVERY_CONFIRM_ERROR_STEP_ID,
+      text: 'Не удалось подтвердить заказ: отсутствуют данные адресов.',
+      cleanup: true,
+    });
     resetClientOrderDraft(draft);
     return;
   }
@@ -330,8 +357,11 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
     await notifyOrderCreated(ctx, order, publishResult.status);
   } catch (error) {
     logger.error({ err: error }, 'Failed to create delivery order');
-    const failure = await ctx.reply('Не удалось создать заказ. Попробуйте позже.');
-    rememberEphemeralMessage(ctx, failure.message_id);
+    await ui.step(ctx, {
+      id: DELIVERY_CREATE_ERROR_STEP_ID,
+      text: 'Не удалось создать заказ. Попробуйте позже.',
+      cleanup: true,
+    });
   } finally {
     await clearInlineKeyboard(ctx, draft.confirmationMessageId);
     resetClientOrderDraft(draft);
