@@ -54,6 +54,19 @@ const resolveLogLevel = (value: string | undefined): LevelWithSilent => {
   return normalised;
 };
 
+const parseWarnHours = (value: string | undefined): number => {
+  if (!value) {
+    return 24;
+  }
+
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error('SUB_WARN_HOURS_BEFORE must be a positive number');
+  }
+
+  return parsed;
+};
+
 export interface AppConfig {
   nodeEnv: string;
   logLevel: LevelWithSilent;
@@ -63,6 +76,9 @@ export interface AppConfig {
   database: {
     url: string;
     ssl: boolean;
+  };
+  subscriptions: {
+    warnHoursBefore: number;
   };
 }
 
@@ -75,6 +91,9 @@ export const config: AppConfig = Object.freeze({
   database: {
     url: process.env.DATABASE_URL as string,
     ssl: parseBoolean(process.env.DATABASE_SSL),
+  },
+  subscriptions: {
+    warnHoursBefore: parseWarnHours(process.env.SUB_WARN_HOURS_BEFORE),
   },
 });
 
