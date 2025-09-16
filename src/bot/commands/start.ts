@@ -3,7 +3,7 @@ import { Markup, Telegraf } from 'telegraf';
 import type { BotContext } from '../types';
 import { phoneCollect } from '../utils/phone-collect';
 
-type RoleKey = 'courier' | 'driver';
+type RoleKey = 'client' | 'courier' | 'driver';
 
 interface RoleOption {
   key: RoleKey;
@@ -12,6 +12,11 @@ interface RoleOption {
 }
 
 const ROLE_OPTIONS: RoleOption[] = [
+  {
+    key: 'client',
+    label: '🧑‍💼 Я клиент',
+    description: 'Оформление заказов на такси и доставку.',
+  },
   {
     key: 'courier',
     label: '🚚 Я курьер',
