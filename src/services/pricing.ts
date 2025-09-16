@@ -1,3 +1,5 @@
+import { config } from '../config';
+import type { PricingConfig, TariffConfig } from '../config';
 import type { OrderLocation, OrderPriceDetails } from '../types';
 
 const EARTH_RADIUS_KM = 6371;
@@ -22,16 +24,10 @@ const calculateDistanceKm = (from: OrderLocation, to: OrderLocation): number => 
 
 const roundPrice = (amount: number): number => Math.round(amount / 10) * 10;
 
-const buildQuote = (
-  from: OrderLocation,
-  to: OrderLocation,
-  baseFare: number,
-  perKm: number,
-  minimum: number,
-): OrderPriceDetails => {
+const buildQuote = (from: OrderLocation, to: OrderLocation, tariff: TariffConfig): OrderPriceDetails => {
   const distanceKm = calculateDistanceKm(from, to);
-  const raw = baseFare + distanceKm * perKm;
-  const amount = Math.max(minimum, roundPrice(raw));
+  const raw = tariff.baseFare + distanceKm * tariff.perKm;
+  const amount = Math.max(tariff.minimumFare, roundPrice(raw));
 
   return {
     amount,
@@ -40,14 +36,18 @@ const buildQuote = (
   } satisfies OrderPriceDetails;
 };
 
-export const estimateTaxiPrice = (
-  from: OrderLocation,
-  to: OrderLocation,
-): OrderPriceDetails => buildQuote(from, to, 700, 200, 700);
+const createEstimator = (tariff: TariffConfig) =>
+  (from: OrderLocation, to: OrderLocation): OrderPriceDetails => buildQuote(from, to, tariff);
 
-export const estimateDeliveryPrice = (
-  from: OrderLocation,
-  to: OrderLocation,
-): OrderPriceDetails => buildQuote(from, to, 900, 250, 900);
+export const createPricingService = (pricing: PricingConfig) => ({
+  estimateTaxiPrice: createEstimator(pricing.taxi),
+  estimateDeliveryPrice: createEstimator(pricing.delivery),
+});
+
+const defaultPricingService = createPricingService(config.pricing);
+
+export const estimateTaxiPrice = defaultPricingService.estimateTaxiPrice;
+
+export const estimateDeliveryPrice = defaultPricingService.estimateDeliveryPrice;
 
 export { calculateDistanceKm };
