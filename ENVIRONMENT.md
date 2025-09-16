@@ -31,6 +31,16 @@ are missing or blank.
 - `NOMINATIM_BASE` – Optional base URL for self‑hosted Nominatim instances. When
   provided, the bot derives `/search` and `/reverse` endpoints from this value.
 
+## Executor pricing overrides
+
+These settings adjust the default tariffs displayed to executors in task previews.
+Omitting any of them keeps the built-in defaults.
+
+- `TAXI_BASE_FARE`, `TAXI_PER_KM`, `TAXI_MINIMUM_FARE` – Taxi pricing in KZT. The
+  defaults are 700, 200 and 700 respectively.
+- `DELIVERY_BASE_FARE`, `DELIVERY_PER_KM`, `DELIVERY_MINIMUM_FARE` – Delivery
+  pricing in KZT. The defaults are 900, 250 and 900 respectively.
+
 ## Tariff hints
 
 The following values describe default tariff parameters used in external automations.
