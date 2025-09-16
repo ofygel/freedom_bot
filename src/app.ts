@@ -2,6 +2,10 @@ import { Telegraf } from 'telegraf';
 
 import { registerBindCommand } from './bot/commands/bind';
 import { registerStartCommand } from './bot/commands/start';
+import { registerExecutorMenu } from './bot/flows/executor/menu';
+import { registerExecutorRoleSelect } from './bot/flows/executor/roleSelect';
+import { registerExecutorSubscription } from './bot/flows/executor/subscription';
+import { registerExecutorVerification } from './bot/flows/executor/verification';
 import { auth } from './bot/middlewares/auth';
 import { autoDelete } from './bot/middlewares/auto-delete';
 import { errorBoundary } from './bot/middlewares/error-boundary';
@@ -22,6 +26,10 @@ app.use(auth());
 
 registerStartCommand(app);
 registerBindCommand(app);
+registerExecutorRoleSelect(app);
+registerExecutorVerification(app);
+registerExecutorSubscription(app);
+registerExecutorMenu(app);
 
 let gracefulShutdownConfigured = false;
 

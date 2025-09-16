@@ -1,11 +1,26 @@
 import type { MiddlewareFn } from 'telegraf';
 
-import type { BotContext, SessionState } from '../types';
+import {
+  EXECUTOR_VERIFICATION_PHOTO_COUNT,
+  type BotContext,
+  type ExecutorFlowState,
+  type SessionState,
+} from '../types';
+
+const createExecutorState = (): ExecutorFlowState => ({
+  verification: {
+    status: 'idle',
+    requiredPhotos: EXECUTOR_VERIFICATION_PHOTO_COUNT,
+    uploadedPhotos: [],
+  },
+  subscription: {},
+});
 
 const createDefaultState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   awaitingPhone: false,
+  executor: createExecutorState(),
 });
 
 const resolveSessionKey = (ctx: BotContext): string | undefined => {
