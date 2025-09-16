@@ -2,6 +2,9 @@ import { Telegraf } from 'telegraf';
 
 import { registerBindCommand } from './bot/commands/bind';
 import { registerStartCommand } from './bot/commands/start';
+import { registerDeliveryOrderFlow } from './bot/flows/client/deliveryOrderFlow';
+import { registerClientMenu } from './bot/flows/client/menu';
+import { registerTaxiOrderFlow } from './bot/flows/client/taxiOrderFlow';
 import { registerExecutorMenu } from './bot/flows/executor/menu';
 import { registerExecutorRoleSelect } from './bot/flows/executor/roleSelect';
 import { registerExecutorSubscription } from './bot/flows/executor/subscription';
@@ -26,6 +29,9 @@ app.use(auth());
 
 registerStartCommand(app);
 registerBindCommand(app);
+registerClientMenu(app);
+registerTaxiOrderFlow(app);
+registerDeliveryOrderFlow(app);
 registerExecutorRoleSelect(app);
 registerExecutorVerification(app);
 registerExecutorSubscription(app);
