@@ -10,6 +10,7 @@ import {
 } from '../types';
 
 const createExecutorState = (): ExecutorFlowState => ({
+  role: 'courier',
   verification: {
     status: 'idle',
     requiredPhotos: EXECUTOR_VERIFICATION_PHOTO_COUNT,

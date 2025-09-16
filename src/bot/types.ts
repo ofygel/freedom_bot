@@ -31,7 +31,10 @@ export interface ExecutorSubscriptionState {
   lastIssuedAt?: number;
 }
 
+export type ExecutorRole = 'courier' | 'taxi_driver';
+
 export interface ExecutorFlowState {
+  role: ExecutorRole;
   verification: ExecutorVerificationState;
   subscription: ExecutorSubscriptionState;
   menuMessageId?: number;

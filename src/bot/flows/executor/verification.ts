@@ -9,6 +9,7 @@ import {
   resetVerificationState,
   showExecutorMenu,
 } from './menu';
+import { getExecutorRoleCopy } from './roleCopy';
 
 const VERIFICATION_PROMPT = [
   'Для доступа к заказам пришлите фотографии документов:',
@@ -21,8 +22,9 @@ const VERIFICATION_PROMPT = [
 
 const buildModerationSummary = (ctx: BotContext, state: ExecutorFlowState): string => {
   const user = ctx.session.user;
+  const copy = getExecutorRoleCopy(state.role);
   const lines = [
-    '🆕 Новая заявка на верификацию курьера.',
+    `🆕 Новая заявка на верификацию ${copy.genitive}.`,
     `Telegram ID: ${ctx.from?.id ?? 'неизвестно'}`,
   ];
 
@@ -84,8 +86,8 @@ const submitForModeration = async (
     }
   } catch (error) {
     logger.error(
-      { err: error, chatId: verifyChannel.chatId },
-      'Failed to submit courier verification to verification channel',
+      { err: error, chatId: verifyChannel.chatId, role: state.role },
+      'Failed to submit executor verification to verification channel',
     );
     const message = await ctx.reply('Не удалось отправить документы на проверку. Попробуйте позже.');
     ctx.session.ephemeralMessages.push(message.message_id);
@@ -128,6 +130,7 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
 
   const state = ensureExecutorState(ctx);
   const verification = state.verification;
+  const copy = getExecutorRoleCopy(state.role);
 
   if (verification.status === 'submitted') {
     const message = await ctx.reply('Документы уже на проверке. Мы свяжемся с вами после решения модераторов.');
@@ -136,7 +139,9 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
   }
 
   if (verification.status !== 'collecting') {
-    const message = await ctx.reply('Начните проверку через меню курьера, чтобы отправить документы.');
+    const message = await ctx.reply(
+      `Начните проверку через меню ${copy.genitive}, чтобы отправить документы.`,
+    );
     ctx.session.ephemeralMessages.push(message.message_id);
     return;
   }
