@@ -38,25 +38,53 @@ const defaultPolygon: Point[] = [
   { lat: 43.0, lon: 77.3 },
 ];
 
+function readNumberEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) {
+    return defaultValue;
+  }
+
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    console.warn(
+      `Invalid value for environment variable ${name}: ${raw}. Falling back to default ${defaultValue}.`,
+    );
+    return defaultValue;
+  }
+
+  return value;
+}
+
 const defaults: Settings = {
   couriers_channel_id: process.env.COURIERS_CHANNEL_ID || undefined,
   moderators_channel_id: process.env.MODERATORS_CHANNEL_ID || undefined,
   city: (process.env.CITY as any) || 'almaty',
   verify_channel_id: process.env.VERIFY_CHANNEL_ID || undefined,
-  base_price: Number(process.env.BASE_PRICE) || 500,
-  per_km: Number(process.env.PER_KM) || 180,
-  surcharge_S: Number(process.env.SURCHARGE_S) || 0,
-  surcharge_M: Number(process.env.SURCHARGE_M) || 0,
-  surcharge_L: Number(process.env.SURCHARGE_L) || 0,
-  surcharge_thermobox: Number(process.env.SURCHARGE_THERMOBOX) || 0,
-  surcharge_change: Number(process.env.SURCHARGE_CHANGE) || 0,
+  base_price:
+    process.env.BASE_PRICE !== undefined ? readNumberEnv('BASE_PRICE', 500) : 500,
+  per_km: process.env.PER_KM !== undefined ? readNumberEnv('PER_KM', 180) : 180,
+  surcharge_S:
+    process.env.SURCHARGE_S !== undefined ? readNumberEnv('SURCHARGE_S', 0) : 0,
+  surcharge_M:
+    process.env.SURCHARGE_M !== undefined ? readNumberEnv('SURCHARGE_M', 0) : 0,
+  surcharge_L:
+    process.env.SURCHARGE_L !== undefined ? readNumberEnv('SURCHARGE_L', 0) : 0,
+  surcharge_thermobox:
+    process.env.SURCHARGE_THERMOBOX !== undefined
+      ? readNumberEnv('SURCHARGE_THERMOBOX', 0)
+      : 0,
+  surcharge_change:
+    process.env.SURCHARGE_CHANGE !== undefined
+      ? readNumberEnv('SURCHARGE_CHANGE', 0)
+      : 0,
   night_active: false,
   order_hours_start: 8,
   order_hours_end: 23,
   city_polygon: defaultPolygon,
-  min_price: Number(process.env.MIN_PRICE) || 0,
-  wait_free: Number(process.env.WAIT_FREE) || 0,
-  wait_per_min: Number(process.env.WAIT_PER_MIN) || 0,
+  min_price: process.env.MIN_PRICE !== undefined ? readNumberEnv('MIN_PRICE', 0) : 0,
+  wait_free: process.env.WAIT_FREE !== undefined ? readNumberEnv('WAIT_FREE', 0) : 0,
+  wait_per_min:
+    process.env.WAIT_PER_MIN !== undefined ? readNumberEnv('WAIT_PER_MIN', 0) : 0,
 };
 
 export async function getSettings(): Promise<Settings> {
