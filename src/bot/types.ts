@@ -37,7 +37,6 @@ export interface ExecutorFlowState {
   role: ExecutorRole;
   verification: ExecutorVerificationState;
   subscription: ExecutorSubscriptionState;
-  menuMessageId?: number;
 }
 
 export type ClientOrderStage =
@@ -58,7 +57,17 @@ export interface ClientOrderDraftState {
 export interface ClientFlowState {
   taxi: ClientOrderDraftState;
   delivery: ClientOrderDraftState;
-  menuMessageId?: number;
+}
+
+export interface UiTrackedStepState {
+  chatId: number;
+  messageId: number;
+  cleanup: boolean;
+}
+
+export interface UiSessionState {
+  steps: Record<string, UiTrackedStepState | undefined>;
+  homeActions: string[];
 }
 
 export interface SessionState {
@@ -69,6 +78,7 @@ export interface SessionState {
   user?: SessionUser;
   executor: ExecutorFlowState;
   client: ClientFlowState;
+  ui: UiSessionState;
 }
 
 export type BotContext = Context & {

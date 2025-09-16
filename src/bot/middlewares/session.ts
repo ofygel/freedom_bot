@@ -7,6 +7,7 @@ import {
   type ClientOrderDraftState,
   type ExecutorFlowState,
   type SessionState,
+  type UiSessionState,
 } from '../types';
 
 const createExecutorState = (): ExecutorFlowState => ({
@@ -28,12 +29,18 @@ const createClientState = (): ClientFlowState => ({
   delivery: createClientOrderDraft(),
 });
 
+const createUiState = (): UiSessionState => ({
+  steps: {},
+  homeActions: [],
+});
+
 const createDefaultState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   awaitingPhone: false,
   executor: createExecutorState(),
   client: createClientState(),
+  ui: createUiState(),
 });
 
 const resolveSessionKey = (ctx: BotContext): string | undefined => {
@@ -66,6 +73,10 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
   const existing = store.get(key);
   const state = existing ?? createDefaultState();
+
+  if (!state.ui) {
+    state.ui = createUiState();
+  }
 
   ctx.session = state;
 
