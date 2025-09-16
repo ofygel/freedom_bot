@@ -14,6 +14,7 @@
     "src/index.ts",
     "src/bot/**/*.ts",
     "src/config/**/*.ts",
+    "src/services/**/*.ts",
     "src/db/**/*.ts",
     "src/jobs/**/*.ts",
     "src/types/**/*.ts",
