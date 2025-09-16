@@ -1,6 +1,272 @@
-import { pool } from './client';
+import { pool, withTx } from './client';
+import type { PoolClient } from './client';
 
-type VerificationRole = 'courier' | 'driver';
+export type VerificationRole = 'courier' | 'driver';
+
+export interface VerificationApplicant {
+  telegramId: number;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+}
+
+export interface VerificationSubmissionPayload {
+  applicant: VerificationApplicant;
+  role: VerificationRole;
+  photosRequired: number;
+  photosUploaded: number;
+}
+
+export interface VerificationDecisionPayload {
+  applicant: VerificationApplicant;
+  role: VerificationRole;
+  expiresAt?: Date | string | number | null;
+}
+
+type VerificationStatus = 'pending' | 'approved' | 'rejected';
+
+const parseNumeric = (value: string | number | null | undefined): number | undefined => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+const normalisePhotoCount = (value: number): number => {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.trunc(value));
+};
+
+const normaliseExpiration = (
+  value: Date | string | number | null | undefined,
+): Date | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const upsertVerificationApplicant = async (
+  client: PoolClient,
+  applicant: VerificationApplicant,
+): Promise<number> => {
+  const { rows } = await client.query<{ id: string | number }>(
+    `
+      INSERT INTO users (
+        telegram_id,
+        username,
+        first_name,
+        last_name,
+        phone,
+        role,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, 'executor', now())
+      ON CONFLICT (telegram_id) DO UPDATE
+      SET
+        username = COALESCE(EXCLUDED.username, users.username),
+        first_name = COALESCE(EXCLUDED.first_name, users.first_name),
+        last_name = COALESCE(EXCLUDED.last_name, users.last_name),
+        phone = COALESCE(EXCLUDED.phone, users.phone),
+        role = CASE WHEN users.role = 'moderator' THEN users.role ELSE 'executor' END,
+        updated_at = now()
+      RETURNING id
+    `,
+    [
+      applicant.telegramId,
+      applicant.username ?? null,
+      applicant.firstName ?? null,
+      applicant.lastName ?? null,
+      applicant.phone ?? null,
+    ],
+  );
+
+  const [row] = rows;
+  if (!row) {
+    throw new Error('Failed to upsert verification user');
+  }
+
+  const userId = parseNumeric(row.id);
+  if (userId === undefined) {
+    throw new Error(`Failed to parse user id returned from upsert (${row.id})`);
+  }
+
+  return userId;
+};
+
+const lockLatestVerificationId = async (
+  client: PoolClient,
+  userId: number,
+  role: VerificationRole,
+): Promise<number | null> => {
+  const { rows } = await client.query<{ id: string | number }>(
+    `
+      SELECT id
+      FROM verifications
+      WHERE user_id = $1 AND role = $2
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1
+      FOR UPDATE
+    `,
+    [userId, role],
+  );
+
+  const [row] = rows;
+  if (!row) {
+    return null;
+  }
+
+  const verificationId = parseNumeric(row.id);
+  if (verificationId === undefined) {
+    throw new Error(`Failed to parse verification id (${row.id})`);
+  }
+
+  return verificationId;
+};
+
+const upsertVerificationRecord = async (
+  client: PoolClient,
+  userId: number,
+  payload: VerificationSubmissionPayload,
+): Promise<void> => {
+  const verificationId = await lockLatestVerificationId(client, userId, payload.role);
+  const photosRequired = normalisePhotoCount(payload.photosRequired);
+  const photosUploaded = normalisePhotoCount(payload.photosUploaded);
+
+  if (verificationId !== null) {
+    await client.query(
+      `
+        UPDATE verifications
+        SET
+          status = 'pending',
+          photos_required = $2,
+          photos_uploaded = $3,
+          expires_at = NULL,
+          updated_at = now()
+        WHERE id = $1
+      `,
+      [verificationId, photosRequired, photosUploaded],
+    );
+    return;
+  }
+
+  await client.query(
+    `
+      INSERT INTO verifications (
+        user_id,
+        role,
+        status,
+        photos_required,
+        photos_uploaded,
+        expires_at,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, 'pending', $3, $4, NULL, now(), now())
+    `,
+    [userId, payload.role, photosRequired, photosUploaded],
+  );
+};
+
+const updateVerificationStatus = async (
+  client: PoolClient,
+  userId: number,
+  role: VerificationRole,
+  status: VerificationStatus,
+  expiresAt: Date | null,
+): Promise<void> => {
+  const verificationId = await lockLatestVerificationId(client, userId, role);
+
+  if (verificationId !== null) {
+    await client.query(
+      `
+        UPDATE verifications
+        SET
+          status = $2,
+          expires_at = $3,
+          updated_at = now()
+        WHERE id = $1
+      `,
+      [verificationId, status, expiresAt],
+    );
+  } else {
+    await client.query(
+      `
+        INSERT INTO verifications (
+          user_id,
+          role,
+          status,
+          photos_required,
+          photos_uploaded,
+          expires_at,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, 0, 0, $4, now(), now())
+      `,
+      [userId, role, status, expiresAt],
+    );
+  }
+};
+
+const applyVerificationDecision = async (
+  status: Exclude<VerificationStatus, 'pending'>,
+  payload: VerificationDecisionPayload,
+): Promise<void> => {
+  await withTx(async (client) => {
+    const userId = await upsertVerificationApplicant(client, payload.applicant);
+    const expiresAt = status === 'approved' ? normaliseExpiration(payload.expiresAt) : null;
+
+    await updateVerificationStatus(client, userId, payload.role, status, expiresAt);
+
+    await client.query(
+      `
+        UPDATE users
+        SET is_verified = $2,
+            updated_at = now()
+        WHERE id = $1
+      `,
+      [userId, status === 'approved'],
+    );
+  });
+};
+
+export const persistVerificationSubmission = async (
+  payload: VerificationSubmissionPayload,
+): Promise<void> => {
+  await withTx(async (client) => {
+    const userId = await upsertVerificationApplicant(client, payload.applicant);
+    await upsertVerificationRecord(client, userId, payload);
+  });
+};
+
+export const markVerificationApproved = async (
+  payload: VerificationDecisionPayload,
+): Promise<void> => {
+  await applyVerificationDecision('approved', payload);
+};
+
+export const markVerificationRejected = async (
+  payload: VerificationDecisionPayload,
+): Promise<void> => {
+  await applyVerificationDecision('rejected', payload);
+};
 
 interface VerificationExistsRow {
   is_verified: boolean;
