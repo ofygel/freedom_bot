@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 
-import type { BotContext } from '../types';
+import type { BotContext } from '../../types';
 
 export interface PhoneCollectOptions {
   /** Custom prompt shown when requesting the phone number. */
