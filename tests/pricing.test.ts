@@ -29,6 +29,15 @@ describe('pricing service', () => {
     const baseEnv = {
       BOT_TOKEN: originalEnv.BOT_TOKEN ?? 'test-token',
       DATABASE_URL: originalEnv.DATABASE_URL ?? 'postgres://user:pass@localhost:5432/db',
+      CITY_DEFAULT: originalEnv.CITY_DEFAULT ?? 'Алматы',
+      KASPI_CARD: originalEnv.KASPI_CARD ?? '4400 0000 0000 0000',
+      KASPI_NAME: originalEnv.KASPI_NAME ?? 'Freedom Bot',
+      KASPI_PHONE: originalEnv.KASPI_PHONE ?? '+7 (700) 000-00-00',
+      DRIVERS_CHANNEL_INVITE:
+        originalEnv.DRIVERS_CHANNEL_INVITE ?? 'https://t.me/+freedom-bot-drivers',
+      SUB_PRICE_7: originalEnv.SUB_PRICE_7 ?? '5000',
+      SUB_PRICE_15: originalEnv.SUB_PRICE_15 ?? '9000',
+      SUB_PRICE_30: originalEnv.SUB_PRICE_30 ?? '16000',
     } satisfies Record<string, string>;
 
     const setTariffEnv = (tariffs: PricingConfig) => {

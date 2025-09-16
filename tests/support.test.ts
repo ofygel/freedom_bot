@@ -56,6 +56,15 @@ async function importSupportModule() {
   process.env.BOT_TOKEN = process.env.BOT_TOKEN ?? 'test-token';
   process.env.DATABASE_URL =
     process.env.DATABASE_URL ?? 'postgres://user:pass@localhost:5432/db';
+  process.env.CITY_DEFAULT = process.env.CITY_DEFAULT ?? 'Алматы';
+  process.env.KASPI_CARD = process.env.KASPI_CARD ?? '4400 0000 0000 0000';
+  process.env.KASPI_NAME = process.env.KASPI_NAME ?? 'Freedom Bot';
+  process.env.KASPI_PHONE = process.env.KASPI_PHONE ?? '+7 (700) 000-00-00';
+  process.env.DRIVERS_CHANNEL_INVITE =
+    process.env.DRIVERS_CHANNEL_INVITE ?? 'https://t.me/+freedom-bot-drivers';
+  process.env.SUB_PRICE_7 = process.env.SUB_PRICE_7 ?? '5000';
+  process.env.SUB_PRICE_15 = process.env.SUB_PRICE_15 ?? '9000';
+  process.env.SUB_PRICE_30 = process.env.SUB_PRICE_30 ?? '16000';
 
   return import('../src/bot/services/support');
 }
