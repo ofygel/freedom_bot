@@ -8,6 +8,13 @@ export interface GeocodingResult {
 const MIN_QUERY_LENGTH = 3;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+const DEFAULT_CITY = (() => {
+  const value = process.env.CITY_DEFAULT?.trim();
+  return value && value.length > 0 ? value : null;
+})();
+
+const DEFAULT_CITY_LOWER = DEFAULT_CITY?.toLowerCase() ?? null;
+
 interface Coordinates {
   latitude: number;
   longitude: number;
@@ -19,6 +26,21 @@ const normaliseQuery = (query: string): string =>
     .replace(/\s+/gu, ' ')
     .replace(/,+/gu, ',')
     .replace(/\s*,\s*/gu, ', ');
+
+const buildCityAwareQuery = (query: string): string => {
+  const normalised = normaliseQuery(query);
+
+  if (!DEFAULT_CITY_LOWER || normalised.length === 0) {
+    return normalised;
+  }
+
+  const lower = normalised.toLowerCase();
+  if (lower.includes(DEFAULT_CITY_LOWER)) {
+    return normalised;
+  }
+
+  return normaliseQuery(`${DEFAULT_CITY}, ${normalised}`);
+};
 
 const parseTimeout = (value: string | null | undefined, fallback: number): number => {
   if (!value) {
@@ -108,6 +130,25 @@ const KNOWN_2GIS_DOMAINS = [
 const is2GisHostname = (hostname: string): boolean => {
   const lower = hostname.toLowerCase();
   return KNOWN_2GIS_DOMAINS.some((domain) => lower === domain || lower.endsWith(`.${domain}`));
+};
+
+const isShort2GisHostname = (hostname: string): boolean => hostname.toLowerCase() === 'go.2gis.com';
+
+const parseUrl = (value: string): URL | null => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return new URL(trimmed);
+  } catch {
+    try {
+      return new URL(`https://${trimmed}`);
+    } catch {
+      return null;
+    }
+  }
 };
 
 interface Parsed2GisLink extends Coordinates {
@@ -223,22 +264,7 @@ const collectCandidatePairs = (url: URL): string[] => {
   return Array.from(candidates);
 };
 
-const parse2GisLink = (value: string): Parsed2GisLink | null => {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    try {
-      url = new URL(`https://${value}`);
-    } catch {
-      return null;
-    }
-  }
-
-  if (!is2GisHostname(url.hostname)) {
-    return null;
-  }
-
+const resolveCoordinatesFrom2GisUrl = (url: URL): Parsed2GisLink | null => {
   const candidates = collectCandidatePairs(url);
   for (const candidate of candidates) {
     const coordinates = parseCoordinatePair(candidate);
@@ -250,7 +276,67 @@ const parse2GisLink = (value: string): Parsed2GisLink | null => {
   return null;
 };
 
-export const isTwoGisLink = (value: string): boolean => Boolean(parse2GisLink(value));
+const expand2GisShortLink = async (url: URL): Promise<URL | null> => {
+  if (!isShort2GisHostname(url.hostname)) {
+    return null;
+  }
+
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'GET',
+      redirect: 'follow',
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+    });
+
+    if (typeof response.body?.cancel === 'function') {
+      try {
+        await response.body.cancel();
+      } catch {
+        // Ignore cancellation errors.
+      }
+    }
+
+    if (!response.url) {
+      return null;
+    }
+
+    const finalUrl = new URL(response.url);
+    if (!is2GisHostname(finalUrl.hostname)) {
+      return null;
+    }
+
+    return finalUrl;
+  } catch {
+    return null;
+  }
+};
+
+const parse2GisLink = async (value: string): Promise<Parsed2GisLink | null> => {
+  const url = parseUrl(value);
+  if (!url || !is2GisHostname(url.hostname)) {
+    return null;
+  }
+
+  const direct = resolveCoordinatesFrom2GisUrl(url);
+  if (direct) {
+    return direct;
+  }
+
+  const expanded = await expand2GisShortLink(url);
+  if (expanded) {
+    const expandedResult = resolveCoordinatesFrom2GisUrl(expanded);
+    if (expandedResult) {
+      return expandedResult;
+    }
+  }
+
+  return null;
+};
+
+export const isTwoGisLink = (value: string): boolean => {
+  const url = parseUrl(value);
+  return Boolean(url && is2GisHostname(url.hostname));
+};
 
 interface TwoGisPoint {
   lat?: number | string;
@@ -405,24 +491,39 @@ const getNominatimConfig = (): NominatimConfig => {
   } satisfies NominatimConfig;
 };
 
+const fetchWithTimeout = async (
+  input: URL | string,
+  options: RequestInit & { timeoutMs?: number } = {},
+): Promise<Response> => {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal, ...init } = options;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
+  }
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const fetchJson = async <T>(
   url: URL,
   options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<T> => {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...init } = options;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`);
-    }
-
-    return (await response.json()) as T;
-  } finally {
-    clearTimeout(timeoutId);
+  const response = await fetchWithTimeout(url, options);
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
   }
+
+  return (await response.json()) as T;
 };
 
 const buildNominatimHeaders = (config: NominatimConfig): Record<string, string> => {
@@ -460,12 +561,12 @@ const applyNominatimKey = (url: URL, config: NominatimConfig): void => {
 };
 
 const geocodeWithTwoGis = async (
-  query: string,
+  searchQuery: string,
   normalizedQuery: string,
   config: TwoGisConfig,
 ): Promise<GeocodingResult | null> => {
   const url = new URL(config.baseUrl);
-  url.searchParams.set('q', query);
+  url.searchParams.set('q', searchQuery);
   url.searchParams.set('page', '1');
   url.searchParams.set('page_size', '1');
   url.searchParams.set('fields', 'items.point,items.full_name,items.address_name,items.name');
@@ -518,11 +619,11 @@ const geocodeWithTwoGis = async (
 };
 
 const geocodeWithNominatim = async (
-  query: string,
+  searchQuery: string,
   normalizedQuery: string,
   config: NominatimConfig,
 ): Promise<GeocodingResult | null> => {
-  const trimmed = query.trim();
+  const trimmed = searchQuery.trim();
   if (!trimmed) {
     return null;
   }
@@ -552,7 +653,7 @@ const geocodeWithNominatim = async (
       return null;
     }
 
-    const address = first.display_name?.trim() || trimmed;
+    const address = first.display_name?.trim() || normalizedQuery;
     return {
       query: normalizedQuery,
       address,
@@ -641,9 +742,10 @@ export const geocodeAddress = async (
   }
 
   const normalizedQuery = normaliseQuery(trimmed);
+  const searchQuery = buildCityAwareQuery(normalizedQuery);
 
   const nominatimConfig = getNominatimConfig();
-  const parsedLink = parse2GisLink(trimmed);
+  const parsedLink = await parse2GisLink(trimmed);
   if (parsedLink) {
     const resolved = await resolveCoordinates(parsedLink.latitude, parsedLink.longitude, {
       query: normalizedQuery,
@@ -653,15 +755,23 @@ export const geocodeAddress = async (
     if (resolved) {
       return resolved;
     }
+
+    const fallbackLabel = parsedLink.label?.trim() || normalizedQuery;
+    return {
+      query: normalizedQuery,
+      address: fallbackLabel,
+      latitude: parsedLink.latitude,
+      longitude: parsedLink.longitude,
+    } satisfies GeocodingResult;
   }
 
   const providers: Array<() => Promise<GeocodingResult | null>> = [];
   const twoGisConfig = getTwoGisConfig();
   if (twoGisConfig) {
-    providers.push(() => geocodeWithTwoGis(normalizedQuery, normalizedQuery, twoGisConfig));
+    providers.push(() => geocodeWithTwoGis(searchQuery, normalizedQuery, twoGisConfig));
   }
 
-  providers.push(() => geocodeWithNominatim(normalizedQuery, normalizedQuery, nominatimConfig));
+  providers.push(() => geocodeWithNominatim(searchQuery, normalizedQuery, nominatimConfig));
 
   for (const provider of providers) {
     const result = await provider();

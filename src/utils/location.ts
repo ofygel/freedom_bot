@@ -1,6 +1,7 @@
 interface Build2GisLinkOptions {
   zoom?: number;
   hostname?: string;
+  query?: string;
 }
 
 const DEFAULT_ZOOM = 18;
@@ -43,6 +44,11 @@ export const build2GisLink = (
   const latString = formatCoordinate(latitude);
 
   url.searchParams.set('m', `${lonString},${latString}/${zoom}`);
+
+  const query = options.query?.trim();
+  if (query) {
+    url.searchParams.set('q', query);
+  }
 
   return url.toString();
 };

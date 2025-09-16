@@ -1,5 +1,6 @@
 import type { BotContext, ClientOrderDraftState } from '../types';
 import type { OrderLocation, OrderPriceDetails } from '../../types';
+import { build2GisLink } from '../../utils/location';
 
 import { formatDistance, formatPriceAmount } from './pricing';
 
@@ -34,6 +35,9 @@ export interface OrderSummaryOptions {
   instructions?: string[];
 }
 
+const buildOrderLocationLink = (location: OrderLocation): string =>
+  build2GisLink(location.latitude, location.longitude, { query: location.address });
+
 export const buildOrderSummary = (
   draft: CompletedOrderDraft,
   options: OrderSummaryOptions,
@@ -43,7 +47,9 @@ export const buildOrderSummary = (
   const pickupLabel = options.pickupLabel ?? '📍 Пункт отправления';
   const dropoffLabel = options.dropoffLabel ?? '🎯 Пункт назначения';
   lines.push(`${pickupLabel}: ${draft.pickup.address}`);
+  lines.push(`${pickupLabel} (2ГИС): ${buildOrderLocationLink(draft.pickup)}`);
   lines.push(`${dropoffLabel}: ${draft.dropoff.address}`);
+  lines.push(`${dropoffLabel} (2ГИС): ${buildOrderLocationLink(draft.dropoff)}`);
 
   if (options.includeDistance ?? true) {
     const distanceLabel = options.distanceLabel ?? '📏 Расстояние';
