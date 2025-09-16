@@ -3,6 +3,8 @@ import type { MiddlewareFn } from 'telegraf';
 import {
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
   type BotContext,
+  type ClientFlowState,
+  type ClientOrderDraftState,
   type ExecutorFlowState,
   type SessionState,
 } from '../types';
@@ -16,11 +18,21 @@ const createExecutorState = (): ExecutorFlowState => ({
   subscription: {},
 });
 
+const createClientOrderDraft = (): ClientOrderDraftState => ({
+  stage: 'idle',
+});
+
+const createClientState = (): ClientFlowState => ({
+  taxi: createClientOrderDraft(),
+  delivery: createClientOrderDraft(),
+});
+
 const createDefaultState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   awaitingPhone: false,
   executor: createExecutorState(),
+  client: createClientState(),
 });
 
 const resolveSessionKey = (ctx: BotContext): string | undefined => {
