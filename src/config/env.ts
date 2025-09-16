@@ -67,6 +67,55 @@ const parseWarnHours = (value: string | undefined): number => {
   return parsed;
 };
 
+const parseTariffValue = (envKey: string, defaultValue: number): number => {
+  const raw = process.env[envKey];
+
+  if (!raw || raw.trim() === '') {
+    return defaultValue;
+  }
+
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`${envKey} must be a non-negative number`);
+  }
+
+  return parsed;
+};
+
+export interface TariffConfig {
+  baseFare: number;
+  perKm: number;
+  minimumFare: number;
+}
+
+export interface PricingConfig {
+  taxi: TariffConfig;
+  delivery: TariffConfig;
+}
+
+const DEFAULT_TAXI_TARIFF: TariffConfig = {
+  baseFare: 700,
+  perKm: 200,
+  minimumFare: 700,
+};
+
+const DEFAULT_DELIVERY_TARIFF: TariffConfig = {
+  baseFare: 900,
+  perKm: 250,
+  minimumFare: 900,
+};
+
+const parseTariffConfig = (prefix: string, defaults: TariffConfig): TariffConfig => ({
+  baseFare: parseTariffValue(`${prefix}_BASE_FARE`, defaults.baseFare),
+  perKm: parseTariffValue(`${prefix}_PER_KM`, defaults.perKm),
+  minimumFare: parseTariffValue(`${prefix}_MINIMUM_FARE`, defaults.minimumFare),
+});
+
+const loadPricingConfig = (): PricingConfig => ({
+  taxi: parseTariffConfig('TAXI', DEFAULT_TAXI_TARIFF),
+  delivery: parseTariffConfig('DELIVERY', DEFAULT_DELIVERY_TARIFF),
+});
+
 export interface AppConfig {
   nodeEnv: string;
   logLevel: LevelWithSilent;
@@ -80,9 +129,10 @@ export interface AppConfig {
   subscriptions: {
     warnHoursBefore: number;
   };
+  pricing: PricingConfig;
 }
 
-export const config: AppConfig = Object.freeze({
+export const loadConfig = (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   logLevel: resolveLogLevel(process.env.LOG_LEVEL),
   bot: {
@@ -95,6 +145,17 @@ export const config: AppConfig = Object.freeze({
   subscriptions: {
     warnHoursBefore: parseWarnHours(process.env.SUB_WARN_HOURS_BEFORE),
   },
+  pricing: loadPricingConfig(),
 });
+
+export const config: AppConfig = loadConfig();
+
+Object.freeze(config.bot);
+Object.freeze(config.database);
+Object.freeze(config.subscriptions);
+Object.freeze(config.pricing.taxi);
+Object.freeze(config.pricing.delivery);
+Object.freeze(config.pricing);
+Object.freeze(config);
 
 export type { RequiredEnvVar };
