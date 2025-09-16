@@ -17,6 +17,7 @@ export interface OrderPriceDetails {
 
 export interface OrderRecord {
   id: number;
+  shortId: string;
   kind: OrderKind;
   status: OrderStatus;
   clientId?: number;

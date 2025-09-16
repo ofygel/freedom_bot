@@ -24,7 +24,7 @@ export interface VerificationDecisionPayload {
   expiresAt?: Date | string | number | null;
 }
 
-type VerificationStatus = 'pending' | 'approved' | 'rejected';
+type VerificationStatus = 'pending' | 'active' | 'rejected' | 'expired';
 
 const parseNumeric = (value: string | number | null | undefined): number | undefined => {
   if (value === null || value === undefined) {
@@ -67,7 +67,7 @@ const upsertVerificationApplicant = async (
   applicant: VerificationApplicant,
   role: VerificationRole,
 ): Promise<number> => {
-  const { rows } = await client.query<{ id: string | number }>(
+  await client.query(
     `
       INSERT INTO users (
         tg_id,
@@ -87,7 +87,6 @@ const upsertVerificationApplicant = async (
         phone = COALESCE(EXCLUDED.phone, users.phone),
         role = CASE WHEN users.role = 'moderator' THEN users.role ELSE EXCLUDED.role END,
         updated_at = now()
-      RETURNING id
     `,
     [
       applicant.telegramId,
@@ -99,22 +98,12 @@ const upsertVerificationApplicant = async (
     ],
   );
 
-  const [row] = rows;
-  if (!row) {
-    throw new Error('Failed to upsert verification user');
-  }
-
-  const userId = parseNumeric(row.id);
-  if (userId === undefined) {
-    throw new Error(`Failed to parse user id returned from upsert (${row.id})`);
-  }
-
-  return userId;
+  return applicant.telegramId;
 };
 
 const lockLatestVerificationId = async (
   client: PoolClient,
-  userId: number,
+  telegramId: number,
   role: VerificationRole,
 ): Promise<number | null> => {
   const { rows } = await client.query<{ id: string | number }>(
@@ -126,7 +115,7 @@ const lockLatestVerificationId = async (
       LIMIT 1
       FOR UPDATE
     `,
-    [userId, role],
+    [telegramId, role],
   );
 
   const [row] = rows;
@@ -144,10 +133,14 @@ const lockLatestVerificationId = async (
 
 const upsertVerificationRecord = async (
   client: PoolClient,
-  userId: number,
+  telegramId: number,
   payload: VerificationSubmissionPayload,
 ): Promise<void> => {
-  const verificationId = await lockLatestVerificationId(client, userId, payload.role);
+  const verificationId = await lockLatestVerificationId(
+    client,
+    telegramId,
+    payload.role,
+  );
   const photosRequired = normalisePhotoCount(payload.photosRequired);
   const photosUploaded = normalisePhotoCount(payload.photosUploaded);
 
@@ -182,18 +175,18 @@ const upsertVerificationRecord = async (
       )
       VALUES ($1, $2, 'pending', $3, $4, NULL, now(), now())
     `,
-    [userId, payload.role, photosRequired, photosUploaded],
+    [telegramId, payload.role, photosRequired, photosUploaded],
   );
 };
 
 const updateVerificationStatus = async (
   client: PoolClient,
-  userId: number,
+  telegramId: number,
   role: VerificationRole,
   status: VerificationStatus,
   expiresAt: Date | null,
 ): Promise<void> => {
-  const verificationId = await lockLatestVerificationId(client, userId, role);
+  const verificationId = await lockLatestVerificationId(client, telegramId, role);
 
   if (verificationId !== null) {
     await client.query(
@@ -222,7 +215,7 @@ const updateVerificationStatus = async (
         )
         VALUES ($1, $2, $3, 0, 0, $4, now(), now())
       `,
-      [userId, role, status, expiresAt],
+      [telegramId, role, status, expiresAt],
     );
   }
 };
@@ -232,23 +225,25 @@ const applyVerificationDecision = async (
   payload: VerificationDecisionPayload,
 ): Promise<void> => {
   await withTx(async (client) => {
-    const userId = await upsertVerificationApplicant(
+    const telegramId = await upsertVerificationApplicant(
       client,
       payload.applicant,
       payload.role,
     );
-    const expiresAt = status === 'approved' ? normaliseExpiration(payload.expiresAt) : null;
+    const expiresAt = status === 'active'
+      ? normaliseExpiration(payload.expiresAt)
+      : null;
 
-    await updateVerificationStatus(client, userId, payload.role, status, expiresAt);
+    await updateVerificationStatus(client, telegramId, payload.role, status, expiresAt);
 
     await client.query(
       `
         UPDATE users
         SET is_verified = $2,
             updated_at = now()
-        WHERE id = $1
+        WHERE tg_id = $1
       `,
-      [userId, status === 'approved'],
+      [telegramId, status === 'active'],
     );
   });
 };
@@ -257,19 +252,19 @@ export const persistVerificationSubmission = async (
   payload: VerificationSubmissionPayload,
 ): Promise<void> => {
   await withTx(async (client) => {
-    const userId = await upsertVerificationApplicant(
+    const telegramId = await upsertVerificationApplicant(
       client,
       payload.applicant,
       payload.role,
     );
-    await upsertVerificationRecord(client, userId, payload);
+    await upsertVerificationRecord(client, telegramId, payload);
   });
 };
 
 export const markVerificationApproved = async (
   payload: VerificationDecisionPayload,
 ): Promise<void> => {
-  await applyVerificationDecision('approved', payload);
+  await applyVerificationDecision('active', payload);
 };
 
 export const markVerificationRejected = async (
@@ -292,9 +287,9 @@ export const isExecutorVerified = async (
         OR EXISTS (
           SELECT 1
           FROM verifications v
-          WHERE v.user_id = u.id
+          WHERE v.user_id = u.tg_id
             AND v.role = $2
-            AND v.status = 'approved'
+            AND v.status = 'active'
             AND (v.expires_at IS NULL OR v.expires_at > now())
         ) AS is_verified
       FROM users u

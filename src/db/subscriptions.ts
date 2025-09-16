@@ -4,18 +4,18 @@ import { pool, withTx } from './client';
 type ExecutorRole = 'courier' | 'driver';
 
 export type SubscriptionStatus =
+  | 'pending'
   | 'active'
-  | 'trialing'
-  | 'past_due'
-  | 'canceled'
-  | 'expired'
-  | 'paused';
+  | 'rejected'
+  | 'expired';
 
 interface SubscriptionRow {
   id: string | number;
+  short_id: string;
   user_id: string | number;
   chat_id: string | number;
   status: SubscriptionStatus;
+  days: number | string | null;
   next_billing_at: Date | string | null;
   grace_until: Date | string | null;
   expires_at: Date | string | null;
@@ -28,10 +28,11 @@ interface SubscriptionRow {
 
 export interface SubscriptionWithUser {
   id: number;
-  userId: number;
+  shortId: string;
   chatId: number;
-  telegramId?: number;
+  telegramId: number;
   status: SubscriptionStatus;
+  periodDays: number;
   nextBillingAt?: Date;
   graceUntil?: Date;
   expiresAt: Date;
@@ -41,11 +42,7 @@ export interface SubscriptionWithUser {
   lastName?: string;
 }
 
-const ACTIVE_SUBSCRIPTION_STATUSES: SubscriptionStatus[] = [
-  'active',
-  'trialing',
-  'past_due',
-];
+const ACTIVE_SUBSCRIPTION_STATUSES: SubscriptionStatus[] = ['active'];
 
 interface ExistingSubscriptionRow {
   id: string | number;
@@ -69,11 +66,12 @@ export interface ActivateSubscriptionParams {
   paymentId: string;
   submittedAt?: Date;
   paymentMetadata?: Record<string, unknown>;
+  receiptFileId?: string;
 }
 
 export interface ActivateSubscriptionResult {
   subscriptionId: number;
-  userId: number;
+  telegramId: number;
   periodStart: Date;
   periodEnd: Date;
   nextBillingAt: Date;
@@ -108,9 +106,9 @@ const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
     throw new Error(`Failed to parse subscription id: ${row.id}`);
   }
 
-  const userId = parseNumeric(row.user_id);
-  if (userId === undefined) {
-    throw new Error(`Failed to parse subscription user id for ${row.id}`);
+  const telegramId = parseNumeric(row.user_id);
+  if (telegramId === undefined) {
+    throw new Error(`Failed to parse subscription telegram id for ${row.id}`);
   }
 
   const chatId = parseNumeric(row.chat_id);
@@ -120,7 +118,9 @@ const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
     );
   }
 
-  const telegramId = parseNumeric(row.tg_id ?? undefined);
+  const periodDaysRaw = parseNumeric(row.days);
+  const periodDays = periodDaysRaw === undefined ? 0 : periodDaysRaw;
+
   const nextBillingAt = parseTimestamp(row.next_billing_at);
   const graceUntil = parseTimestamp(row.grace_until);
   const expiresAt = parseTimestamp(row.expires_at);
@@ -131,10 +131,11 @@ const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
 
   return {
     id,
-    userId,
+    shortId: row.short_id,
     chatId,
     telegramId,
     status: row.status,
+    periodDays,
     nextBillingAt,
     graceUntil,
     expiresAt,
@@ -149,7 +150,7 @@ const upsertTelegramUser = async (
   client: PoolClient,
   params: ActivateSubscriptionParams,
 ): Promise<number> => {
-  const { rows } = await client.query<{ id: string | number }>(
+  await client.query(
     `
       INSERT INTO users (
         tg_id,
@@ -169,7 +170,6 @@ const upsertTelegramUser = async (
         phone = COALESCE(EXCLUDED.phone, users.phone),
         role = CASE WHEN users.role = 'moderator' THEN users.role ELSE EXCLUDED.role END,
         updated_at = now()
-      RETURNING id
     `,
     [
       params.telegramId,
@@ -181,22 +181,12 @@ const upsertTelegramUser = async (
     ],
   );
 
-  const [row] = rows;
-  if (!row) {
-    throw new Error('Failed to upsert telegram user for subscription activation');
-  }
-
-  const userId = parseNumeric(row.id);
-  if (userId === undefined) {
-    throw new Error(`Failed to parse user id returned from upsert (${row.id})`);
-  }
-
-  return userId;
+  return params.telegramId;
 };
 
 const fetchSubscriptionForUpdate = async (
   client: PoolClient,
-  userId: number,
+  telegramId: number,
   chatId: number,
 ): Promise<ExistingSubscriptionRow | null> => {
   const { rows } = await client.query<ExistingSubscriptionRow>(
@@ -207,7 +197,7 @@ const fetchSubscriptionForUpdate = async (
       LIMIT 1
       FOR UPDATE
     `,
-    [userId, chatId],
+    [telegramId, chatId],
   );
 
   const [row] = rows;
@@ -257,8 +247,12 @@ export const activateSubscription = async (
   const periodDays = Math.max(1, params.periodDays);
 
   return withTx(async (client) => {
-    const userId = await upsertTelegramUser(client, params);
-    const existing = await fetchSubscriptionForUpdate(client, userId, params.chatId);
+    const telegramId = await upsertTelegramUser(client, params);
+    const existing = await fetchSubscriptionForUpdate(
+      client,
+      telegramId,
+      params.chatId,
+    );
 
     const periodStart = determinePeriodStart(existing, submittedAt);
     const periodEnd = new Date(periodStart.getTime() + periodDays * 24 * 60 * 60 * 1000);
@@ -275,14 +269,15 @@ export const activateSubscription = async (
               currency = $4,
               interval = 'day',
               interval_count = $5,
-              next_billing_at = $6,
+              days = $6,
+              next_billing_at = $7,
               grace_until = NULL,
               cancel_at_period_end = false,
               cancelled_at = NULL,
               ended_at = NULL,
-              metadata = COALESCE(metadata, '{}'::jsonb) || $7::jsonb,
+              metadata = COALESCE(metadata, '{}'::jsonb) || $8::jsonb,
               last_warning_at = NULL,
-              updated_at = $8
+              updated_at = $9
           WHERE id = $1
           RETURNING id
         `,
@@ -291,6 +286,7 @@ export const activateSubscription = async (
           'manual',
           params.amount,
           params.currency,
+          periodDays,
           periodDays,
           periodEnd,
           JSON.stringify(metadataPatch),
@@ -317,6 +313,7 @@ export const activateSubscription = async (
             amount,
             interval,
             interval_count,
+            days,
             next_billing_at,
             grace_until,
             cancel_at_period_end,
@@ -335,20 +332,22 @@ export const activateSubscription = async (
             'day',
             $6,
             $7,
+            $8,
             NULL,
             false,
             NULL,
             NULL,
-            $8::jsonb
+            $9::jsonb
           )
           RETURNING id
         `,
         [
-          userId,
+          telegramId,
           params.chatId,
           'manual',
           params.currency,
           params.amount,
+          periodDays,
           periodDays,
           periodEnd,
           JSON.stringify(metadataPatch),
@@ -382,6 +381,8 @@ export const activateSubscription = async (
           period_start,
           period_end,
           paid_at,
+          days,
+          file_id,
           metadata
         )
         VALUES (
@@ -389,34 +390,39 @@ export const activateSubscription = async (
           $2,
           $3,
           $4,
-          'succeeded',
-          'manual',
           $5,
-          NULL,
-          NULL,
-          NULL,
+          'manual',
           $6,
+          NULL,
+          NULL,
+          NULL,
           $7,
           $8,
-          $9::jsonb
+          $9,
+          $10,
+          $11,
+          $12::jsonb
         )
       `,
       [
         subscriptionId,
-        userId,
+        telegramId,
         params.amount,
         params.currency,
+        'active',
         params.paymentId,
         periodStart,
         periodEnd,
         submittedAt,
+        periodDays,
+        params.receiptFileId ?? null,
         JSON.stringify(params.paymentMetadata ?? {}),
       ],
     );
 
     return {
       subscriptionId,
-      userId,
+      telegramId,
       periodStart,
       periodEnd,
       nextBillingAt: periodEnd,
@@ -433,9 +439,11 @@ export const findSubscriptionsExpiringSoon = async (
     `
       SELECT
         s.id,
+        s.short_id,
         s.user_id,
         s.chat_id,
         s.status,
+        s.days,
         s.next_billing_at,
         s.grace_until,
         COALESCE(s.grace_until, s.next_billing_at) AS expires_at,
@@ -445,7 +453,7 @@ export const findSubscriptionsExpiringSoon = async (
         u.first_name,
         u.last_name
       FROM subscriptions s
-      JOIN users u ON u.id = s.user_id
+      JOIN users u ON u.tg_id = s.user_id
       WHERE s.status = ANY($3::text[])
         AND COALESCE(s.grace_until, s.next_billing_at) IS NOT NULL
         AND COALESCE(s.grace_until, s.next_billing_at) > $1
@@ -469,9 +477,11 @@ export const findSubscriptionsToExpire = async (
     `
       SELECT
         s.id,
+        s.short_id,
         s.user_id,
         s.chat_id,
         s.status,
+        s.days,
         s.next_billing_at,
         s.grace_until,
         COALESCE(s.grace_until, s.next_billing_at) AS expires_at,
@@ -481,7 +491,7 @@ export const findSubscriptionsToExpire = async (
         u.first_name,
         u.last_name
       FROM subscriptions s
-      JOIN users u ON u.id = s.user_id
+      JOIN users u ON u.tg_id = s.user_id
       WHERE s.status = ANY($2::text[])
         AND COALESCE(s.grace_until, s.next_billing_at) IS NOT NULL
         AND COALESCE(s.grace_until, s.next_billing_at) <= $1
@@ -516,9 +526,8 @@ export const hasActiveSubscription = async (
     `
       SELECT 1 AS exists
       FROM subscriptions s
-      JOIN users u ON u.id = s.user_id
       WHERE s.chat_id = $1
-        AND u.tg_id = $2
+        AND s.user_id = $2
         AND s.status = ANY($3::text[])
         AND (
           COALESCE(s.grace_until, s.next_billing_at) IS NULL
