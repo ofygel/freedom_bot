@@ -7,12 +7,28 @@ import type { BotContext } from '../types';
 
 type BindSource = 'private' | 'channel';
 
-const CHANNEL_LABELS: Record<ChannelType, string> = {
-  moderation: 'канал модерации',
-  drivers: 'канал курьеров',
-};
+interface BindCommandConfig {
+  command: string;
+  type: ChannelType;
+  successLabel: string;
+}
 
-const AVAILABLE_TYPES_HINT = 'moderation или drivers';
+const BIND_COMMANDS: BindCommandConfig[] = [
+  {
+    command: 'bind_verify_channel',
+    type: 'verify',
+    successLabel: 'Канал верификации',
+  },
+  {
+    command: 'bind_drivers_channel',
+    type: 'drivers',
+    successLabel: 'Канал курьеров',
+  },
+];
+
+const COMMAND_LOOKUP = new Map<string, BindCommandConfig>(
+  BIND_COMMANDS.map((config) => [config.command.toLowerCase(), config]),
+);
 
 const isCommandEntity = (entity?: MessageEntity): entity is MessageEntity =>
   Boolean(entity && entity.type === 'bot_command' && entity.offset === 0);
@@ -24,23 +40,6 @@ const extractCommandArgs = (text: string, entity: MessageEntity): string[] => {
   }
 
   return payload.split(/\s+/u).filter(Boolean);
-};
-
-const parseChannelType = (value: string | undefined): ChannelType | undefined => {
-  if (!value) {
-    return undefined;
-  }
-
-  const normalized = value.trim().toLowerCase();
-  if (normalized === 'moderation' || normalized === 'moderator') {
-    return 'moderation';
-  }
-
-  if (normalized === 'drivers' || normalized === 'driver') {
-    return 'drivers';
-  }
-
-  return undefined;
 };
 
 const parseChatIdentifier = (value: string | undefined): number | undefined => {
@@ -155,14 +154,13 @@ const formatChannelReference = (target: TargetChannel): string => {
   return `ID ${target.id}`;
 };
 
-const sendUsageHint = async (ctx: BotContext): Promise<void> => {
+const sendUsageHint = async (ctx: BotContext, config: BindCommandConfig): Promise<void> => {
   await ctx.reply(
     [
       'Не удалось определить канал. ',
       'Отправьте команду внутри нужного канала или в личных сообщениях с ботом, ',
-      'переслав сообщение из канала и указав тип: ',
-      AVAILABLE_TYPES_HINT,
-      '.',
+      'переслав сообщение из него или указав идентификатор: ',
+      `/${config.command} -1001234567890.`,
     ].join(''),
   );
 };
@@ -172,64 +170,55 @@ const processBinding = async (
   text: string,
   commandEntity: MessageEntity,
   source: BindSource,
+  config: BindCommandConfig,
 ): Promise<void> => {
-  const [typeToken, explicitId] = extractCommandArgs(text, commandEntity);
-
-  if (!typeToken) {
-    await ctx.reply(`Укажите тип канала (${AVAILABLE_TYPES_HINT}).`);
-    return;
-  }
-
-  const channelType = parseChannelType(typeToken);
-  if (!channelType) {
-    await ctx.reply(
-      `Неизвестный тип канала. Доступные значения: ${AVAILABLE_TYPES_HINT}.`,
-    );
-    return;
-  }
+  const [explicitId] = extractCommandArgs(text, commandEntity);
 
   const targetChannel = resolveTargetChannel(ctx, source, explicitId);
   if (!targetChannel) {
-    await sendUsageHint(ctx);
+    await sendUsageHint(ctx, config);
     return;
   }
 
   try {
-    await saveChannelBinding({ type: channelType, chatId: targetChannel.id });
+    await saveChannelBinding({ type: config.type, chatId: targetChannel.id });
   } catch (error) {
     logger.error(
-      { err: error, type: channelType, channelId: targetChannel.id },
+      { err: error, command: config.command, channelId: targetChannel.id },
       'Failed to persist channel binding',
     );
     await ctx.reply('Не удалось сохранить привязку канала. Попробуйте позже.');
     return;
   }
 
-  const label = CHANNEL_LABELS[channelType];
-  await ctx.reply(`Готово! ${label} привязан к ${formatChannelReference(targetChannel)}.`);
+  await ctx.reply(
+    `Готово! ${config.successLabel} привязан к ${formatChannelReference(targetChannel)}.`,
+  );
 };
 
 export const registerBindCommand = (bot: Telegraf<BotContext>): void => {
-  bot.command('bind', async (ctx) => {
-    const message = toMessageLike(ctx.message);
-    if (!message) {
-      return;
-    }
+  for (const config of BIND_COMMANDS) {
+    bot.command(config.command, async (ctx) => {
+      const message = toMessageLike(ctx.message);
+      if (!message) {
+        return;
+      }
 
-    const text = message.text ?? message.caption;
-    if (!text) {
-      return;
-    }
+      const text = message.text ?? message.caption;
+      if (!text) {
+        return;
+      }
 
-    const entity =
-      message.entities?.find(isCommandEntity) ??
-      message.caption_entities?.find(isCommandEntity);
-    if (!entity) {
-      return;
-    }
+      const entity =
+        message.entities?.find(isCommandEntity) ??
+        message.caption_entities?.find(isCommandEntity);
+      if (!entity) {
+        return;
+      }
 
-    await processBinding(ctx, text, entity, 'private');
-  });
+      await processBinding(ctx, text, entity, 'private', config);
+    });
+  }
 
   bot.on('channel_post', async (ctx, next) => {
     const post = toMessageLike(ctx.channelPost);
@@ -254,13 +243,17 @@ export const registerBindCommand = (bot: Telegraf<BotContext>): void => {
 
     const command = text
       .slice(entity.offset, entity.offset + entity.length)
-      .split('@')[0];
-    if (command !== '/bind') {
+      .split('@')[0]
+      .replace(/^\//u, '')
+      .toLowerCase();
+
+    const config = COMMAND_LOOKUP.get(command);
+    if (!config) {
       await next();
       return;
     }
 
-    await processBinding(ctx, text, entity, 'channel');
+    await processBinding(ctx, text, entity, 'channel', config);
   });
 };
 

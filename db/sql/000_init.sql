@@ -24,6 +24,16 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE (telegram_id)
 );
 
+CREATE TABLE IF NOT EXISTS channels (
+    id boolean PRIMARY KEY DEFAULT true,
+    verify_channel_id bigint,
+    drivers_channel_id bigint
+);
+
+INSERT INTO channels (id)
+VALUES (true)
+ON CONFLICT (id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS verifications (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -114,7 +114,7 @@ const buildVerificationMessage = (application: VerificationApplication): string 
 
 const queue: ModerationQueue<VerificationApplication> = createModerationQueue<VerificationApplication>({
   type: 'verify',
-  channelType: 'moderation',
+  channelType: 'verify',
   defaultRejectionReasons: DEFAULT_REASONS,
   renderMessage: buildVerificationMessage,
 });

@@ -55,39 +55,39 @@ const submitForModeration = async (
     return false;
   }
 
-  const moderation = await getChannelBinding('moderation');
-  if (!moderation) {
-    const message = await ctx.reply('Канал модерации пока не настроен. Попробуйте позже.');
+  const verifyChannel = await getChannelBinding('verify');
+  if (!verifyChannel) {
+    const message = await ctx.reply('Канал верификации пока не настроен. Попробуйте позже.');
     ctx.session.ephemeralMessages.push(message.message_id);
     return false;
   }
 
   try {
     const summary = buildModerationSummary(ctx, state);
-    const summaryMessage = await ctx.telegram.sendMessage(moderation.chatId, summary);
+    const summaryMessage = await ctx.telegram.sendMessage(verifyChannel.chatId, summary);
     state.verification.moderationThreadMessageId = summaryMessage.message_id;
 
     for (const photo of state.verification.uploadedPhotos) {
       try {
-        await ctx.telegram.copyMessage(moderation.chatId, chatId, photo.messageId);
+        await ctx.telegram.copyMessage(verifyChannel.chatId, chatId, photo.messageId);
       } catch (error) {
         logger.warn(
           {
             err: error,
-            chatId: moderation.chatId,
+            chatId: verifyChannel.chatId,
             userChatId: chatId,
             messageId: photo.messageId,
           },
-          'Failed to copy verification photo to moderation channel',
+          'Failed to copy verification photo to verification channel',
         );
       }
     }
   } catch (error) {
     logger.error(
-      { err: error, chatId: moderation.chatId },
-      'Failed to submit courier verification to moderation channel',
+      { err: error, chatId: verifyChannel.chatId },
+      'Failed to submit courier verification to verification channel',
     );
-    const message = await ctx.reply('Не удалось отправить документы на модерацию. Попробуйте позже.');
+    const message = await ctx.reply('Не удалось отправить документы на проверку. Попробуйте позже.');
     ctx.session.ephemeralMessages.push(message.message_id);
     return false;
   }
