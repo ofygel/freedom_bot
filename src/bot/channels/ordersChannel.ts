@@ -3,12 +3,7 @@ import { Markup, Telegraf, Telegram } from 'telegraf';
 import { getChannelBinding } from './bindings';
 import { logger } from '../../config';
 import { withTx } from '../../db/client';
-import {
-  lockOrderById,
-  setOrderChannelMessageId,
-  tryCancelOrder,
-  tryClaimOrder,
-} from '../../db/orders';
+import { lockOrderById, setOrderChannelMessageId, tryClaimOrder } from '../../db/orders';
 import type { OrderKind, OrderLocation, OrderRecord } from '../../types';
 import type { BotContext } from '../types';
 import { build2GisLink } from '../../utils/location';
@@ -103,6 +98,44 @@ interface OrderChannelState {
 }
 
 const orderStates = new Map<number, OrderChannelState>();
+const orderDismissals = new Map<number, Set<number>>();
+
+const getOrderDismissals = (orderId: number): Set<number> => {
+  let dismissals = orderDismissals.get(orderId);
+  if (!dismissals) {
+    dismissals = new Set<number>();
+    orderDismissals.set(orderId, dismissals);
+  }
+
+  return dismissals;
+};
+
+const hasOrderBeenDismissedBy = (orderId: number, moderatorId: number): boolean =>
+  orderDismissals.get(orderId)?.has(moderatorId) ?? false;
+
+const markOrderDismissedBy = (orderId: number, moderatorId: number): void => {
+  getOrderDismissals(orderId).add(moderatorId);
+};
+
+const clearOrderDismissals = (orderId: number): void => {
+  orderDismissals.delete(orderId);
+};
+
+const clearInlineKeyboard = async (
+  telegram: Telegram,
+  orderId: number,
+  chatId: number,
+  messageId: number,
+): Promise<void> => {
+  try {
+    await telegram.editMessageReplyMarkup(chatId, messageId, undefined, { inline_keyboard: [] });
+  } catch (error) {
+    logger.warn(
+      { err: error, orderId, chatId, messageId },
+      'Failed to clear inline keyboard for order dismissal',
+    );
+  }
+};
 
 const toUserInfo = (from?: BotContext['from']): UserInfo => ({
   id: from?.id,
@@ -305,6 +338,7 @@ export const publishOrderToDriversChannel = async (
           baseText: messageText,
           status: 'pending',
         });
+        clearOrderDismissals(order.id);
 
         return {
           status: 'published',
@@ -323,13 +357,21 @@ type OrderActionOutcome =
   | { outcome: 'not_found' }
   | { outcome: 'already_processed'; order: OrderRecord }
   | { outcome: 'claimed'; order: OrderRecord }
-  | { outcome: 'declined'; order: OrderRecord };
+  | { outcome: 'dismissed'; order: OrderRecord }
+  | { outcome: 'already_dismissed' };
 
 const processOrderAction = async (
   orderId: number,
   decision: 'accept' | 'decline',
-): Promise<OrderActionOutcome> =>
-  withTx(
+  moderatorId?: number,
+): Promise<OrderActionOutcome> => {
+  if (decision === 'decline' && typeof moderatorId === 'number') {
+    if (hasOrderBeenDismissedBy(orderId, moderatorId)) {
+      return { outcome: 'already_dismissed' } as const;
+    }
+  }
+
+  const result = await withTx(
     async (client) => {
       const order = await lockOrderById(client, orderId);
       if (!order) {
@@ -353,15 +395,21 @@ const processOrderAction = async (
         return { outcome: 'already_processed', order } as const;
       }
 
-      const cancelled = await tryCancelOrder(client, orderId);
-      if (!cancelled) {
-        return { outcome: 'already_processed', order } as const;
-      }
-
-      return { outcome: 'declined', order: cancelled } as const;
+      return { outcome: 'dismissed', order } as const;
     },
     { isolationLevel: 'serializable' },
   );
+
+  if (result.outcome === 'claimed') {
+    clearOrderDismissals(orderId);
+  } else if (result.outcome === 'already_processed' && result.order.status !== 'new') {
+    clearOrderDismissals(orderId);
+  } else if (result.outcome === 'dismissed' && typeof moderatorId === 'number') {
+    markOrderDismissedBy(orderId, moderatorId);
+  }
+
+  return result;
+};
 
 const handleOrderDecision = async (
   ctx: BotContext,
@@ -376,10 +424,16 @@ const handleOrderDecision = async (
 
   const chatId = message.chat.id;
   const messageId = message.message_id;
+  const moderatorId = ctx.from?.id;
+
+  if (decision === 'decline' && typeof moderatorId !== 'number') {
+    await ctx.answerCbQuery('Не удалось определить пользователя.');
+    return;
+  }
 
   let result: OrderActionOutcome;
   try {
-    result = await processOrderAction(orderId, decision);
+    result = await processOrderAction(orderId, decision, moderatorId);
   } catch (error) {
     logger.error({ err: error, orderId }, 'Failed to apply order channel decision');
     await ctx.answerCbQuery('Не удалось обработать действие. Попробуйте позже.');
@@ -391,7 +445,12 @@ const handleOrderDecision = async (
     return;
   }
 
-  const state = ensureOrderState(orderId, chatId, messageId, result.order);
+  const state = ensureOrderState(
+    orderId,
+    chatId,
+    messageId,
+    'order' in result ? result.order : undefined,
+  );
 
   switch (result.outcome) {
     case 'already_processed': {
@@ -409,14 +468,13 @@ const handleOrderDecision = async (
       await ctx.answerCbQuery('Вы взяли этот заказ.');
       return;
     }
-    case 'declined': {
-      state.status = 'declined';
-      state.decision = {
-        moderator: toUserInfo(ctx.from),
-        decidedAt: Date.now(),
-      };
-      await updateOrderMessage(ctx.telegram, state);
+    case 'dismissed': {
+      await clearInlineKeyboard(ctx.telegram, orderId, chatId, messageId);
       await ctx.answerCbQuery('Заказ отмечен как недоступный.');
+      return;
+    }
+    case 'already_dismissed': {
+      await ctx.answerCbQuery('Вы уже отметили этот заказ как недоступный.');
       return;
     }
     default:
