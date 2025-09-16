@@ -5,6 +5,7 @@ import type { BotContext, SessionState } from '../types';
 const createDefaultState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
+  awaitingPhone: false,
 });
 
 const resolveSessionKey = (ctx: BotContext): string | undefined => {
