@@ -183,7 +183,7 @@ const buildPaymentMessage = (payment: PaymentReviewItem): string => {
 
 const queue: ModerationQueue<PaymentReviewItem> = createModerationQueue<PaymentReviewItem>({
   type: 'payment',
-  channelType: 'moderation',
+  channelType: 'verify',
   defaultRejectionReasons: DEFAULT_REASONS,
   renderMessage: buildPaymentMessage,
 });

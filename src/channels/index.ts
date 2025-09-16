@@ -1,16 +1,23 @@
 import { pool } from '../db';
 
-export type ChannelType = 'moderation' | 'drivers';
+export type ChannelType = 'verify' | 'drivers';
 
 export interface ChannelBinding {
   type: ChannelType;
   chatId: number;
 }
 
-interface ChannelRow {
-  type: ChannelType;
-  chat_id: string | number;
+type ChannelColumn = 'verify_channel_id' | 'drivers_channel_id';
+
+interface ChannelsRow {
+  verify_channel_id: string | number | null;
+  drivers_channel_id: string | number | null;
 }
+
+const CHANNEL_COLUMNS: Record<ChannelType, ChannelColumn> = {
+  verify: 'verify_channel_id',
+  drivers: 'drivers_channel_id',
+};
 
 let channelsTableEnsured = false;
 
@@ -21,9 +28,16 @@ const ensureChannelsTable = async (): Promise<void> => {
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS channels (
-      type text PRIMARY KEY,
-      chat_id bigint NOT NULL
+      id boolean PRIMARY KEY DEFAULT true,
+      verify_channel_id bigint,
+      drivers_channel_id bigint
     )
+  `);
+
+  await pool.query(`
+    INSERT INTO channels (id)
+    VALUES (true)
+    ON CONFLICT (id) DO NOTHING
   `);
 
   channelsTableEnsured = true;
@@ -47,14 +61,16 @@ export const saveChannelBinding = async (
 ): Promise<void> => {
   await ensureChannelsTable();
 
+  const column = CHANNEL_COLUMNS[binding.type];
+
   await pool.query(
     `
-      INSERT INTO channels (type, chat_id)
-      VALUES ($1, $2)
-      ON CONFLICT (type) DO UPDATE
-      SET chat_id = EXCLUDED.chat_id
+      INSERT INTO channels (id, ${column})
+      VALUES (true, $1)
+      ON CONFLICT (id) DO UPDATE
+      SET ${column} = EXCLUDED.${column}
     `,
-    [binding.type, binding.chatId],
+    [binding.chatId],
   );
 };
 
@@ -63,9 +79,15 @@ export const getChannelBinding = async (
 ): Promise<ChannelBinding | null> => {
   await ensureChannelsTable();
 
-  const { rows } = await pool.query<ChannelRow>(
-    `SELECT type, chat_id FROM channels WHERE type = $1 LIMIT 1`,
-    [type],
+  const column = CHANNEL_COLUMNS[type];
+
+  const { rows } = await pool.query<ChannelsRow>(
+    `
+      SELECT verify_channel_id, drivers_channel_id
+      FROM channels
+      WHERE id = true
+      LIMIT 1
+    `,
   );
 
   const [row] = rows;
@@ -73,9 +95,14 @@ export const getChannelBinding = async (
     return null;
   }
 
+  const value = row[column];
+  if (value === null || value === undefined) {
+    return null;
+  }
+
   return {
-    type: row.type,
-    chatId: parseChatId(row.chat_id),
+    type,
+    chatId: parseChatId(value),
   };
 };
 
