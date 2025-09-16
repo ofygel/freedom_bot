@@ -1,3 +1,5 @@
+import { URL } from 'url';
+
 import { Markup, Telegraf, Telegram } from 'telegraf';
 
 import { getChannelBinding } from './bindings';
@@ -41,6 +43,19 @@ const formatDistance = (distanceKm: number): string => {
 
 const formatPrice = (amount: number, currency: string): string =>
   `${new Intl.NumberFormat('ru-RU').format(amount)} ${currency}`;
+
+const build2GisLink = (location: OrderRecord['pickup']): string => {
+  const url = new URL('https://2gis.com/');
+  const coordinates = `${location.longitude.toFixed(6)},${location.latitude.toFixed(6)}`;
+  url.searchParams.set('m', `${coordinates}/18`);
+
+  const trimmedAddress = location.address.trim();
+  if (trimmedAddress) {
+    url.searchParams.set('q', trimmedAddress);
+  }
+
+  return url.toString();
+};
 
 export const buildOrderMessage = (order: OrderRecord): string => {
   const lines = [
@@ -229,10 +244,14 @@ const buildAlreadyProcessedResponse = (state: OrderChannelState): string => {
   return 'Заказ уже обработан.';
 };
 
-const buildActionKeyboard = (orderId: number) =>
+const buildActionKeyboard = (order: OrderRecord) =>
   Markup.inlineKeyboard([
-    [Markup.button.callback('✅ Беру заказ', `${ACCEPT_ACTION_PREFIX}:${orderId}`)],
-    [Markup.button.callback('❌ Недоступен', `${DECLINE_ACTION_PREFIX}:${orderId}`)],
+    [
+      Markup.button.url('Открыть в 2ГИС (A)', build2GisLink(order.pickup)),
+      Markup.button.url('Открыть в 2ГИС (B)', build2GisLink(order.dropoff)),
+    ],
+    [Markup.button.callback('✅ Беру заказ', `${ACCEPT_ACTION_PREFIX}:${order.id}`)],
+    [Markup.button.callback('❌ Недоступен', `${DECLINE_ACTION_PREFIX}:${order.id}`)],
   ]);
 
 export const publishOrderToDriversChannel = async (
@@ -269,7 +288,7 @@ export const publishOrderToDriversChannel = async (
           } satisfies PublishOrderResult;
         }
 
-        const keyboard = buildActionKeyboard(order.id);
+        const keyboard = buildActionKeyboard(order);
         const message = await telegram.sendMessage(binding.chatId, messageText, {
           reply_markup: keyboard.reply_markup,
         });
