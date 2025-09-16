@@ -1,5 +1,3 @@
-import { URL } from 'url';
-
 import { Markup, Telegraf, Telegram } from 'telegraf';
 
 import { getChannelBinding } from './bindings';
@@ -13,6 +11,7 @@ import {
 } from '../../db/orders';
 import type { OrderKind, OrderRecord } from '../../types';
 import type { BotContext } from '../types';
+import { build2GisLink } from '../../utils/location';
 
 export type PublishOrderStatus = 'published' | 'already_published' | 'missing_channel';
 
@@ -44,18 +43,8 @@ const formatDistance = (distanceKm: number): string => {
 const formatPrice = (amount: number, currency: string): string =>
   `${new Intl.NumberFormat('ru-RU').format(amount)} ${currency}`;
 
-const build2GisLink = (location: OrderRecord['pickup']): string => {
-  const url = new URL('https://2gis.com/');
-  const coordinates = `${location.longitude.toFixed(6)},${location.latitude.toFixed(6)}`;
-  url.searchParams.set('m', `${coordinates}/18`);
-
-  const trimmedAddress = location.address.trim();
-  if (trimmedAddress) {
-    url.searchParams.set('q', trimmedAddress);
-  }
-
-  return url.toString();
-};
+const buildOrderLocationLink = (location: OrderRecord['pickup']): string =>
+  build2GisLink(location.latitude, location.longitude, { query: location.address });
 
 export const buildOrderMessage = (order: OrderRecord): string => {
   const lines = [
@@ -247,8 +236,8 @@ const buildAlreadyProcessedResponse = (state: OrderChannelState): string => {
 const buildActionKeyboard = (order: OrderRecord) =>
   Markup.inlineKeyboard([
     [
-      Markup.button.url('Открыть в 2ГИС (A)', build2GisLink(order.pickup)),
-      Markup.button.url('Открыть в 2ГИС (B)', build2GisLink(order.dropoff)),
+      Markup.button.url('Открыть в 2ГИС (A)', buildOrderLocationLink(order.pickup)),
+      Markup.button.url('Открыть в 2ГИС (B)', buildOrderLocationLink(order.dropoff)),
     ],
     [Markup.button.callback('✅ Беру заказ', `${ACCEPT_ACTION_PREFIX}:${order.id}`)],
     [Markup.button.callback('❌ Недоступен', `${DECLINE_ACTION_PREFIX}:${order.id}`)],
