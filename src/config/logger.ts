@@ -11,7 +11,7 @@ export const logger: Logger = pino({
     environment: config.nodeEnv,
   },
   formatters: {
-    level(label) {
+    level(label: string) {
       return { level: label };
     },
   },

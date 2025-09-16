@@ -9,6 +9,10 @@ import { registerExecutorMenu } from './bot/flows/executor/menu';
 import { registerExecutorRoleSelect } from './bot/flows/executor/roleSelect';
 import { registerExecutorSubscription } from './bot/flows/executor/subscription';
 import { registerExecutorVerification } from './bot/flows/executor/verification';
+import { registerJoinRequests } from './bot/channels/joinRequests';
+import { registerOrdersChannel } from './bot/channels/ordersChannel';
+import { registerPaymentModerationQueue } from './bot/moderation/paymentQueue';
+import { registerVerificationModerationQueue } from './bot/moderation/verifyQueue';
 import { auth } from './bot/middlewares/auth';
 import { autoDelete } from './bot/middlewares/auto-delete';
 import { errorBoundary } from './bot/middlewares/error-boundary';
@@ -36,6 +40,10 @@ registerExecutorRoleSelect(app);
 registerExecutorVerification(app);
 registerExecutorSubscription(app);
 registerExecutorMenu(app);
+registerVerificationModerationQueue(app);
+registerPaymentModerationQueue(app);
+registerOrdersChannel(app);
+registerJoinRequests(app);
 
 let gracefulShutdownConfigured = false;
 
