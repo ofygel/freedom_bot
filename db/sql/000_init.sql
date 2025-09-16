@@ -1,7 +1,15 @@
--- Base schema for the Freedom Bot database aligned with runtime services.
+-- Base schema for the Freedom Bot database aligned with the latest runtime expectations.
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Domain types mirroring runtime enums.
+DO $$
+BEGIN
+    CREATE TYPE user_role AS ENUM ('client', 'executor', 'moderator');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END
+$$;
+
 DO $$
 BEGIN
     CREATE TYPE order_kind AS ENUM ('taxi', 'delivery');
@@ -12,7 +20,7 @@ $$;
 
 DO $$
 BEGIN
-    CREATE TYPE order_status AS ENUM ('new', 'claimed', 'cancelled');
+    CREATE TYPE order_status AS ENUM ('open', 'claimed', 'cancelled', 'done');
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END
@@ -20,7 +28,7 @@ $$;
 
 DO $$
 BEGIN
-    CREATE TYPE verification_type AS ENUM ('courier', 'driver');
+    CREATE TYPE verification_role AS ENUM ('courier', 'driver');
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END
@@ -50,15 +58,16 @@ END
 $$;
 
 CREATE TABLE IF NOT EXISTS users (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    id bigserial PRIMARY KEY,
     telegram_id bigint NOT NULL UNIQUE,
     username text,
     first_name text,
     last_name text,
     phone text,
-    is_courier boolean NOT NULL DEFAULT false,
-    is_blocked boolean NOT NULL DEFAULT false,
+    role user_role NOT NULL DEFAULT 'client',
+    is_verified boolean NOT NULL DEFAULT false,
     marketing_opt_in boolean NOT NULL DEFAULT false,
+    is_blocked boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -74,10 +83,12 @@ VALUES (true)
 ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS verifications (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type verification_type NOT NULL,
+    id bigserial PRIMARY KEY,
+    user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role verification_role NOT NULL,
     status verification_status NOT NULL DEFAULT 'pending',
+    photos_required integer NOT NULL DEFAULT 0,
+    photos_uploaded integer NOT NULL DEFAULT 0,
     expires_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
@@ -86,9 +97,15 @@ CREATE TABLE IF NOT EXISTS verifications (
 CREATE TABLE IF NOT EXISTS orders (
     id bigserial PRIMARY KEY,
     kind order_kind NOT NULL,
-    status order_status NOT NULL DEFAULT 'new',
+    status order_status NOT NULL DEFAULT 'open',
     client_id bigint,
     client_phone text,
+    customer_name text,
+    customer_username text,
+    client_comment text,
+    claimed_by bigint,
+    claimed_at timestamptz,
+    completed_at timestamptz,
     pickup_query text NOT NULL,
     pickup_address text NOT NULL,
     pickup_lat double precision NOT NULL,
@@ -100,14 +117,13 @@ CREATE TABLE IF NOT EXISTS orders (
     price_amount integer NOT NULL,
     price_currency text NOT NULL,
     distance_km double precision NOT NULL,
-    metadata jsonb,
     channel_message_id bigint,
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS subscriptions (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id bigserial PRIMARY KEY,
+    user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     chat_id bigint NOT NULL,
     plan text NOT NULL,
     tier text,
@@ -121,15 +137,17 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     cancel_at_period_end boolean NOT NULL DEFAULT false,
     cancelled_at timestamptz,
     ended_at timestamptz,
-    metadata jsonb,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    last_warning_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (user_id, chat_id)
 );
 
-CREATE TABLE IF NOT EXISTS subscription_payments (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    subscription_id uuid NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS payments (
+    id bigserial PRIMARY KEY,
+    subscription_id bigint NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+    user_id bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     amount integer NOT NULL,
     currency text NOT NULL,
     status text NOT NULL,
@@ -141,23 +159,17 @@ CREATE TABLE IF NOT EXISTS subscription_payments (
     period_start timestamptz,
     period_end timestamptz,
     paid_at timestamptz,
-    metadata jsonb,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (provider_payment_id)
 );
 
-CREATE TABLE IF NOT EXISTS subscription_events (
-    id bigserial PRIMARY KEY,
-    subscription_id uuid NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
-    event_type text NOT NULL,
-    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
-
 CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
+CREATE INDEX IF NOT EXISTS idx_verifications_user_role_status ON verifications(user_id, role, status);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_claimed_by ON orders(claimed_by);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
-CREATE INDEX IF NOT EXISTS idx_subscription_payments_subscription_id ON subscription_payments(subscription_id);
-CREATE INDEX IF NOT EXISTS idx_subscription_events_subscription_id ON subscription_events(subscription_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_chat_id ON subscriptions(chat_id);
+CREATE INDEX IF NOT EXISTS idx_payments_subscription_id ON payments(subscription_id);
+CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id);

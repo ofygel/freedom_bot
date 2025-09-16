@@ -56,18 +56,18 @@ export const buildOrderMessage = (order: OrderRecord): string => {
     lines.push(`📞 Телефон: ${order.clientPhone}`);
   }
 
-  const customerName = order.metadata?.customerName?.trim();
+  const customerName = order.customerName?.trim();
   if (customerName) {
     lines.push(`👤 Имя: ${customerName}`);
   }
 
-  const username = order.metadata?.customerUsername?.trim();
+  const username = order.customerUsername?.trim();
   if (username) {
     lines.push(`🔗 Telegram: @${username}`);
   }
 
-  if (order.metadata?.notes) {
-    lines.push('', `📝 Комментарий: ${order.metadata.notes}`);
+  if (order.clientComment) {
+    lines.push('', `📝 Комментарий: ${order.clientComment}`);
   }
 
   return lines.join('\n');
@@ -179,7 +179,7 @@ const formatUserInfo = (info?: UserInfo): string => {
 };
 
 const mapOrderStatus = (order: OrderRecord): OrderChannelStatus => {
-  if (order.status === 'claimed') {
+  if (order.status === 'claimed' || order.status === 'done') {
     return 'claimed';
   }
 
@@ -392,11 +392,15 @@ const processOrderAction = async (
       }
 
       if (decision === 'accept') {
-        if (order.status !== 'new') {
+        if (order.status !== 'open') {
           return { outcome: 'already_processed', order } as const;
         }
 
-        const updated = await tryClaimOrder(client, orderId);
+        if (typeof moderatorId !== 'number') {
+          throw new Error('Missing moderator identifier for order claim');
+        }
+
+        const updated = await tryClaimOrder(client, orderId, moderatorId);
         if (!updated) {
           return { outcome: 'already_processed', order } as const;
         }
@@ -404,7 +408,7 @@ const processOrderAction = async (
         return { outcome: 'claimed', order: updated } as const;
       }
 
-      if (order.status !== 'new') {
+      if (order.status !== 'open') {
         return { outcome: 'already_processed', order } as const;
       }
 
@@ -415,7 +419,7 @@ const processOrderAction = async (
 
   if (result.outcome === 'claimed') {
     clearOrderDismissals(orderId);
-  } else if (result.outcome === 'already_processed' && result.order.status !== 'new') {
+  } else if (result.outcome === 'already_processed' && result.order.status !== 'open') {
     clearOrderDismissals(orderId);
   } else if (result.outcome === 'dismissed' && typeof moderatorId === 'number') {
     markOrderDismissedBy(orderId, moderatorId);
@@ -440,6 +444,11 @@ const handleOrderDecision = async (
   const moderatorId = ctx.from?.id;
 
   if (decision === 'decline' && typeof moderatorId !== 'number') {
+    await ctx.answerCbQuery('Не удалось определить пользователя.');
+    return;
+  }
+
+  if (decision === 'accept' && typeof moderatorId !== 'number') {
     await ctx.answerCbQuery('Не удалось определить пользователя.');
     return;
   }

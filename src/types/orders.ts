@@ -1,6 +1,6 @@
 export type OrderKind = 'taxi' | 'delivery';
 
-export type OrderStatus = 'new' | 'claimed' | 'cancelled';
+export type OrderStatus = 'open' | 'claimed' | 'cancelled' | 'done';
 
 export interface OrderLocation {
   query: string;
@@ -15,22 +15,21 @@ export interface OrderPriceDetails {
   distanceKm: number;
 }
 
-export interface OrderMetadata {
-  customerName?: string;
-  customerUsername?: string;
-  notes?: string;
-}
-
 export interface OrderRecord {
   id: number;
   kind: OrderKind;
   status: OrderStatus;
   clientId?: number;
   clientPhone?: string;
+  customerName?: string;
+  customerUsername?: string;
+  clientComment?: string;
+  claimedBy?: number;
+  claimedAt?: Date;
+  completedAt?: Date;
   pickup: OrderLocation;
   dropoff: OrderLocation;
   price: OrderPriceDetails;
-  metadata?: OrderMetadata;
   channelMessageId?: number;
   createdAt: Date;
 }
@@ -39,8 +38,10 @@ export interface OrderInsertInput {
   kind: OrderKind;
   clientId?: number;
   clientPhone?: string;
+  customerName?: string;
+  customerUsername?: string;
+  clientComment?: string;
   pickup: OrderLocation;
   dropoff: OrderLocation;
   price: OrderPriceDetails;
-  metadata?: OrderMetadata;
 }
