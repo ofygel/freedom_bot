@@ -120,7 +120,7 @@ interface SupportThreadState {
 interface SupportThreadRow {
   id: string;
   user_chat_id: number | string;
-  user_telegram_id: number | string | null;
+  user_tg_id: number | string | null;
   user_message_id: number;
   moderator_chat_id: number | string;
   moderator_message_id: number;
@@ -235,7 +235,7 @@ const insertSupportThreadRecord = async (
         INSERT INTO support_threads (
           id,
           user_chat_id,
-          user_telegram_id,
+          user_tg_id,
           user_message_id,
           moderator_chat_id,
           moderator_message_id,

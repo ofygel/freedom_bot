@@ -1,6 +1,8 @@
 import type { PoolClient } from './client';
 import { pool, withTx } from './client';
 
+type ExecutorRole = 'courier' | 'driver';
+
 export type SubscriptionStatus =
   | 'active'
   | 'trialing'
@@ -18,7 +20,7 @@ interface SubscriptionRow {
   grace_until: Date | string | null;
   expires_at: Date | string | null;
   last_warning_at: Date | string | null;
-  telegram_id: string | number | null;
+  tg_id: string | number | null;
   username: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -58,6 +60,7 @@ export interface ActivateSubscriptionParams {
   firstName?: string;
   lastName?: string;
   phone?: string;
+  role: ExecutorRole;
   chatId: number;
   periodDays: number;
   periodLabel?: string;
@@ -117,7 +120,7 @@ const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
     );
   }
 
-  const telegramId = parseNumeric(row.telegram_id ?? undefined);
+  const telegramId = parseNumeric(row.tg_id ?? undefined);
   const nextBillingAt = parseTimestamp(row.next_billing_at);
   const graceUntil = parseTimestamp(row.grace_until);
   const expiresAt = parseTimestamp(row.expires_at);
@@ -149,7 +152,7 @@ const upsertTelegramUser = async (
   const { rows } = await client.query<{ id: string | number }>(
     `
       INSERT INTO users (
-        telegram_id,
+        tg_id,
         username,
         first_name,
         last_name,
@@ -157,14 +160,14 @@ const upsertTelegramUser = async (
         role,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, 'executor', now())
-      ON CONFLICT (telegram_id) DO UPDATE
+      VALUES ($1, $2, $3, $4, $5, $6, now())
+      ON CONFLICT (tg_id) DO UPDATE
       SET
         username = COALESCE(EXCLUDED.username, users.username),
         first_name = COALESCE(EXCLUDED.first_name, users.first_name),
         last_name = COALESCE(EXCLUDED.last_name, users.last_name),
         phone = COALESCE(EXCLUDED.phone, users.phone),
-        role = CASE WHEN users.role = 'moderator' THEN users.role ELSE 'executor' END,
+        role = CASE WHEN users.role = 'moderator' THEN users.role ELSE EXCLUDED.role END,
         updated_at = now()
       RETURNING id
     `,
@@ -174,6 +177,7 @@ const upsertTelegramUser = async (
       params.firstName ?? null,
       params.lastName ?? null,
       params.phone ?? null,
+      params.role,
     ],
   );
 
@@ -436,7 +440,7 @@ export const findSubscriptionsExpiringSoon = async (
         s.grace_until,
         COALESCE(s.grace_until, s.next_billing_at) AS expires_at,
         s.last_warning_at,
-        u.telegram_id,
+        u.tg_id,
         u.username,
         u.first_name,
         u.last_name
@@ -472,7 +476,7 @@ export const findSubscriptionsToExpire = async (
         s.grace_until,
         COALESCE(s.grace_until, s.next_billing_at) AS expires_at,
         s.last_warning_at,
-        u.telegram_id,
+        u.tg_id,
         u.username,
         u.first_name,
         u.last_name
@@ -514,7 +518,7 @@ export const hasActiveSubscription = async (
       FROM subscriptions s
       JOIN users u ON u.id = s.user_id
       WHERE s.chat_id = $1
-        AND u.telegram_id = $2
+        AND u.tg_id = $2
         AND s.status = ANY($3::text[])
         AND (
           COALESCE(s.grace_until, s.next_billing_at) IS NULL
