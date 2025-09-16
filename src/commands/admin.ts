@@ -27,51 +27,51 @@ function ensureAdmin(ctx: Context): boolean {
   return true;
 }
 
-function setNumber(ctx: Context, key: keyof Settings) {
+async function setNumber(ctx: Context, key: keyof Settings) {
   if (!ensureAdmin(ctx)) return;
   const parts = ((ctx.message as any)?.text ?? '').split(' ');
   const value = Number(parts[1]);
   if (isNaN(value)) {
-    ctx.reply('Введите число');
+    await ctx.reply('Введите число');
     return;
   }
-  updateSetting(key, value);
-  ctx.reply(`${key} = ${value}`);
+  await updateSetting(key, value);
+  await ctx.reply(`${key} = ${value}`);
 }
 
 export default function adminCommands(bot: Telegraf) {
-  bot.command('set_base', (ctx) => setNumber(ctx, 'base_price'));
-  bot.command('set_per_km', (ctx) => setNumber(ctx, 'per_km'));
-  bot.command('set_min', (ctx) => setNumber(ctx, 'min_price'));
-  bot.command('set_wait_free', (ctx) => setNumber(ctx, 'wait_free'));
-  bot.command('set_wait_per_min', (ctx) => setNumber(ctx, 'wait_per_min'));
-  bot.command('set_surcharge_S', (ctx) => setNumber(ctx, 'surcharge_S'));
-  bot.command('set_surcharge_M', (ctx) => setNumber(ctx, 'surcharge_M'));
-  bot.command('set_surcharge_L', (ctx) => setNumber(ctx, 'surcharge_L'));
+  bot.command('set_base', async (ctx) => { await setNumber(ctx, 'base_price'); });
+  bot.command('set_per_km', async (ctx) => { await setNumber(ctx, 'per_km'); });
+  bot.command('set_min', async (ctx) => { await setNumber(ctx, 'min_price'); });
+  bot.command('set_wait_free', async (ctx) => { await setNumber(ctx, 'wait_free'); });
+  bot.command('set_wait_per_min', async (ctx) => { await setNumber(ctx, 'wait_per_min'); });
+  bot.command('set_surcharge_S', async (ctx) => { await setNumber(ctx, 'surcharge_S'); });
+  bot.command('set_surcharge_M', async (ctx) => { await setNumber(ctx, 'surcharge_M'); });
+  bot.command('set_surcharge_L', async (ctx) => { await setNumber(ctx, 'surcharge_L'); });
 
-  bot.command('set_order_hours', (ctx) => {
+  bot.command('set_order_hours', async (ctx) => {
     if (!ensureAdmin(ctx)) return;
     const parts = ((ctx.message as any)?.text ?? '').split(' ');
     const start = Number(parts[1]);
     const end = Number(parts[2]);
     if (isNaN(start) || isNaN(end)) {
-      ctx.reply('Используйте: /set_order_hours START END');
+      await ctx.reply('Используйте: /set_order_hours START END');
       return;
     }
-    updateSetting('order_hours_start', start);
-    updateSetting('order_hours_end', end);
-    ctx.reply(`order_hours = ${start}-${end}`);
+    await updateSetting('order_hours_start', start);
+    await updateSetting('order_hours_end', end);
+    await ctx.reply(`order_hours = ${start}-${end}`);
   });
 
-  bot.command('toggle_night', (ctx) => {
+  bot.command('toggle_night', async (ctx) => {
     if (!ensureAdmin(ctx)) return;
-    const settings = getSettings();
+    const settings = await getSettings();
     const active = !settings.night_active;
-    updateSetting('night_active', active);
-    ctx.reply(`night_active = ${active}`);
+    await updateSetting('night_active', active);
+    await ctx.reply(`night_active = ${active}`);
   });
 
-  bot.command('set_city_polygon', (ctx) => {
+  bot.command('set_city_polygon', async (ctx) => {
     if (!ensureAdmin(ctx)) return;
     const raw = ((ctx.message as any)?.text ?? '').split(' ').slice(1).join(' ');
     const points = raw
@@ -84,11 +84,11 @@ export default function adminCommands(bot: Telegraf) {
       })
       .filter((p: { lat: number; lon: number }) => !isNaN(p.lat) && !isNaN(p.lon));
     if (points.length < 3) {
-      ctx.reply('Нужно минимум 3 точки lat,lon;lat,lon;...');
+      await ctx.reply('Нужно минимум 3 точки lat,lon;lat,lon;...');
       return;
     }
-    updateSetting('city_polygon', points);
-    ctx.reply('Полигон сохранён');
+    await updateSetting('city_polygon', points);
+    await ctx.reply('Полигон сохранён');
   });
 
   bot.command('broadcast', async (ctx) => {
@@ -156,16 +156,16 @@ export default function adminCommands(bot: Telegraf) {
     ctx.reply('Пользователь разблокирован');
   });
 
-  bot.command('resolve_dispute', (ctx) => {
+  bot.command('resolve_dispute', async (ctx) => {
     if (!ensureAdmin(ctx)) return;
     const parts = ((ctx.message as any)?.text ?? '').split(' ');
     const orderId = Number(parts[1]);
     const resolution = parts.slice(2).join(' ');
     if (!orderId || !resolution)
       return ctx.reply('Использование: /resolve_dispute <orderId> <resolution>');
-    resolveDispute(orderId);
+    await resolveDispute(orderId);
     logDisputeResolution(orderId, resolution);
-    ctx.reply('Спор закрыт');
+    await ctx.reply('Спор закрыт');
   });
 
   bot.command('metrics', (ctx) => {
@@ -203,7 +203,7 @@ export default function adminCommands(bot: Telegraf) {
     }
     const id = Number(parts[1]);
     const text = parts.slice(2).join(' ');
-    const order = addDisputeMessage(id, 'moderator', text);
+    const order = await addDisputeMessage(id, 'moderator', text);
     if (!order) return ctx.reply('Order not found or no dispute');
     await ctx.reply('Ответ отправлен');
     try {
@@ -227,7 +227,7 @@ export default function adminCommands(bot: Telegraf) {
     if (!id) {
       return ctx.reply('Usage: /dispute_close <id>');
     }
-    const order = resolveDispute(id);
+    const order = await resolveDispute(id);
     if (!order) return ctx.reply('Order not found');
     await ctx.reply('Спор закрыт');
     try {

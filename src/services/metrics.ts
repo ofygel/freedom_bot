@@ -1,4 +1,4 @@
-import fs from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 import { distanceKm } from '../utils/geo';
 import { getOrderEvents, getOrder } from './orders';
@@ -14,17 +14,26 @@ export interface DailyMetrics {
 
 const metricsFile = path.join(process.cwd(), 'data', 'metrics_daily.json');
 
-function readMetrics(): DailyMetrics[] {
+async function readMetrics(): Promise<DailyMetrics[]> {
   try {
-    return JSON.parse(fs.readFileSync(metricsFile, 'utf-8')) as DailyMetrics[];
-  } catch {
+    const raw = await fs.readFile(metricsFile, 'utf-8');
+    return JSON.parse(raw) as DailyMetrics[];
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code !== 'ENOENT') {
+      console.error('Failed to read metrics file', error);
+    }
     return [];
   }
 }
 
-function writeMetrics(list: DailyMetrics[]) {
-  fs.mkdirSync(path.dirname(metricsFile), { recursive: true });
-  fs.writeFileSync(metricsFile, JSON.stringify(list, null, 2));
+async function writeMetrics(list: DailyMetrics[]): Promise<void> {
+  try {
+    await fs.mkdir(path.dirname(metricsFile), { recursive: true });
+    await fs.writeFile(metricsFile, JSON.stringify(list, null, 2));
+  } catch (error) {
+    console.error('Failed to write metrics file', error);
+  }
 }
 
 function inRange(dateStr: string, start: Date, end: Date): boolean {
@@ -32,7 +41,7 @@ function inRange(dateStr: string, start: Date, end: Date): boolean {
   return d >= start && d < end;
 }
 
-export function rollupDailyMetrics(forDate: Date = new Date()): DailyMetrics {
+export async function rollupDailyMetrics(forDate: Date = new Date()): Promise<DailyMetrics> {
   const target = new Date(forDate.getTime() - 24 * 60 * 60 * 1000);
   const date = target.toISOString().slice(0, 10);
   const start = new Date(`${date}T00:00:00.000Z`);
@@ -49,7 +58,8 @@ export function rollupDailyMetrics(forDate: Date = new Date()): DailyMetrics {
 
   const closedDistances: number[] = [];
 
-  for (const ev of getOrderEvents()) {
+  const events = await getOrderEvents();
+  for (const ev of events) {
     if (!inRange(ev.created_at, start, end)) continue;
 
     switch (ev.event) {
@@ -63,7 +73,7 @@ export function rollupDailyMetrics(forDate: Date = new Date()): DailyMetrics {
         if (ev.payload?.status === 'delivered') metrics.orders_delivered++;
         if (ev.payload?.status === 'closed') {
           metrics.orders_closed++;
-          const order = getOrder(ev.order_id);
+          const order = await getOrder(ev.order_id);
           if (order) {
             closedDistances.push(distanceKm(order.from, order.to));
           }
@@ -77,9 +87,9 @@ export function rollupDailyMetrics(forDate: Date = new Date()): DailyMetrics {
       closedDistances.reduce((a, b) => a + b, 0) / closedDistances.length;
   }
 
-  const list = readMetrics().filter(m => m.date !== metrics.date);
+  const list = (await readMetrics()).filter(m => m.date !== metrics.date);
   list.push(metrics);
-  writeMetrics(list);
+  await writeMetrics(list);
 
   return metrics;
 }

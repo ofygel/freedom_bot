@@ -76,7 +76,7 @@ function buildOrderKeyboard(status: OrderStatus) {
 
 export default function courierCommands(bot: Telegraf) {
   setOrdersBot(bot as any);
-  bot.command('assign', (ctx) => {
+  bot.command('assign', async (ctx) => {
     if (ctx.chat?.type !== 'private') return;
     const parts = ctx.message.text.split(' ');
     const id = Number(parts[1]);
@@ -87,7 +87,7 @@ export default function courierCommands(bot: Telegraf) {
     if (isOrderHiddenForCourier(ctx.from!.id, id)) {
       return ctx.reply('Этот заказ временно скрыт.');
     }
-    const order = assignOrder(id, ctx.from!.id);
+    const order = await assignOrder(id, ctx.from!.id);
     if (!order) return ctx.reply('Не удалось назначить заказ.');
     createOrderChat(order.id, order.customer_id, order.courier_id!);
     ctx.reply(
@@ -111,7 +111,7 @@ export default function courierCommands(bot: Telegraf) {
       await ctx.answerCbQuery('Заказ скрыт.');
       return;
     }
-    const order = reserveOrder(id, uid);
+    const order = await reserveOrder(id, uid);
     if (!order) {
       await ctx.answerCbQuery('Не удалось зарезервировать.');
       return;
@@ -151,7 +151,7 @@ export default function courierCommands(bot: Telegraf) {
       await ctx.answerCbQuery('Заказ скрыт.');
       return;
     }
-    const order = assignOrder(id, uid);
+    const order = await assignOrder(id, uid);
     if (!order) {
       await ctx.answerCbQuery('Не удалось назначить.');
       return;
@@ -168,7 +168,7 @@ export default function courierCommands(bot: Telegraf) {
 
   bot.action(/details:(\d+)/, async (ctx) => {
     const id = Number(ctx.match[1]);
-    const order = getOrder(id);
+    const order = await getOrder(id);
     if (!order) {
       await ctx.answerCbQuery('Не найдено');
       return;
@@ -229,46 +229,49 @@ export default function courierCommands(bot: Telegraf) {
     await ctx.answerCbQuery('Скрыто на 1 час');
   });
 
-  bot.hears('Еду к отправителю', (ctx) =>
-    handleTransition(ctx, 'assigned', 'going_to_pickup')
-  );
-  bot.hears('У отправителя', (ctx) =>
-    handleTransition(ctx, 'going_to_pickup', 'at_pickup')
-  );
+  bot.hears('Еду к отправителю', async (ctx) => {
+    await handleTransition(ctx, 'assigned', 'going_to_pickup');
+  });
+  bot.hears('У отправителя', async (ctx) => {
+    await handleTransition(ctx, 'going_to_pickup', 'at_pickup');
+  });
   bot.hears('Онлайн/Оффлайн', (ctx) => {
     const online = toggleCourierOnline(ctx.from!.id);
     ctx.reply(online ? 'Вы в сети.' : 'Вы оффлайн.');
   });
 
-  bot.hears('Скрыть на 1 час', (ctx) => {
-    const order = getCourierActiveOrder(ctx.from!.id);
-    if (!order) return ctx.reply('Нет активного заказа.');
-    updateOrderStatus(order.id, 'open');
+  bot.hears('Скрыть на 1 час', async (ctx) => {
+    const order = await getCourierActiveOrder(ctx.from!.id);
+    if (!order) {
+      await ctx.reply('Нет активного заказа.');
+      return;
+    }
+    await updateOrderStatus(order.id, 'open');
     hideOrderForCourier(ctx.from!.id, order.id);
-    ctx.reply('Заказ скрыт на 1 час.', Markup.removeKeyboard());
+    await ctx.reply('Заказ скрыт на 1 час.', Markup.removeKeyboard());
   });
 
   bot.hears('Забрал', async (ctx) => {
-    const order = getCourierActiveOrder(ctx.from!.id);
+    const order = await getCourierActiveOrder(ctx.from!.id);
     if (!order || order.status !== 'at_pickup')
       return ctx.reply('Неверный этап.');
     proofPending.set(ctx.from!.id, { orderId: order.id, type: 'pickup' });
     await ctx.reply('Введите код от отправителя или отправьте фото.');
   });
 
-  bot.hears('В пути', (ctx) =>
-    handleTransition(ctx, 'picked', 'going_to_dropoff')
-  );
-  bot.hears('У получателя', (ctx) =>
-    handleTransition(ctx, 'going_to_dropoff', 'at_dropoff')
-  );
+  bot.hears('В пути', async (ctx) => {
+    await handleTransition(ctx, 'picked', 'going_to_dropoff');
+  });
+  bot.hears('У получателя', async (ctx) => {
+    await handleTransition(ctx, 'going_to_dropoff', 'at_dropoff');
+  });
 
   bot.hears('Доставлено', async (ctx) => {
-    const order = getCourierActiveOrder(ctx.from!.id);
+    const order = await getCourierActiveOrder(ctx.from!.id);
     if (!order || order.status !== 'at_dropoff')
       return ctx.reply('Неверный этап.');
     if (order.pay_type === 'receiver' && order.payment_status !== 'paid') {
-      openDispute(order.id);
+      await openDispute(order.id);
       if (process.env.PROVIDER_TOKEN) {
         await ctx.telegram.sendMessage(
           order.customer_id,
@@ -282,18 +285,24 @@ export default function courierCommands(bot: Telegraf) {
   });
 
   bot.hears('Открыть спор', async (ctx) => {
-    const order = getCourierActiveOrder(ctx.from!.id);
-    if (!order) return ctx.reply('Нет активного заказа.');
-    openDispute(order.id);
+    const order = await getCourierActiveOrder(ctx.from!.id);
+    if (!order) {
+      await ctx.reply('Нет активного заказа.');
+      return;
+    }
+    await openDispute(order.id);
     disputePending.set(ctx.from!.id, order.id);
     await ctx.reply('Опишите проблему для модераторов.');
   });
 
   bot.hears('Проблема с оплатой', async (ctx) => {
-    const order = getCourierActiveOrder(ctx.from!.id);
-    if (!order) return ctx.reply('Нет активного заказа.');
-    logEvent(order.id, 'payment_issue', ctx.from!.id, {});
-    const settings = getSettings();
+    const order = await getCourierActiveOrder(ctx.from!.id);
+    if (!order) {
+      await ctx.reply('Нет активного заказа.');
+      return;
+    }
+    await logEvent(order.id, 'payment_issue', ctx.from!.id, {});
+    const settings = await getSettings();
     const text = `Проблема с оплатой по заказу #${order.id}`;
     if (settings.moderators_channel_id) {
       await ctx.telegram.sendMessage(settings.moderators_channel_id, text);
@@ -303,10 +312,13 @@ export default function courierCommands(bot: Telegraf) {
   });
 
   bot.hears('Клиента нет на месте', async (ctx) => {
-    const order = getCourierActiveOrder(ctx.from!.id);
-    if (!order) return ctx.reply('Нет активного заказа.');
-    logEvent(order.id, 'client_absent', ctx.from!.id, {});
-    const settings = getSettings();
+    const order = await getCourierActiveOrder(ctx.from!.id);
+    if (!order) {
+      await ctx.reply('Нет активного заказа.');
+      return;
+    }
+    await logEvent(order.id, 'client_absent', ctx.from!.id, {});
+    const settings = await getSettings();
     const text = `Курьер не нашёл клиента по заказу #${order.id}`;
     if (settings.moderators_channel_id) {
       await ctx.telegram.sendMessage(settings.moderators_channel_id, text);
@@ -316,11 +328,14 @@ export default function courierCommands(bot: Telegraf) {
   });
 
   bot.hears('Изменение адреса', async (ctx) => {
-    const order = getCourierActiveOrder(ctx.from!.id);
-    if (!order) return ctx.reply('Нет активного заказа.');
-    logEvent(order.id, 'address_change_requested', ctx.from!.id, {});
-    openDispute(order.id);
-    const settings = getSettings();
+    const order = await getCourierActiveOrder(ctx.from!.id);
+    if (!order) {
+      await ctx.reply('Нет активного заказа.');
+      return;
+    }
+    await logEvent(order.id, 'address_change_requested', ctx.from!.id, {});
+    await openDispute(order.id);
+    const settings = await getSettings();
     const text = `Запрос на изменение адреса по заказу #${order.id}`;
     if (settings.moderators_channel_id) {
       await ctx.telegram.sendMessage(settings.moderators_channel_id, text);
@@ -333,7 +348,7 @@ export default function courierCommands(bot: Telegraf) {
     const uid = ctx.from!.id;
     const proof = proofPending.get(uid);
     if (proof) {
-      const order = getOrder(proof.orderId);
+      const order = await getOrder(proof.orderId);
       if (!order) {
         proofPending.delete(uid);
         return;
@@ -344,8 +359,8 @@ export default function courierCommands(bot: Telegraf) {
           await ctx.reply('Неверный код. Попробуйте снова или отправьте фото.');
           return;
         }
-        addPickupProof(proof.orderId, code);
-        updateOrderStatus(proof.orderId, 'picked');
+        await addPickupProof(proof.orderId, code);
+        await updateOrderStatus(proof.orderId, 'picked');
         await ctx.reply(
           'Подтверждение получено.',
           buildOrderKeyboard('picked')
@@ -355,23 +370,23 @@ export default function courierCommands(bot: Telegraf) {
           await ctx.reply('Неверный код. Попробуйте снова или отправьте фото.');
           return;
         }
-        addDeliveryProof(proof.orderId, code);
-        const ord = getCourierActiveOrder(uid);
+        await addDeliveryProof(proof.orderId, code);
+        const ord = await getCourierActiveOrder(uid);
         if (ord && ord.pay_type === 'receiver') {
-          updateOrderStatus(proof.orderId, 'awaiting_confirm');
+          await updateOrderStatus(proof.orderId, 'awaiting_confirm');
           await ctx.reply(
             'Ожидайте оплату от получателя.',
             buildOrderKeyboard('awaiting_confirm')
           );
         } else if (ord && ord.pay_type !== 'cash') {
-          updateOrderStatus(proof.orderId, 'delivered');
+          await updateOrderStatus(proof.orderId, 'delivered');
           markOrderChatDelivered(proof.orderId);
           await ctx.reply(
             'Ожидайте оплату от клиента.',
             buildOrderKeyboard('delivered')
           );
         } else {
-          updateOrderStatus(proof.orderId, 'closed');
+          await updateOrderStatus(proof.orderId, 'closed');
           markOrderChatDelivered(proof.orderId);
           await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
         }
@@ -381,8 +396,8 @@ export default function courierCommands(bot: Telegraf) {
     }
     const dispute = disputePending.get(uid);
     if (dispute) {
-      const settings = getSettings();
-      addDisputeMessage(dispute, 'courier', ctx.message.text);
+      const settings = await getSettings();
+      await addDisputeMessage(dispute, 'courier', ctx.message.text);
       if (settings.moderators_channel_id) {
         const text = `Спор по заказу #${dispute}\nОт: ${uid}\n${ctx.message.text}`;
         await ctx.telegram.sendMessage(settings.moderators_channel_id, text);
@@ -393,7 +408,7 @@ export default function courierCommands(bot: Telegraf) {
   });
 
   bot.hears('Оплату получил', async (ctx) => {
-    const order = getCourierActiveOrder(ctx.from!.id);
+    const order = await getCourierActiveOrder(ctx.from!.id);
     if (!order) {
       return ctx.reply('Неверный этап.');
     }
@@ -403,18 +418,18 @@ export default function courierCommands(bot: Telegraf) {
     ) {
       return ctx.reply('Неверный этап.');
     }
-    updateOrder(order.id, { payment_status: 'paid' });
-    updateOrderStatus(order.id, 'closed');
+    await updateOrder(order.id, { payment_status: 'paid' });
+    await updateOrderStatus(order.id, 'closed');
     markOrderChatDelivered(order.id);
     await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
   });
 
   bot.hears('Поступление проверил', async (ctx) => {
-    const order = getCourierActiveOrder(ctx.from!.id);
+    const order = await getCourierActiveOrder(ctx.from!.id);
     if (!order || order.status !== 'awaiting_confirm') {
       return ctx.reply('Неверный этап.');
     }
-    openDispute(order.id);
+    await openDispute(order.id);
     await ctx.reply('Спор открыт, модераторы свяжутся.', buildOrderKeyboard('awaiting_confirm'));
   });
 
@@ -428,30 +443,30 @@ export default function courierCommands(bot: Telegraf) {
     if (!last) return;
     const fileId = last.file_id;
     if (proof.type === 'pickup') {
-      addPickupProof(proof.orderId, fileId);
-      updateOrderStatus(proof.orderId, 'picked');
+      await addPickupProof(proof.orderId, fileId);
+      await updateOrderStatus(proof.orderId, 'picked');
       await ctx.reply(
         'Фото получено.',
         buildOrderKeyboard('picked')
       );
     } else {
-      addDeliveryProof(proof.orderId, fileId);
-      const ord = getCourierActiveOrder(uid);
+      await addDeliveryProof(proof.orderId, fileId);
+      const ord = await getCourierActiveOrder(uid);
       if (ord && ord.pay_type === 'receiver') {
-        updateOrderStatus(proof.orderId, 'awaiting_confirm');
+        await updateOrderStatus(proof.orderId, 'awaiting_confirm');
         await ctx.reply(
           'Ожидайте оплату от получателя.',
           buildOrderKeyboard('awaiting_confirm')
         );
       } else if (ord && ord.pay_type !== 'cash') {
-        updateOrderStatus(proof.orderId, 'delivered');
+        await updateOrderStatus(proof.orderId, 'delivered');
         markOrderChatDelivered(proof.orderId);
         await ctx.reply(
           'Ожидайте оплату от клиента.',
           buildOrderKeyboard('delivered')
         );
       } else {
-        updateOrderStatus(proof.orderId, 'closed');
+        await updateOrderStatus(proof.orderId, 'closed');
         markOrderChatDelivered(proof.orderId);
         await ctx.reply('Заказ завершён.', Markup.removeKeyboard());
       }
@@ -460,24 +475,24 @@ export default function courierCommands(bot: Telegraf) {
   });
 }
 
-function handleTransition(
+async function handleTransition(
   ctx: Context,
   fromStatus: OrderStatus,
   toStatus: OrderStatus
-) {
-  const order = getCourierActiveOrder(ctx.from!.id);
+): Promise<void> {
+  const order = await getCourierActiveOrder(ctx.from!.id);
   if (!order || order.status !== fromStatus) {
-    ctx.reply('Неверный этап.');
+    await ctx.reply('Неверный этап.');
     return;
   }
-  updateOrderStatus(order.id, toStatus);
-  ctx.reply('Статус обновлён.', buildOrderKeyboard(toStatus));
+  await updateOrderStatus(order.id, toStatus);
+  await ctx.reply('Статус обновлён.', buildOrderKeyboard(toStatus));
   if (order.pay_type === 'receiver') {
     if (toStatus === 'going_to_dropoff') {
-      sendInvoiceToReceiver(order);
-      ctx.reply('Ожидайте оплату от получателя.');
+      await sendInvoiceToReceiver(order);
+      await ctx.reply('Ожидайте оплату от получателя.');
     } else if (toStatus === 'at_dropoff') {
-      ctx.reply('Передайте получателю, что оплата необходима при получении.');
+      await ctx.reply('Передайте получателю, что оплата необходима при получении.');
     }
   }
 }

@@ -38,7 +38,7 @@ test('receiver pay generates invoice and closes after confirmation', async () =>
   const prevToken = process.env.PROVIDER_TOKEN;
   process.env.PROVIDER_TOKEN = 'test';
   try {
-    const order = createOrder({
+    const order = await createOrder({
       customer_id: 100,
       from: { lat: 43.2, lon: 76.9 },
       to: { lat: 43.25, lon: 76.95 },
@@ -68,9 +68,9 @@ test('receiver pay generates invoice and closes after confirmation', async () =>
       messages.at(-1)?.text.includes('Оплата: Получатель платит'),
     );
 
-    updateOrderStatus(order.id, 'assigned', 200);
-    updateOrderStatus(order.id, 'going_to_pickup', 200);
-    updateOrderStatus(order.id, 'picked', 200);
+    await updateOrderStatus(order.id, 'assigned', 200);
+    await updateOrderStatus(order.id, 'going_to_pickup', 200);
+    await updateOrderStatus(order.id, 'picked', 200);
 
     await sendUpdate(bot, {
       update_id: 1,
@@ -85,8 +85,8 @@ test('receiver pay generates invoice and closes after confirmation', async () =>
     assert.equal(invoices.length, 1);
     assert.equal(invoices[0].id, 100);
 
-    updateOrder(order.id, { payment_status: 'paid' });
-    updateOrderStatus(order.id, 'at_dropoff', 200);
+    await updateOrder(order.id, { payment_status: 'paid' });
+    await updateOrderStatus(order.id, 'at_dropoff', 200);
 
     await sendUpdate(bot, {
       update_id: 2,
@@ -118,7 +118,8 @@ test('receiver pay generates invoice and closes after confirmation', async () =>
       'Ожидайте оплату от получателя.'
     );
     assert.equal(invoices.length, 1);
-    assert.equal(getOrder(order.id)?.status, 'awaiting_confirm');
+    const awaiting = await getOrder(order.id);
+    assert.equal(awaiting?.status, 'awaiting_confirm');
 
     // no further courier actions emulated
   } finally {
@@ -139,7 +140,7 @@ test('client sends card payment confirmation', async () => {
       card: '1234',
       status: 'verified',
     });
-    const order = createOrder({
+    const order = await createOrder({
       customer_id: 100,
       from: { lat: 43.2, lon: 76.9 },
       to: { lat: 43.25, lon: 76.95 },
@@ -151,7 +152,7 @@ test('client sends card payment confirmation', async () => {
       comment: null,
       price: 10,
     });
-    updateOrderStatus(order.id, 'assigned', 200);
+    await updateOrderStatus(order.id, 'assigned', 200);
     assert.equal(
       messages.at(-1)?.text,
       'После оплаты нажмите «Оплатил(а)».',
@@ -167,7 +168,8 @@ test('client sends card payment confirmation', async () => {
         text: 'Оплатил(а)',
       } as any,
     });
-    assert.equal(getOrder(order.id)?.payment_status, 'pending');
+    const pendingOrder = await getOrder(order.id);
+    assert.equal(pendingOrder?.payment_status, 'pending');
     assert.equal(
       messages.at(-1)?.text,
       'Отправьте скриншот или ID перевода.',
@@ -183,7 +185,7 @@ test('client sends card payment confirmation', async () => {
         photo: [{ file_id: 'proof' }],
       } as any,
     });
-    const stored = getOrder(order.id);
+    const stored = await getOrder(order.id);
     assert.equal(stored?.status, 'awaiting_confirm');
     assert.equal(stored?.payment_proof, 'proof');
     assert.equal(
@@ -195,10 +197,10 @@ test('client sends card payment confirmation', async () => {
   }
 });
 
-test('auto dispute after awaiting_confirm timeout', () => {
+test('auto dispute after awaiting_confirm timeout', async () => {
   const { dir, prev } = setup();
   try {
-    const order = createOrder({
+    const order = await createOrder({
       customer_id: 100,
       from: { lat: 43.2, lon: 76.9 },
       to: { lat: 43.25, lon: 76.95 },
@@ -210,12 +212,16 @@ test('auto dispute after awaiting_confirm timeout', () => {
       comment: null,
       price: 10,
     });
-    updateOrderStatus(order.id, 'awaiting_confirm');
-    const stored = getOrder(order.id)!;
-    stored.transitions.find((t) => t.status === 'awaiting_confirm')!.at = new Date(Date.now() - 16 * 60 * 1000).toISOString();
-    updateOrder(order.id, { transitions: stored.transitions } as any);
-    expireAwaitingConfirm();
-    assert.ok(getOrder(order.id)?.dispute);
+    await updateOrderStatus(order.id, 'awaiting_confirm');
+    const stored = await getOrder(order.id);
+    if (!stored) throw new Error('Order not found');
+    const transition = stored.transitions.find((t) => t.status === 'awaiting_confirm');
+    if (!transition) throw new Error('Transition not found');
+    transition.at = new Date(Date.now() - 16 * 60 * 1000).toISOString();
+    await updateOrder(order.id, { transitions: stored.transitions } as any);
+    await expireAwaitingConfirm();
+    const after = await getOrder(order.id);
+    assert.ok(after?.dispute);
   } finally {
     teardown(dir, prev);
   }

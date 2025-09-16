@@ -1,4 +1,4 @@
-import fs from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 
 const file = path.join(process.cwd(), 'data', 'settings.json');
@@ -59,28 +59,47 @@ const defaults: Settings = {
   wait_per_min: Number(process.env.WAIT_PER_MIN) || 0,
 };
 
-export function getSettings(): Settings {
+export async function getSettings(): Promise<Settings> {
   try {
-    const raw = fs.readFileSync(file, 'utf-8');
+    const raw = await fs.readFile(file, 'utf-8');
     return { ...defaults, ...(JSON.parse(raw) as Settings) };
-  } catch {
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err?.code && err.code !== 'ENOENT') {
+      console.error('Failed to read settings file', error);
+    }
     return { ...defaults };
   }
 }
 
-export function saveSettings(s: Settings) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(s, null, 2));
+export async function saveSettings(s: Settings): Promise<void> {
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify(s, null, 2));
+  } catch (error) {
+    console.error('Failed to save settings', error);
+  }
 }
 
-export function saveBinding(key: BindingKey, value: string) {
-  const s = getSettings();
-  (s as any)[key] = value;
-  saveSettings(s);
+export async function saveBinding(key: BindingKey, value: string): Promise<void> {
+  try {
+    const s = await getSettings();
+    (s as any)[key] = value;
+    await saveSettings(s);
+  } catch (error) {
+    console.error('Failed to save binding', error);
+  }
 }
 
-export function updateSetting<K extends keyof Settings>(key: K, value: Settings[K]) {
-  const s = getSettings();
-  (s as any)[key] = value;
-  saveSettings(s);
+export async function updateSetting<K extends keyof Settings>(
+  key: K,
+  value: Settings[K],
+): Promise<void> {
+  try {
+    const s = await getSettings();
+    (s as any)[key] = value;
+    await saveSettings(s);
+  } catch (error) {
+    console.error('Failed to update setting', error);
+  }
 }

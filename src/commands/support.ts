@@ -27,7 +27,7 @@ async function sendStepSupport(
 
 async function startSupportWizard(ctx: Context) {
   const uid = ctx.from!.id;
-  const orders = getOrdersByClient(uid);
+  const orders = await getOrdersByClient(uid);
   if (orders.length === 0) {
     await ctx.reply('У вас нет заказов.');
     return;
@@ -96,7 +96,7 @@ export default function supportCommands(bot: Telegraf) {
           await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
         states.delete(uid);
         await ctx.reply(`Тикет #${ticket.id} создан`, Markup.removeKeyboard());
-        const settings = getSettings();
+        const settings = await getSettings();
         if (settings.moderators_channel_id) {
           await ctx.telegram.sendMessage(
             settings.moderators_channel_id,
@@ -129,7 +129,7 @@ export default function supportCommands(bot: Telegraf) {
       await ctx.telegram.deleteMessage(ctx.chat!.id, state.msgId).catch(() => {});
     states.delete(uid);
     await ctx.reply(`Тикет #${ticket.id} создан`, Markup.removeKeyboard());
-    const settings = getSettings();
+    const settings = await getSettings();
     if (settings.moderators_channel_id) {
       await ctx.telegram.sendPhoto(
         settings.moderators_channel_id,

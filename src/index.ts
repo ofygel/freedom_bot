@@ -9,7 +9,12 @@ import chatCommands from './commands/chat';
 import orderStatusCommands from './commands/orderStatus';
 import profileCommands from './commands/profile';
 import adminCommands from './commands/admin';
-import { setOrdersBot, expireReservations, expireMovementTimers, expireAwaitingConfirm } from './services/orders';
+import {
+  setOrdersBot,
+  expireReservations,
+  expireMovementTimers,
+  expireAwaitingConfirm,
+} from './services/orders';
 import { rollupDailyMetrics } from './services/metrics';
 import { resetTelegramSession } from './utils/telegramSession';
 
@@ -32,12 +37,20 @@ orderStatusCommands(bot);
 profileCommands(bot);
 adminCommands(bot);
 
-setInterval(expireReservations, 30_000);
-setInterval(expireMovementTimers, 30_000);
-setInterval(expireAwaitingConfirm, 30_000);
+setInterval(() => {
+  expireReservations().catch(err => console.error('Failed to expire reservations', err));
+}, 30_000);
+setInterval(() => {
+  expireMovementTimers().catch(err => console.error('Failed to expire movement timers', err));
+}, 30_000);
+setInterval(() => {
+  expireAwaitingConfirm().catch(err => console.error('Failed to expire awaiting confirmations', err));
+}, 30_000);
 
-rollupDailyMetrics();
-setInterval(rollupDailyMetrics, 24 * 60 * 60 * 1000);
+rollupDailyMetrics().catch(err => console.error('Failed to roll up daily metrics', err));
+setInterval(() => {
+  rollupDailyMetrics().catch(err => console.error('Failed to roll up daily metrics', err));
+}, 24 * 60 * 60 * 1000);
 
 bot.command('ping', (ctx) => ctx.reply('pong'));
 

@@ -12,8 +12,9 @@ export function etaMinutes(distanceKmVal: number): number {
   const speedKmH = 28;
   return Math.max(5, Math.round((distanceKmVal / speedKmH) * 60));
 }
-export function isInAlmaty(p: Point): boolean {
-  const poly = getSettings().city_polygon;
+export async function isInAlmaty(p: Point): Promise<boolean> {
+  const settings = await getSettings();
+  const poly = settings.city_polygon;
   return poly ? pointInPolygon(p, poly) : true;
 }
 
