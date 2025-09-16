@@ -1,7 +1,7 @@
 import { Markup, Telegraf } from 'telegraf';
 
 import type { BotContext } from '../types';
-import { phoneCollect } from '../utils/phone-collect';
+import { phoneCollect } from '../flows/common/phoneCollect';
 
 type RoleKey = 'client' | 'courier' | 'driver';
 
