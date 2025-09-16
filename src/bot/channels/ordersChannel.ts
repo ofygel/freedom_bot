@@ -44,7 +44,7 @@ const buildLocationLink = (location: OrderLocation): string =>
 export const buildOrderMessage = (order: OrderRecord): string => {
   const lines = [
     `🆕 Новый заказ (${formatOrderType(order.kind)})`,
-    `#${order.id}`,
+    `#${order.shortId}`,
     '',
     `📍 Подача: ${order.pickup.address}`,
     `🎯 Назначение: ${order.dropoff.address}`,

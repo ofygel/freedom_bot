@@ -36,7 +36,7 @@ const buildUserLabel = (subscription: SubscriptionWithUser): string => {
   }
 
   const label = parts.join(' ').trim();
-  return label || String(subscription.userId);
+  return label || String(subscription.telegramId);
 };
 
 const sendWarningMessage = async (

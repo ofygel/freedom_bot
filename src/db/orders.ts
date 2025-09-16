@@ -11,6 +11,7 @@ import type {
 
 interface OrderRow {
   id: number;
+  short_id: string;
   kind: OrderKind;
   status: string;
   client_id: string | number | null;
@@ -69,6 +70,7 @@ const mapPrice = (amount: number, currency: string, distance: number | string): 
 
 const mapOrderRow = (row: OrderRow): OrderRecord => ({
   id: row.id,
+  shortId: row.short_id,
   kind: row.kind,
   status: row.status as OrderRecord['status'],
   clientId: parseNumeric(row.client_id),
@@ -100,6 +102,7 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
   const { rows } = await pool.query<OrderRow>(
     `
       INSERT INTO orders (
+        short_id,
         kind,
         status,
         client_id,
@@ -123,6 +126,7 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         completed_at
       )
       VALUES (
+        DEFAULT,
         $1,
         'open',
         $2,

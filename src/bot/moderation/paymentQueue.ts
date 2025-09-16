@@ -379,6 +379,7 @@ const handleSubscriptionApproval = async (
       currency: item.amount.currency,
       paymentId: subscription.paymentId,
       submittedAt: subscription.submittedAt,
+      receiptFileId: subscription.receipt.fileId,
       paymentMetadata,
     });
   } catch (error) {
