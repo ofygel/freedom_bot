@@ -10,6 +10,8 @@ export interface SessionUser {
 export interface SessionState {
   ephemeralMessages: number[];
   isAuthenticated: boolean;
+  awaitingPhone: boolean;
+  phoneNumber?: string;
   user?: SessionUser;
 }
 

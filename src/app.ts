@@ -1,5 +1,7 @@
 import { Telegraf } from 'telegraf';
 
+import { registerBindCommand } from './bot/commands/bind';
+import { registerStartCommand } from './bot/commands/start';
 import { auth } from './bot/middlewares/auth';
 import { autoDelete } from './bot/middlewares/auto-delete';
 import { errorBoundary } from './bot/middlewares/error-boundary';
@@ -17,6 +19,9 @@ app.use(errorBoundary());
 app.use(session());
 app.use(autoDelete());
 app.use(auth());
+
+registerStartCommand(app);
+registerBindCommand(app);
 
 let gracefulShutdownConfigured = false;
 

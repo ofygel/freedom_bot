@@ -1,0 +1,92 @@
+import { Markup } from 'telegraf';
+
+import type { BotContext } from '../types';
+
+export interface PhoneCollectOptions {
+  /** Custom prompt shown when requesting the phone number. */
+  prompt?: string;
+  /** Custom label for the button that shares the phone contact. */
+  buttonLabel?: string;
+  /** Custom message shown when the provided contact does not belong to the user. */
+  invalidContactMessage?: string;
+  /** Whether an already stored phone number may be reused without prompting again. */
+  allowCached?: boolean;
+}
+
+const DEFAULT_PROMPT =
+  'Поделитесь, пожалуйста, номером телефона, чтобы продолжить работу с ботом.';
+const DEFAULT_BUTTON_LABEL = 'Отправить мой номер телефона';
+const DEFAULT_INVALID_CONTACT_MESSAGE =
+  'Отправьте, пожалуйста, свой контакт через кнопку ниже.';
+
+const buildKeyboard = (label: string) =>
+  Markup.keyboard([Markup.button.contactRequest(label)])
+    .oneTime()
+    .resize();
+
+const normalisePhone = (phone: string): string => {
+  const trimmed = phone.trim();
+  if (trimmed.startsWith('+')) {
+    return trimmed;
+  }
+
+  const digits = trimmed.replace(/[^0-9]/g, '');
+  if (digits.length === 0) {
+    return trimmed;
+  }
+
+  return `+${digits}`;
+};
+
+export const phoneCollect = async (
+  ctx: BotContext,
+  options: PhoneCollectOptions = {},
+): Promise<string | undefined> => {
+  if (ctx.chat?.type !== 'private') {
+    return undefined;
+  }
+
+  const allowCached = options.allowCached ?? true;
+  const contact = (
+    ctx.message as { contact?: { phone_number: string; user_id?: number } }
+  )?.contact;
+
+  if (contact) {
+    if (
+      contact.user_id !== undefined &&
+      ctx.from?.id !== undefined &&
+      contact.user_id !== ctx.from.id
+    ) {
+      const warning =
+        options.invalidContactMessage ?? DEFAULT_INVALID_CONTACT_MESSAGE;
+      const message = await ctx.reply(
+        warning,
+        buildKeyboard(options.buttonLabel ?? DEFAULT_BUTTON_LABEL),
+      );
+      ctx.session.awaitingPhone = true;
+      ctx.session.ephemeralMessages.push(message.message_id);
+      return undefined;
+    }
+
+    const phone = normalisePhone(contact.phone_number);
+    ctx.session.phoneNumber = phone;
+    ctx.session.awaitingPhone = false;
+    return phone;
+  }
+
+  if (allowCached && ctx.session.phoneNumber && !ctx.session.awaitingPhone) {
+    return ctx.session.phoneNumber;
+  }
+
+  const prompt = options.prompt ?? DEFAULT_PROMPT;
+  const message = await ctx.reply(
+    prompt,
+    buildKeyboard(options.buttonLabel ?? DEFAULT_BUTTON_LABEL),
+  );
+
+  ctx.session.awaitingPhone = true;
+  ctx.session.ephemeralMessages.push(message.message_id);
+
+  return undefined;
+};
+
