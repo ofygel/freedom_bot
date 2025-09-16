@@ -12,15 +12,18 @@ export const isExecutorVerified = async (
 ): Promise<boolean> => {
   const { rows } = await pool.query<VerificationExistsRow>(
     `
-      SELECT EXISTS(
-        SELECT 1
-        FROM verifications v
-        JOIN users u ON u.id = v.user_id
-        WHERE u.telegram_id = $1
-          AND v.type = $2
-          AND v.status = 'approved'
-          AND (v.expires_at IS NULL OR v.expires_at > now())
-      ) AS is_verified
+      SELECT COALESCE(u.is_verified, false)
+        OR EXISTS (
+          SELECT 1
+          FROM verifications v
+          WHERE v.user_id = u.id
+            AND v.role = $2
+            AND v.status = 'approved'
+            AND (v.expires_at IS NULL OR v.expires_at > now())
+        ) AS is_verified
+      FROM users u
+      WHERE u.telegram_id = $1
+      LIMIT 1
     `,
     [telegramId, role],
   );

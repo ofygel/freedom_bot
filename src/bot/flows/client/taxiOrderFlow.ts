@@ -270,13 +270,12 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
       kind: 'taxi',
       clientId: ctx.session.user?.id,
       clientPhone: ctx.session.phoneNumber,
+      customerName: buildCustomerName(ctx),
+      customerUsername: ctx.session.user?.username,
+      clientComment: draft.notes,
       pickup: draft.pickup,
       dropoff: draft.dropoff,
       price: draft.price,
-      metadata: {
-        customerName: buildCustomerName(ctx),
-        customerUsername: ctx.session.user?.username,
-      },
     });
 
     const publishResult = await publishOrderToDriversChannel(ctx.telegram, order.id);

@@ -35,7 +35,8 @@ const buildUserLabel = (subscription: SubscriptionWithUser): string => {
     parts.push(`ID ${subscription.telegramId}`);
   }
 
-  return parts.join(' ').trim() || subscription.userId;
+  const label = parts.join(' ').trim();
+  return label || String(subscription.userId);
 };
 
 const sendWarningMessage = async (
@@ -154,7 +155,7 @@ const processExpiringSubscriptions = async (
       );
     } finally {
       try {
-        await recordSubscriptionWarning(subscription.id, subscription.expiresAt);
+        await recordSubscriptionWarning(subscription.id, new Date());
       } catch (error) {
         logger.error(
           { err: error, subscriptionId: subscription.id },

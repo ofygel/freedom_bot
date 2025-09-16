@@ -92,7 +92,7 @@ export interface PaymentReviewItem extends ModerationQueueItemBase<PaymentReview
   /** Identifier of the payment under review. */
   id: string | number;
   /** Identifier of the related subscription, if any. */
-  subscriptionId?: string;
+  subscriptionId?: number | string;
   /** Amount of the payment. */
   amount: { value: number; currency: string };
   /** Payer details used for the moderation summary. */

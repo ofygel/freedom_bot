@@ -5,7 +5,6 @@ import type {
   OrderInsertInput,
   OrderKind,
   OrderLocation,
-  OrderMetadata,
   OrderPriceDetails,
   OrderRecord,
 } from '../types';
@@ -16,6 +15,12 @@ interface OrderRow {
   status: string;
   client_id: string | number | null;
   client_phone: string | null;
+  customer_name: string | null;
+  customer_username: string | null;
+  client_comment: string | null;
+  claimed_by: string | number | null;
+  claimed_at: Date | string | null;
+  completed_at: Date | string | null;
   pickup_query: string;
   pickup_address: string;
   pickup_lat: number;
@@ -27,7 +32,6 @@ interface OrderRow {
   price_amount: number;
   price_currency: string;
   distance_km: number | string;
-  metadata: OrderMetadata | null;
   channel_message_id: string | number | null;
   created_at: Date | string;
 }
@@ -69,10 +73,25 @@ const mapOrderRow = (row: OrderRow): OrderRecord => ({
   status: row.status as OrderRecord['status'],
   clientId: parseNumeric(row.client_id),
   clientPhone: row.client_phone ?? undefined,
+  customerName: row.customer_name ?? undefined,
+  customerUsername: row.customer_username ?? undefined,
+  clientComment: row.client_comment ?? undefined,
+  claimedBy: parseNumeric(row.claimed_by),
+  claimedAt:
+    row.claimed_at instanceof Date
+      ? row.claimed_at
+      : row.claimed_at
+      ? new Date(row.claimed_at)
+      : undefined,
+  completedAt:
+    row.completed_at instanceof Date
+      ? row.completed_at
+      : row.completed_at
+      ? new Date(row.completed_at)
+      : undefined,
   pickup: mapLocation(row.pickup_query, row.pickup_address, row.pickup_lat, row.pickup_lon),
   dropoff: mapLocation(row.dropoff_query, row.dropoff_address, row.dropoff_lat, row.dropoff_lon),
   price: mapPrice(row.price_amount, row.price_currency, row.distance_km),
-  metadata: row.metadata ?? undefined,
   channelMessageId: parseNumeric(row.channel_message_id),
   createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
 });
@@ -85,6 +104,9 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         status,
         client_id,
         client_phone,
+        customer_name,
+        customer_username,
+        client_comment,
         pickup_query,
         pickup_address,
         pickup_lat,
@@ -96,11 +118,13 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         price_amount,
         price_currency,
         distance_km,
-        metadata
+        claimed_by,
+        claimed_at,
+        completed_at
       )
       VALUES (
         $1,
-        'new',
+        'open',
         $2,
         $3,
         $4,
@@ -114,7 +138,12 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         $12,
         $13,
         $14,
-        $15
+        $15,
+        $16,
+        $17,
+        NULL,
+        NULL,
+        NULL
       )
       RETURNING *
     `,
@@ -122,6 +151,9 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
       input.kind,
       input.clientId ?? null,
       input.clientPhone ?? null,
+      input.customerName ?? null,
+      input.customerUsername ?? null,
+      input.clientComment ?? null,
       input.pickup.query,
       input.pickup.address,
       input.pickup.latitude,
@@ -133,7 +165,6 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
       input.price.amount,
       input.price.currency,
       input.price.distanceKm,
-      input.metadata ?? null,
     ],
   );
 
@@ -182,10 +213,18 @@ export const setOrderChannelMessageId = async (
 export const tryClaimOrder = async (
   client: PoolClient,
   id: number,
+  claimedBy: number,
 ): Promise<OrderRecord | null> => {
   const { rows } = await client.query<OrderRow>(
-    `UPDATE orders SET status = 'claimed' WHERE id = $1 AND status = 'new' RETURNING *`,
-    [id],
+    `
+      UPDATE orders
+      SET status = 'claimed',
+          claimed_by = $2,
+          claimed_at = now()
+      WHERE id = $1 AND status = 'open'
+      RETURNING *
+    `,
+    [id, claimedBy],
   );
 
   const [row] = rows;
@@ -197,7 +236,7 @@ export const tryCancelOrder = async (
   id: number,
 ): Promise<OrderRecord | null> => {
   const { rows } = await client.query<OrderRow>(
-    `UPDATE orders SET status = 'cancelled' WHERE id = $1 AND status = 'new' RETURNING *`,
+    `UPDATE orders SET status = 'cancelled' WHERE id = $1 AND status = 'open' RETURNING *`,
     [id],
   );
 

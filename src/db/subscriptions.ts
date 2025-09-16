@@ -10,13 +10,14 @@ export type SubscriptionStatus =
   | 'paused';
 
 interface SubscriptionRow {
-  id: string;
-  user_id: string;
+  id: string | number;
+  user_id: string | number;
   chat_id: string | number;
   status: SubscriptionStatus;
   next_billing_at: Date | string | null;
   grace_until: Date | string | null;
   expires_at: Date | string | null;
+  last_warning_at: Date | string | null;
   telegram_id: string | number | null;
   username: string | null;
   first_name: string | null;
@@ -24,14 +25,15 @@ interface SubscriptionRow {
 }
 
 export interface SubscriptionWithUser {
-  id: string;
-  userId: string;
+  id: number;
+  userId: number;
   chatId: number;
   telegramId?: number;
   status: SubscriptionStatus;
   nextBillingAt?: Date;
   graceUntil?: Date;
   expiresAt: Date;
+  lastWarningAt?: Date;
   username?: string;
   firstName?: string;
   lastName?: string;
@@ -44,7 +46,7 @@ const ACTIVE_SUBSCRIPTION_STATUSES: SubscriptionStatus[] = [
 ];
 
 interface ExistingSubscriptionRow {
-  id: string;
+  id: string | number;
   next_billing_at: Date | string | null;
   grace_until: Date | string | null;
   metadata: Record<string, unknown> | null;
@@ -67,8 +69,8 @@ export interface ActivateSubscriptionParams {
 }
 
 export interface ActivateSubscriptionResult {
-  subscriptionId: string;
-  userId: string;
+  subscriptionId: number;
+  userId: number;
   periodStart: Date;
   periodEnd: Date;
   nextBillingAt: Date;
@@ -98,6 +100,16 @@ const parseTimestamp = (value: Date | string | null): Date | undefined => {
 };
 
 const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
+  const id = parseNumeric(row.id);
+  if (id === undefined) {
+    throw new Error(`Failed to parse subscription id: ${row.id}`);
+  }
+
+  const userId = parseNumeric(row.user_id);
+  if (userId === undefined) {
+    throw new Error(`Failed to parse subscription user id for ${row.id}`);
+  }
+
   const chatId = parseNumeric(row.chat_id);
   if (chatId === undefined) {
     throw new Error(
@@ -109,19 +121,21 @@ const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
   const nextBillingAt = parseTimestamp(row.next_billing_at);
   const graceUntil = parseTimestamp(row.grace_until);
   const expiresAt = parseTimestamp(row.expires_at);
+  const lastWarningAt = parseTimestamp(row.last_warning_at);
   if (!expiresAt) {
     throw new Error(`Failed to determine expiration for subscription ${row.id}`);
   }
 
   return {
-    id: row.id,
-    userId: row.user_id,
+    id,
+    userId,
     chatId,
     telegramId,
     status: row.status,
     nextBillingAt,
     graceUntil,
     expiresAt,
+    lastWarningAt,
     username: row.username ?? undefined,
     firstName: row.first_name ?? undefined,
     lastName: row.last_name ?? undefined,
@@ -131,8 +145,8 @@ const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
 const upsertTelegramUser = async (
   client: PoolClient,
   params: ActivateSubscriptionParams,
-): Promise<string> => {
-  const { rows } = await client.query<{ id: string }>(
+): Promise<number> => {
+  const { rows } = await client.query<{ id: string | number }>(
     `
       INSERT INTO users (
         telegram_id,
@@ -140,17 +154,17 @@ const upsertTelegramUser = async (
         first_name,
         last_name,
         phone,
-        is_courier,
+        role,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, true, now())
+      VALUES ($1, $2, $3, $4, $5, 'executor', now())
       ON CONFLICT (telegram_id) DO UPDATE
       SET
         username = COALESCE(EXCLUDED.username, users.username),
         first_name = COALESCE(EXCLUDED.first_name, users.first_name),
         last_name = COALESCE(EXCLUDED.last_name, users.last_name),
         phone = COALESCE(EXCLUDED.phone, users.phone),
-        is_courier = true,
+        role = CASE WHEN users.role = 'moderator' THEN users.role ELSE 'executor' END,
         updated_at = now()
       RETURNING id
     `,
@@ -168,12 +182,17 @@ const upsertTelegramUser = async (
     throw new Error('Failed to upsert telegram user for subscription activation');
   }
 
-  return row.id;
+  const userId = parseNumeric(row.id);
+  if (userId === undefined) {
+    throw new Error(`Failed to parse user id returned from upsert (${row.id})`);
+  }
+
+  return userId;
 };
 
 const fetchSubscriptionForUpdate = async (
   client: PoolClient,
-  userId: string,
+  userId: number,
   chatId: number,
 ): Promise<ExistingSubscriptionRow | null> => {
   const { rows } = await client.query<ExistingSubscriptionRow>(
@@ -241,9 +260,9 @@ export const activateSubscription = async (
     const periodEnd = new Date(periodStart.getTime() + periodDays * 24 * 60 * 60 * 1000);
     const metadataPatch = buildMetadataPatch(params, periodEnd, submittedAt);
 
-    let subscriptionId: string;
+    let subscriptionId: number;
     if (existing) {
-      const { rows } = await client.query<{ id: string }>(
+      const { rows } = await client.query<{ id: string | number }>(
         `
           UPDATE subscriptions
           SET plan = $2,
@@ -258,6 +277,7 @@ export const activateSubscription = async (
               cancelled_at = NULL,
               ended_at = NULL,
               metadata = COALESCE(metadata, '{}'::jsonb) || $7::jsonb,
+              last_warning_at = NULL,
               updated_at = $8
           WHERE id = $1
           RETURNING id
@@ -275,9 +295,13 @@ export const activateSubscription = async (
       );
 
       const [row] = rows;
-      subscriptionId = row?.id ?? existing.id;
+      const parsedId = parseNumeric(row?.id ?? existing.id);
+      if (parsedId === undefined) {
+        throw new Error(`Failed to determine subscription id for ${existing.id}`);
+      }
+      subscriptionId = parsedId;
     } else {
-      const { rows } = await client.query<{ id: string }>(
+      const { rows } = await client.query<{ id: string | number }>(
         `
           INSERT INTO subscriptions (
             user_id,
@@ -331,13 +355,18 @@ export const activateSubscription = async (
       if (!row) {
         throw new Error('Failed to create subscription during activation');
       }
-      subscriptionId = row.id;
+      const parsedId = parseNumeric(row.id);
+      if (parsedId === undefined) {
+        throw new Error(`Failed to parse subscription id returned from insert (${row.id})`);
+      }
+      subscriptionId = parsedId;
     }
 
     await client.query(
       `
-        INSERT INTO subscription_payments (
+        INSERT INTO payments (
           subscription_id,
+          user_id,
           amount,
           currency,
           status,
@@ -355,20 +384,22 @@ export const activateSubscription = async (
           $1,
           $2,
           $3,
+          $4,
           'succeeded',
           'manual',
-          $4,
-          NULL,
-          NULL,
-          NULL,
           $5,
+          NULL,
+          NULL,
+          NULL,
           $6,
           $7,
-          $8::jsonb
+          $8,
+          $9::jsonb
         )
       `,
       [
         subscriptionId,
+        userId,
         params.amount,
         params.currency,
         params.paymentId,
@@ -378,14 +409,6 @@ export const activateSubscription = async (
         JSON.stringify(params.paymentMetadata ?? {}),
       ],
     );
-
-    await insertSubscriptionEvent(client, subscriptionId, 'payment_applied', {
-      paymentId: params.paymentId,
-      amount: params.amount,
-      currency: params.currency,
-      periodStart: periodStart.toISOString(),
-      periodEnd: periodEnd.toISOString(),
-    });
 
     return {
       subscriptionId,
@@ -412,6 +435,7 @@ export const findSubscriptionsExpiringSoon = async (
         s.next_billing_at,
         s.grace_until,
         COALESCE(s.grace_until, s.next_billing_at) AS expires_at,
+        s.last_warning_at,
         u.telegram_id,
         u.username,
         u.first_name,
@@ -422,12 +446,9 @@ export const findSubscriptionsExpiringSoon = async (
         AND COALESCE(s.grace_until, s.next_billing_at) IS NOT NULL
         AND COALESCE(s.grace_until, s.next_billing_at) > $1
         AND COALESCE(s.grace_until, s.next_billing_at) <= $2
-        AND NOT EXISTS (
-          SELECT 1
-          FROM subscription_events e
-          WHERE e.subscription_id = s.id
-            AND e.event_type = 'expiration_warning_sent'
-            AND e.created_at >= COALESCE(s.grace_until, s.next_billing_at) - make_interval(hours => $4)
+        AND (
+          s.last_warning_at IS NULL
+          OR s.last_warning_at < COALESCE(s.grace_until, s.next_billing_at) - make_interval(hours => $4)
         )
       ORDER BY COALESCE(s.grace_until, s.next_billing_at) ASC
     `,
@@ -450,6 +471,7 @@ export const findSubscriptionsToExpire = async (
         s.next_billing_at,
         s.grace_until,
         COALESCE(s.grace_until, s.next_billing_at) AS expires_at,
+        s.last_warning_at,
         u.telegram_id,
         u.username,
         u.first_name,
@@ -468,19 +490,17 @@ export const findSubscriptionsToExpire = async (
 };
 
 export const recordSubscriptionWarning = async (
-  subscriptionId: string,
-  expiresAt: Date,
+  subscriptionId: number,
+  warnedAt: Date,
 ): Promise<void> => {
   await pool.query(
     `
-      INSERT INTO subscription_events (subscription_id, event_type, payload)
-      VALUES ($1, $2, $3::jsonb)
+      UPDATE subscriptions
+      SET last_warning_at = $2,
+          updated_at = GREATEST(updated_at, $2)
+      WHERE id = $1
     `,
-    [
-      subscriptionId,
-      'expiration_warning_sent',
-      JSON.stringify({ expiresAt: expiresAt.toISOString() }),
-    ],
+    [subscriptionId, warnedAt],
   );
 };
 
@@ -508,46 +528,24 @@ export const hasActiveSubscription = async (
   return rows.length > 0;
 };
 
-const insertSubscriptionEvent = async (
-  client: PoolClient,
-  subscriptionId: string,
-  eventType: string,
-  payload: Record<string, unknown>,
-): Promise<void> => {
-  await client.query(
-    `
-      INSERT INTO subscription_events (subscription_id, event_type, payload)
-      VALUES ($1, $2, $3::jsonb)
-    `,
-    [subscriptionId, eventType, JSON.stringify(payload)],
-  );
-};
-
 export const markSubscriptionsExpired = async (
-  subscriptionIds: readonly string[],
+  subscriptionIds: readonly number[],
   expiredAt: Date,
 ): Promise<void> => {
   if (subscriptionIds.length === 0) {
     return;
   }
 
-  await withTx(async (client) => {
-    await client.query(
-      `
-        UPDATE subscriptions
-        SET status = 'expired',
-            ended_at = $2,
-            updated_at = $2
-        WHERE id = ANY($1::uuid[])
-          AND status <> 'expired'
-      `,
-      [subscriptionIds, expiredAt],
-    );
-
-    for (const subscriptionId of subscriptionIds) {
-      await insertSubscriptionEvent(client, subscriptionId, 'expired', {
-        expiredAt: expiredAt.toISOString(),
-      });
-    }
-  });
+  await pool.query(
+    `
+      UPDATE subscriptions
+      SET status = 'expired',
+          ended_at = $2,
+          updated_at = $2,
+          last_warning_at = NULL
+      WHERE id = ANY($1::bigint[])
+        AND status <> 'expired'
+    `,
+    [subscriptionIds, expiredAt],
+  );
 };
