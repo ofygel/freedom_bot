@@ -1,6 +1,5 @@
 import type { Telegraf } from 'telegraf';
 
-import { getChannelBinding } from '../../channels/bindings';
 import { logger } from '../../../config';
 import {
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
@@ -15,6 +14,7 @@ import {
   resetVerificationState,
   showExecutorMenu,
 } from './menu';
+import { publishVerificationApplication, type VerificationApplication } from '../../moderation/verifyQueue';
 import { getExecutorRoleCopy } from './roleCopy';
 import { ui } from '../../ui';
 
@@ -46,83 +46,15 @@ const VERIFICATION_START_REMINDER_STEP_ID = 'executor:verification:start-reminde
 const VERIFICATION_PROGRESS_STEP_ID = 'executor:verification:progress';
 const VERIFICATION_PHOTO_REMINDER_STEP_ID = 'executor:verification:photo-reminder';
 
-const buildModerationSummary = (ctx: BotContext, state: ExecutorFlowState): string => {
-  const user = ctx.session.user;
-  const copy = getExecutorRoleCopy(state.role);
-  const verification = state.verification[state.role];
-  const lines = [
-    `🆕 Новая заявка на верификацию ${copy.genitive}.`,
-    `Роль: ${copy.noun} (${state.role})`,
-    `Telegram ID: ${ctx.from?.id ?? 'неизвестно'}`,
-  ];
-
-  if (user?.username) {
-    lines.push(`Username: @${user.username}`);
-  }
-
-  const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim();
-  if (fullName) {
-    lines.push(`Имя: ${fullName}`);
-  }
-
-  if (ctx.session.phoneNumber) {
-    lines.push(`Телефон: ${ctx.session.phoneNumber}`);
-  }
-
-  lines.push(
-    `Фотографии: ${verification.uploadedPhotos.length}/${verification.requiredPhotos}.`,
-  );
-
-  return lines.join('\n');
-};
-
 const submitForModeration = async (
   ctx: BotContext,
   state: ExecutorFlowState,
 ): Promise<boolean> => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) {
-    return false;
-  }
-
-  const role = state.role;
-  const verification = state.verification[role];
-
-  const verifyChannel = await getChannelBinding('verify');
-  if (!verifyChannel) {
-    await ui.step(ctx, {
-      id: VERIFICATION_CHANNEL_MISSING_STEP_ID,
-      text: 'Канал верификации пока не настроен. Попробуйте позже.',
-      cleanup: true,
-      homeAction: EXECUTOR_MENU_ACTION,
-    });
-    return false;
-  }
-
-  try {
-    const summary = buildModerationSummary(ctx, state);
-    const summaryMessage = await ctx.telegram.sendMessage(verifyChannel.chatId, summary);
-    verification.moderationThreadMessageId = summaryMessage.message_id;
-
-    for (const photo of verification.uploadedPhotos) {
-      try {
-        await ctx.telegram.copyMessage(verifyChannel.chatId, chatId, photo.messageId);
-      } catch (error) {
-        logger.warn(
-          {
-            err: error,
-            chatId: verifyChannel.chatId,
-            userChatId: chatId,
-            messageId: photo.messageId,
-          },
-          'Failed to copy verification photo to verification channel',
-        );
-      }
-    }
-  } catch (error) {
+  const applicantId = ctx.from?.id;
+  if (!applicantId) {
     logger.error(
-      { err: error, chatId: verifyChannel.chatId, role },
-      'Failed to submit executor verification to verification channel',
+      { chatId: ctx.chat?.id, role: state.role },
+      'Cannot submit verification without applicant id',
     );
     await ui.step(ctx, {
       id: VERIFICATION_SUBMISSION_FAILED_STEP_ID,
@@ -133,17 +65,108 @@ const submitForModeration = async (
     return false;
   }
 
-  verification.status = 'submitted';
-  verification.submittedAt = Date.now();
+  const role = state.role;
+  const verification = state.verification[role];
+  const copy = getExecutorRoleCopy(role);
+  const submittedAt = Date.now();
+  const applicationId = `${applicantId.toString(10)}:${submittedAt.toString(10)}`;
+  const summaryLines = [`Роль: ${copy.noun} (${role})`];
 
-  await ui.step(ctx, {
-    id: VERIFICATION_SUBMITTED_STEP_ID,
-    text: 'Спасибо! Мы получили ваши документы и передали их модераторам. Ожидайте решения.',
-    cleanup: true,
-    homeAction: EXECUTOR_MENU_ACTION,
-  });
+  const sessionUser = ctx.session.user;
+  const application: VerificationApplication = {
+    id: applicationId,
+    title: `🆕 Новая заявка на верификацию ${copy.genitive}.`,
+    summary: summaryLines,
+    applicant: {
+      telegramId: applicantId,
+      username: sessionUser?.username ?? ctx.from?.username ?? undefined,
+      firstName: sessionUser?.firstName ?? ctx.from?.first_name ?? undefined,
+      lastName: sessionUser?.lastName ?? ctx.from?.last_name ?? undefined,
+      phone: ctx.session.phoneNumber ?? undefined,
+    },
+    photoCount: verification.uploadedPhotos.length,
+    submittedAt,
+    onApprove: async ({ telegram, decidedAt }) => {
+      if (verification.moderation?.applicationId === applicationId) {
+        verification.status = 'idle';
+        verification.moderation = undefined;
+        verification.uploadedPhotos = [];
+        verification.submittedAt = decidedAt;
+      }
 
-  return true;
+      const approvalMessage = [
+        '✅ Ваша заявка на верификацию одобрена.',
+        `Доступ к заказам ${copy.genitive} открыт.`,
+        'Если возникнут вопросы, напишите в поддержку бота.',
+      ].join('\n');
+
+      try {
+        await telegram.sendMessage(applicantId, approvalMessage);
+      } catch (error) {
+        logger.error(
+          {
+            err: error,
+            chatId: applicantId,
+            applicationId,
+            role,
+          },
+          'Failed to notify applicant about verification approval',
+        );
+      }
+    },
+    onReject: async ({ decidedAt }) => {
+      if (verification.moderation?.applicationId === applicationId) {
+        verification.status = 'idle';
+        verification.moderation = undefined;
+        verification.uploadedPhotos = [];
+        verification.submittedAt = decidedAt;
+      }
+    },
+  };
+
+  try {
+    const result = await publishVerificationApplication(ctx.telegram, application);
+
+    if (result.status === 'missing_channel') {
+      await ui.step(ctx, {
+        id: VERIFICATION_CHANNEL_MISSING_STEP_ID,
+        text: 'Канал верификации пока не настроен. Попробуйте позже.',
+        cleanup: true,
+        homeAction: EXECUTOR_MENU_ACTION,
+      });
+      return false;
+    }
+
+    verification.status = 'submitted';
+    verification.submittedAt = submittedAt;
+    verification.moderation = {
+      applicationId,
+      chatId: result.chatId,
+      messageId: result.messageId,
+      token: result.token,
+    };
+
+    await ui.step(ctx, {
+      id: VERIFICATION_SUBMITTED_STEP_ID,
+      text: 'Спасибо! Мы получили ваши документы и передали их модераторам. Ожидайте решения.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+
+    return true;
+  } catch (error) {
+    logger.error(
+      { err: error, applicationId, role },
+      'Failed to submit executor verification to moderation queue',
+    );
+    await ui.step(ctx, {
+      id: VERIFICATION_SUBMISSION_FAILED_STEP_ID,
+      text: 'Не удалось отправить документы на проверку. Попробуйте позже.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+    return false;
+  }
 };
 
 export const startExecutorVerification = async (

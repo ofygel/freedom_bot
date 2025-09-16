@@ -37,12 +37,22 @@ const cloneUploadedPhotos = (
   return photos.map((photo) => ({ ...photo }));
 };
 
+const cloneModerationState = (
+  moderation?: ExecutorVerificationRoleState['moderation'],
+): ExecutorVerificationRoleState['moderation'] => {
+  if (!moderation) {
+    return undefined;
+  }
+
+  return { ...moderation };
+};
+
 const createRoleVerificationState = (): ExecutorVerificationRoleState => ({
   status: 'idle',
   requiredPhotos: EXECUTOR_VERIFICATION_PHOTO_COUNT,
   uploadedPhotos: [],
   submittedAt: undefined,
-  moderationThreadMessageId: undefined,
+  moderation: undefined,
 });
 
 const createSubscriptionState = (): ExecutorSubscriptionState => ({
@@ -62,7 +72,7 @@ const normaliseRoleVerificationState = (
   requiredPhotos: ensurePositiveRequirement(value?.requiredPhotos),
   uploadedPhotos: cloneUploadedPhotos(value?.uploadedPhotos),
   submittedAt: value?.submittedAt,
-  moderationThreadMessageId: value?.moderationThreadMessageId,
+  moderation: cloneModerationState(value?.moderation),
 });
 
 const createDefaultVerificationState = () => {
@@ -151,6 +161,7 @@ export const resetVerificationState = (state: ExecutorFlowState): void => {
   state.verification[role] = {
     ...createRoleVerificationState(),
     requiredPhotos: ensurePositiveRequirement(current?.requiredPhotos),
+    moderation: undefined,
   };
 };
 

@@ -22,12 +22,19 @@ export interface ExecutorUploadedPhoto {
 
 export type ExecutorVerificationStatus = 'idle' | 'collecting' | 'submitted';
 
+export interface ExecutorVerificationModerationState {
+  applicationId?: string;
+  chatId?: number;
+  messageId?: number;
+  token?: string;
+}
+
 export interface ExecutorVerificationRoleState {
   status: ExecutorVerificationStatus;
   requiredPhotos: number;
   uploadedPhotos: ExecutorUploadedPhoto[];
   submittedAt?: number;
-  moderationThreadMessageId?: number;
+  moderation?: ExecutorVerificationModerationState;
 }
 
 export type ExecutorSubscriptionStatus =
