@@ -232,6 +232,19 @@ const buildPaymentMessage = (payment: PaymentReviewItem): string => {
   return lines.join('\n');
 };
 
+const formatRejectionReason = (reason: string): string => {
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    return 'не указана.';
+  }
+
+  if (/[.!?]$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `${trimmed}.`;
+};
+
 const estimatePeriodEnd = (start: Date, days: number): Date =>
   new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
 
@@ -432,9 +445,10 @@ const handleSubscriptionRejection = async (
     return;
   }
 
+  const reasonText = formatRejectionReason(reason);
   const message = [
     '❌ Оплата подписки не подтверждена.',
-    `Причина: ${reason}.`,
+    `Причина: ${reasonText}`,
     'Проверьте данные и отправьте новый чек через меню «Получить ссылку на канал».',
   ].join('\n');
 

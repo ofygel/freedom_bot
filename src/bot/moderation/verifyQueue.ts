@@ -1,8 +1,11 @@
 import { Telegraf, Telegram } from 'telegraf';
 
+import { logger } from '../../config';
+
 import type { BotContext } from '../types';
 import {
   createModerationQueue,
+  type ModerationRejectionContext,
   type ModerationQueue,
   type ModerationQueueItemBase,
   type PublishModerationResult,
@@ -112,6 +115,49 @@ const buildVerificationMessage = (application: VerificationApplication): string 
   return lines.join('\n');
 };
 
+const normaliseReasonSuffix = (reason: string): string => {
+  const trimmed = reason.trim();
+  if (!trimmed) {
+    return 'не указана.';
+  }
+
+  if (/[.!?]$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  return `${trimmed}.`;
+};
+
+const handleVerificationRejection = async (
+  context: ModerationRejectionContext<VerificationApplication>,
+): Promise<void> => {
+  const { item, telegram, reason } = context;
+  const applicantId = item.applicant.telegramId;
+  if (!applicantId) {
+    return;
+  }
+
+  const reasonLine = normaliseReasonSuffix(reason);
+  const message = [
+    '❌ Ваша заявка на верификацию отклонена.',
+    `Причина: ${reasonLine}`,
+    'Вы можете обновить данные и отправить новую заявку через меню бота.',
+  ].join('\n');
+
+  try {
+    await telegram.sendMessage(applicantId, message);
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        applicationId: item.id,
+        applicantId,
+      },
+      'Failed to notify applicant about verification rejection',
+    );
+  }
+};
+
 const queue: ModerationQueue<VerificationApplication> = createModerationQueue<VerificationApplication>({
   type: 'verify',
   channelType: 'verify',
@@ -122,7 +168,33 @@ const queue: ModerationQueue<VerificationApplication> = createModerationQueue<Ve
 export const publishVerificationApplication = async (
   telegram: Telegram,
   application: VerificationApplication,
-): Promise<PublishModerationResult> => queue.publish(telegram, application);
+): Promise<PublishModerationResult> => {
+  const existingOnReject = application.onReject;
+
+  const item: VerificationApplication = {
+    ...application,
+    onReject: async (context) => {
+      if (existingOnReject) {
+        try {
+          await existingOnReject(context);
+        } catch (error) {
+          logger.error(
+            {
+              err: error,
+              applicationId: application.id,
+              applicantId: application.applicant.telegramId,
+            },
+            'Verification rejection callback failed',
+          );
+        }
+      }
+
+      await handleVerificationRejection(context);
+    },
+  };
+
+  return queue.publish(telegram, item);
+};
 
 export const registerVerificationModerationQueue = (
   bot: Telegraf<BotContext>,
