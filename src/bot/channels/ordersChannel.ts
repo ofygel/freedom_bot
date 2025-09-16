@@ -9,7 +9,7 @@ import {
   tryCancelOrder,
   tryClaimOrder,
 } from '../../db/orders';
-import type { OrderKind, OrderRecord } from '../../types';
+import type { OrderKind, OrderLocation, OrderRecord } from '../../types';
 import type { BotContext } from '../types';
 import { build2GisLink } from '../../utils/location';
 
@@ -43,7 +43,7 @@ const formatDistance = (distanceKm: number): string => {
 const formatPrice = (amount: number, currency: string): string =>
   `${new Intl.NumberFormat('ru-RU').format(amount)} ${currency}`;
 
-const buildOrderLocationLink = (location: OrderRecord['pickup']): string =>
+const buildLocationLink = (location: OrderLocation): string =>
   build2GisLink(location.latitude, location.longitude, { query: location.address });
 
 export const buildOrderMessage = (order: OrderRecord): string => {
@@ -188,6 +188,20 @@ const buildDecisionSuffix = (state: OrderChannelState): string => {
 };
 
 const updateOrderMessage = async (telegram: Telegram, state: OrderChannelState): Promise<void> => {
+  if (state.status === 'claimed') {
+    try {
+      await telegram.deleteMessage(state.chatId, state.messageId);
+      state.renderedStatus = 'claimed';
+      return;
+    } catch (error) {
+      logger.warn(
+        { err: error, orderId: state.orderId, chatId: state.chatId, messageId: state.messageId },
+        'Failed to delete order message in drivers channel',
+      );
+      // Fall back to updating the message when deletion is not possible.
+    }
+  }
+
   const suffix = buildDecisionSuffix(state);
   const text = suffix ? `${state.baseText}\n\n${suffix}`.trim() : state.baseText;
 
@@ -236,8 +250,8 @@ const buildAlreadyProcessedResponse = (state: OrderChannelState): string => {
 const buildActionKeyboard = (order: OrderRecord) =>
   Markup.inlineKeyboard([
     [
-      Markup.button.url('Открыть в 2ГИС (A)', buildOrderLocationLink(order.pickup)),
-      Markup.button.url('Открыть в 2ГИС (B)', buildOrderLocationLink(order.dropoff)),
+      Markup.button.url('Open in 2GIS (A)', buildLocationLink(order.pickup)),
+      Markup.button.url('Open in 2GIS (B)', buildLocationLink(order.dropoff)),
     ],
     [Markup.button.callback('✅ Беру заказ', `${ACCEPT_ACTION_PREFIX}:${order.id}`)],
     [Markup.button.callback('❌ Недоступен', `${DECLINE_ACTION_PREFIX}:${order.id}`)],
