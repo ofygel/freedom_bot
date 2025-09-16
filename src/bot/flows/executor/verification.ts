@@ -169,6 +169,88 @@ const submitForModeration = async (
       token: result.token,
     };
 
+    const moderationChatId = result.chatId;
+    const sourceChatId = ctx.chat?.id;
+    const storedPhotos = [...verification.uploadedPhotos];
+
+    if (storedPhotos.length > 0) {
+      if (typeof moderationChatId !== 'number') {
+        logger.warn(
+          { applicationId, role, applicantId, moderationChatId },
+          'Cannot forward verification photos without moderation chat id',
+        );
+      } else if (typeof sourceChatId !== 'number') {
+        logger.warn(
+          { applicationId, role, applicantId, sourceChatId },
+          'Cannot forward verification photos without source chat id',
+        );
+      } else {
+        const failedPhotos: typeof verification.uploadedPhotos = [];
+        let forwardedCount = 0;
+
+        for (const photo of storedPhotos) {
+          try {
+            await ctx.telegram.copyMessage(moderationChatId, sourceChatId, photo.messageId);
+            forwardedCount += 1;
+          } catch (error) {
+            failedPhotos.push(photo);
+            logger.error(
+              {
+                err: error,
+                applicationId,
+                role,
+                applicantId,
+                moderationChatId,
+                sourceChatId,
+                messageId: photo.messageId,
+              },
+              'Failed to forward verification photo to moderation chat',
+            );
+          }
+        }
+
+        if (forwardedCount > 0) {
+          const applicant = application.applicant;
+          const annotationLines = [
+            `📎 Фотографии документов для заявки ${applicationId}.`,
+          ];
+
+          if (applicant.username) {
+            annotationLines.push(`Пользователь: @${applicant.username}`);
+          }
+
+          const fullName = [applicant.firstName, applicant.lastName]
+            .map((value) => value?.trim())
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+
+          if (fullName) {
+            annotationLines.push(`Имя: ${fullName}`);
+          }
+
+          annotationLines.push(`Роль: ${copy.noun} (${role}).`);
+
+          if (failedPhotos.length > 0) {
+            annotationLines.push(
+              `⚠️ Не удалось скопировать ${failedPhotos.length} из ${storedPhotos.length} фото, они останутся в заявке для повторной отправки.`,
+            );
+          }
+
+          try {
+            await ctx.telegram.sendMessage(moderationChatId, annotationLines.join('\n'));
+          } catch (error) {
+            logger.error(
+              { err: error, applicationId, role, moderationChatId },
+              'Failed to send verification photo annotation to moderation chat',
+            );
+          }
+        }
+
+        verification.uploadedPhotos = failedPhotos;
+      }
+    }
+
     await ui.step(ctx, {
       id: VERIFICATION_SUBMITTED_STEP_ID,
       text: 'Спасибо! Мы получили ваши документы и передали их модераторам. Ожидайте решения.',
