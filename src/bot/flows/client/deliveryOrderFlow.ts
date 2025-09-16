@@ -1,69 +1,31 @@
-import { Markup, Telegraf } from 'telegraf';
+import { Telegraf } from 'telegraf';
 
 import { publishOrderToDriversChannel, type PublishOrderStatus } from '../../../channels/ordersChannel';
 import { logger } from '../../../config';
 import { createOrder } from '../../../db/orders';
-import { geocodeAddress, type GeocodingResult } from '../../../services/geocoding';
-import { estimateDeliveryPrice } from '../../../services/pricing';
+import type { OrderRecord } from '../../../types';
+import {
+  buildCustomerName,
+  buildOrderSummary,
+  isOrderDraftComplete,
+  resetClientOrderDraft,
+  type CompletedOrderDraft,
+} from '../../services/orders';
+import { geocodeOrderLocation } from '../../services/geocode';
+import {
+  estimateDeliveryPrice,
+  formatPriceAmount,
+} from '../../services/pricing';
+import { rememberEphemeralMessage, clearInlineKeyboard } from '../../services/cleanup';
+import { ensurePrivateCallback, isPrivateChat } from '../../services/access';
+import { buildConfirmCancelKeyboard } from '../../keyboards/common';
 import type { BotContext, ClientOrderDraftState } from '../../types';
-import type { OrderLocation, OrderRecord } from '../../../types';
 
 export const START_DELIVERY_ORDER_ACTION = 'client:order:delivery:start';
 const CONFIRM_DELIVERY_ORDER_ACTION = 'client:order:delivery:confirm';
 const CANCEL_DELIVERY_ORDER_ACTION = 'client:order:delivery:cancel';
 
-const ensurePrivateChat = (ctx: BotContext): boolean => ctx.chat?.type === 'private';
-
 const getDraft = (ctx: BotContext): ClientOrderDraftState => ctx.session.client.delivery;
-
-const resetDraft = (draft: ClientOrderDraftState): void => {
-  draft.stage = 'idle';
-  draft.pickup = undefined;
-  draft.dropoff = undefined;
-  draft.price = undefined;
-  draft.confirmationMessageId = undefined;
-};
-
-const toOrderLocation = (location: GeocodingResult): OrderLocation => ({
-  query: location.query,
-  address: location.address,
-  latitude: location.latitude,
-  longitude: location.longitude,
-});
-
-const formatPrice = (amount: number, currency: string): string =>
-  `${new Intl.NumberFormat('ru-RU').format(amount)} ${currency}`;
-
-const formatDistance = (distanceKm: number): string => {
-  if (!Number.isFinite(distanceKm)) {
-    return 'н/д';
-  }
-
-  if (distanceKm < 0.1) {
-    return '<0.1';
-  }
-
-  return distanceKm.toFixed(1);
-};
-
-const buildSummary = (draft: ClientOrderDraftState): string => {
-  if (!draft.pickup || !draft.dropoff || !draft.price) {
-    throw new Error('Cannot build summary for incomplete delivery order draft');
-  }
-
-  const lines = [
-    '🚚 Доставка курьером',
-    '',
-    `📦 Забор: ${draft.pickup.address}`,
-    `📮 Доставка: ${draft.dropoff.address}`,
-    `📏 Расстояние: ${formatDistance(draft.price.distanceKm)} км`,
-    `💰 Оценка стоимости: ${formatPrice(draft.price.amount, draft.price.currency)}`,
-    '',
-    'Подтвердите заказ или отмените оформление.',
-  ];
-
-  return lines.join('\n');
-};
 
 const requestPickupAddress = async (ctx: BotContext): Promise<void> => {
   const prompt = await ctx.reply(
@@ -72,34 +34,51 @@ const requestPickupAddress = async (ctx: BotContext): Promise<void> => {
       'Например: «Абылайхана 10, офис 5».',
     ].join('\n'),
   );
-  ctx.session.ephemeralMessages.push(prompt.message_id);
+  rememberEphemeralMessage(ctx, prompt.message_id);
 };
 
-const requestDropoffAddress = async (ctx: BotContext, pickup: OrderLocation): Promise<void> => {
+const requestDropoffAddress = async (ctx: BotContext, pickup: CompletedOrderDraft['pickup']): Promise<void> => {
   const prompt = await ctx.reply(
     [`Адрес забора: ${pickup.address}.`, 'Теперь укажите адрес доставки.'].join('\n'),
   );
-  ctx.session.ephemeralMessages.push(prompt.message_id);
+  rememberEphemeralMessage(ctx, prompt.message_id);
 };
 
 const handleGeocodingFailure = async (ctx: BotContext): Promise<void> => {
   const message = await ctx.reply(
     'Не удалось распознать адрес. Пожалуйста, уточните формулировку и попробуйте снова.',
   );
-  ctx.session.ephemeralMessages.push(message.message_id);
+  rememberEphemeralMessage(ctx, message.message_id);
 };
 
 const applyPickupAddress = async (ctx: BotContext, draft: ClientOrderDraftState, text: string) => {
-  const result = await geocodeAddress(text);
-  if (!result) {
+  const pickup = await geocodeOrderLocation(text);
+  if (!pickup) {
     await handleGeocodingFailure(ctx);
     return;
   }
 
-  draft.pickup = toOrderLocation(result);
+  draft.pickup = pickup;
   draft.stage = 'collectingDropoff';
 
-  await requestDropoffAddress(ctx, draft.pickup);
+  await requestDropoffAddress(ctx, pickup);
+};
+
+const buildConfirmationKeyboard = () =>
+  buildConfirmCancelKeyboard(CONFIRM_DELIVERY_ORDER_ACTION, CANCEL_DELIVERY_ORDER_ACTION);
+
+const showConfirmation = async (ctx: BotContext, draft: CompletedOrderDraft): Promise<void> => {
+  const summary = buildOrderSummary(draft, {
+    title: '🚚 Доставка курьером',
+    pickupLabel: '📦 Забор',
+    dropoffLabel: '📮 Доставка',
+    distanceLabel: '📏 Расстояние',
+    priceLabel: '💰 Оценка стоимости',
+  });
+
+  const keyboard = buildConfirmationKeyboard();
+  const message = await ctx.reply(summary, { reply_markup: keyboard });
+  draft.confirmationMessageId = message.message_id;
 };
 
 const applyDropoffAddress = async (
@@ -107,13 +86,13 @@ const applyDropoffAddress = async (
   draft: ClientOrderDraftState,
   text: string,
 ): Promise<void> => {
-  const result = await geocodeAddress(text);
-  if (!result) {
+  const dropoff = await geocodeOrderLocation(text);
+  if (!dropoff) {
     await handleGeocodingFailure(ctx);
     return;
   }
 
-  draft.dropoff = toOrderLocation(result);
+  draft.dropoff = dropoff;
 
   if (!draft.pickup) {
     logger.warn('Delivery order draft is missing pickup after dropoff geocode');
@@ -121,60 +100,20 @@ const applyDropoffAddress = async (
     return;
   }
 
-  draft.price = estimateDeliveryPrice(draft.pickup, draft.dropoff);
+  draft.price = estimateDeliveryPrice(draft.pickup, dropoff);
   draft.stage = 'awaitingConfirmation';
 
-  const summary = buildSummary(draft);
-  const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('✅ Подтвердить', CONFIRM_DELIVERY_ORDER_ACTION)],
-    [Markup.button.callback('❌ Отменить', CANCEL_DELIVERY_ORDER_ACTION)],
-  ]);
-  const message = await ctx.reply(summary, keyboard);
-  draft.confirmationMessageId = message.message_id;
-};
-
-const removeConfirmationKeyboard = async (
-  ctx: BotContext,
-  draft: ClientOrderDraftState,
-): Promise<void> => {
-  if (!draft.confirmationMessageId || !ctx.chat) {
-    return;
-  }
-
-  try {
-    await ctx.telegram.editMessageReplyMarkup(
-      ctx.chat.id,
-      draft.confirmationMessageId,
-      undefined,
-      undefined,
-    );
-  } catch (error) {
-    logger.debug(
-      { err: error, chatId: ctx.chat.id, messageId: draft.confirmationMessageId },
-      'Failed to clear confirmation keyboard for delivery order',
-    );
+  if (isOrderDraftComplete(draft)) {
+    await showConfirmation(ctx, draft);
   }
 };
 
 const cancelOrderDraft = async (ctx: BotContext, draft: ClientOrderDraftState): Promise<void> => {
-  await removeConfirmationKeyboard(ctx, draft);
-  resetDraft(draft);
+  await clearInlineKeyboard(ctx, draft.confirmationMessageId);
+  resetClientOrderDraft(draft);
 
   const message = await ctx.reply('Оформление доставки отменено.');
-  ctx.session.ephemeralMessages.push(message.message_id);
-};
-
-type CompletedDeliveryDraft = ClientOrderDraftState &
-  Required<Pick<ClientOrderDraftState, 'pickup' | 'dropoff' | 'price'>>;
-
-const ensureCompletion = (draft: ClientOrderDraftState): draft is CompletedDeliveryDraft =>
-  Boolean(draft.pickup && draft.dropoff && draft.price);
-
-const buildCustomerName = (ctx: BotContext): string | undefined => {
-  const first = ctx.session.user?.firstName?.trim();
-  const last = ctx.session.user?.lastName?.trim();
-  const full = [first, last].filter(Boolean).join(' ').trim();
-  return full || undefined;
+  rememberEphemeralMessage(ctx, message.message_id);
 };
 
 const notifyOrderCreated = async (
@@ -184,7 +123,7 @@ const notifyOrderCreated = async (
 ): Promise<void> => {
   const lines = [
     `Заказ на доставку №${order.id} создан.`,
-    `Стоимость по расчёту: ${formatPrice(order.price.amount, order.price.currency)}.`,
+    `Стоимость по расчёту: ${formatPriceAmount(order.price.amount, order.price.currency)}.`,
   ];
 
   if (publishStatus === 'missing_channel') {
@@ -192,14 +131,14 @@ const notifyOrderCreated = async (
   }
 
   const message = await ctx.reply(lines.join('\n'));
-  ctx.session.ephemeralMessages.push(message.message_id);
+  rememberEphemeralMessage(ctx, message.message_id);
 };
 
 const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Promise<void> => {
-  if (!ensureCompletion(draft)) {
+  if (!isOrderDraftComplete(draft)) {
     const warning = await ctx.reply('Не удалось подтвердить заказ: отсутствуют данные адресов.');
-    ctx.session.ephemeralMessages.push(warning.message_id);
-    resetDraft(draft);
+    rememberEphemeralMessage(ctx, warning.message_id);
+    resetClientOrderDraft(draft);
     return;
   }
 
@@ -229,10 +168,10 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
   } catch (error) {
     logger.error({ err: error }, 'Failed to create delivery order');
     const failure = await ctx.reply('Не удалось создать заказ. Попробуйте позже.');
-    ctx.session.ephemeralMessages.push(failure.message_id);
+    rememberEphemeralMessage(ctx, failure.message_id);
   } finally {
-    await removeConfirmationKeyboard(ctx, draft);
-    resetDraft(draft);
+    await clearInlineKeyboard(ctx, draft.confirmationMessageId);
+    resetClientOrderDraft(draft);
   }
 };
 
@@ -251,7 +190,7 @@ const processCancellationText = async (
 };
 
 const handleIncomingText = async (ctx: BotContext, next: () => Promise<void>): Promise<void> => {
-  if (!ensurePrivateChat(ctx)) {
+  if (!isPrivateChat(ctx)) {
     await next();
     return;
   }
@@ -293,7 +232,7 @@ const handleIncomingText = async (ctx: BotContext, next: () => Promise<void>): P
       const reminder = await ctx.reply(
         'Используйте кнопки ниже, чтобы подтвердить или отменить заказ.',
       );
-      ctx.session.ephemeralMessages.push(reminder.message_id);
+      rememberEphemeralMessage(ctx, reminder.message_id);
       break;
     }
     default:
@@ -302,40 +241,31 @@ const handleIncomingText = async (ctx: BotContext, next: () => Promise<void>): P
 };
 
 const handleStart = async (ctx: BotContext): Promise<void> => {
-  if (!ensurePrivateChat(ctx)) {
-    await ctx.answerCbQuery('Оформление заказа доступно только в личном чате с ботом.');
+  if (!(await ensurePrivateCallback(ctx, undefined, 'Оформление заказа доступно только в личном чате с ботом.'))) {
     return;
   }
 
-  await ctx.answerCbQuery();
-
   const draft = getDraft(ctx);
-  resetDraft(draft);
+  resetClientOrderDraft(draft);
   draft.stage = 'collectingPickup';
-  resetDraft(ctx.session.client.taxi);
+  resetClientOrderDraft(ctx.session.client.taxi);
 
   await requestPickupAddress(ctx);
 };
 
 const handleConfirmationAction = async (ctx: BotContext): Promise<void> => {
-  if (!ensurePrivateChat(ctx)) {
-    await ctx.answerCbQuery('Подтвердите заказ в личном чате с ботом.');
+  if (!(await ensurePrivateCallback(ctx, undefined, 'Подтвердите заказ в личном чате с ботом.'))) {
     return;
   }
-
-  await ctx.answerCbQuery();
 
   const draft = getDraft(ctx);
   await confirmOrder(ctx, draft);
 };
 
 const handleCancellationAction = async (ctx: BotContext): Promise<void> => {
-  if (!ensurePrivateChat(ctx)) {
-    await ctx.answerCbQuery('Отмените заказ в личном чате с ботом.');
+  if (!(await ensurePrivateCallback(ctx, 'Оформление отменено.', 'Отмените заказ в личном чате с ботом.'))) {
     return;
   }
-
-  await ctx.answerCbQuery('Оформление отменено.');
 
   const draft = getDraft(ctx);
   await cancelOrderDraft(ctx, draft);
@@ -355,14 +285,14 @@ export const registerDeliveryOrderFlow = (bot: Telegraf<BotContext>): void => {
   });
 
   bot.command('delivery', async (ctx) => {
-    if (!ensurePrivateChat(ctx)) {
+    if (!isPrivateChat(ctx)) {
       return;
     }
 
     const draft = getDraft(ctx);
-    resetDraft(draft);
+    resetClientOrderDraft(draft);
     draft.stage = 'collectingPickup';
-    resetDraft(ctx.session.client.taxi);
+    resetClientOrderDraft(ctx.session.client.taxi);
 
     await requestPickupAddress(ctx);
   });
