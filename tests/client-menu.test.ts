@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
 import type { Telegraf } from 'telegraf';
-import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
+import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'typegram'; // <--- Исправлено!
 import {
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
   type BotContext,
@@ -166,7 +166,8 @@ describe('client menu role selection', () => {
     const keyboard = (replyCalls[0].extra as { reply_markup?: InlineKeyboardMarkup }).reply_markup;
     assert.ok(keyboard, 'Client menu keyboard should be provided');
 
-    const labels = keyboard.inline_keyboard.map((row) => row.map(getButtonText));
+    // FIX: Явная типизация row!
+    const labels = keyboard.inline_keyboard.map((row: InlineKeyboardButton[]) => row.map(getButtonText));
     assert.deepEqual(labels, [
       ['🚕 Заказать такси'],
       ['📦 Заказать доставку'],
