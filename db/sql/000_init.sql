@@ -2,13 +2,54 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Domain types used throughout the schema.
-CREATE TYPE IF NOT EXISTS user_role AS ENUM ('client', 'courier', 'driver', 'moderator');
-CREATE TYPE IF NOT EXISTS order_kind AS ENUM ('taxi', 'delivery');
-CREATE TYPE IF NOT EXISTS order_status AS ENUM ('open', 'claimed', 'cancelled', 'done');
-CREATE TYPE IF NOT EXISTS verification_role AS ENUM ('courier', 'driver');
-CREATE TYPE IF NOT EXISTS verification_status AS ENUM ('pending', 'active', 'rejected', 'expired');
-CREATE TYPE IF NOT EXISTS subscription_status AS ENUM ('pending', 'active', 'rejected', 'expired');
-CREATE TYPE IF NOT EXISTS payment_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE user_role AS ENUM ('client', 'courier', 'driver', 'moderator');
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_kind') THEN
+        CREATE TYPE order_kind AS ENUM ('taxi', 'delivery');
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
+        CREATE TYPE order_status AS ENUM ('open', 'claimed', 'cancelled', 'done');
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_role') THEN
+        CREATE TYPE verification_role AS ENUM ('courier', 'driver');
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_status') THEN
+        CREATE TYPE verification_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status') THEN
+        CREATE TYPE subscription_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_status') THEN
+        CREATE TYPE payment_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+    END IF;
+END $$;
 
 -- Core reference data.
 CREATE TABLE IF NOT EXISTS users (
