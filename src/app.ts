@@ -50,6 +50,20 @@ registerJobs(app);
 
 let gracefulShutdownConfigured = false;
 
+const botAlreadyStoppedPatterns = [
+  /bot is not running/i,
+  /bot has not been started/i,
+  /stop\s+.*before\s+start/i,
+];
+
+const isBotAlreadyStoppedError = (error: unknown): error is Error => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return botAlreadyStoppedPatterns.some((pattern) => pattern.test(error.message));
+};
+
 export const setupGracefulShutdown = (bot: Telegraf<BotContext>): void => {
   if (gracefulShutdownConfigured) {
     return;
@@ -68,7 +82,15 @@ export const setupGracefulShutdown = (bot: Telegraf<BotContext>): void => {
       logger.info({ signal }, 'Received shutdown signal, stopping bot');
       const cleanup = async (): Promise<void> => {
         try {
-          bot.stop(`Received ${signal}`);
+          try {
+            bot.stop(`Received ${signal}`);
+          } catch (error) {
+            if (isBotAlreadyStoppedError(error)) {
+              logger.warn({ err: error }, 'Bot already stopped before cleanup, continuing shutdown');
+            } else {
+              throw error;
+            }
+          }
           await pool.end();
           logger.info('Shutdown cleanup completed, exiting process');
           process.exit(0);
