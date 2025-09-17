@@ -14,6 +14,12 @@ are missing or blank.
 - `KASPI_NAME` – Account holder name displayed alongside the Kaspi details.
 - `KASPI_PHONE` – Contact phone number provided with the Kaspi payment details.
 
+## Database options
+
+- `DATABASE_SSL` – Enables TLS for the PostgreSQL connection when set to `true`,
+  `1` or `yes`. The connection negotiates SSL with certificate validation. Leave
+  the variable unset (or explicitly set it to `false`) to connect without TLS.
+
 ## Subscription settings
 
 - `SUB_PRICE_7`, `SUB_PRICE_15`, `SUB_PRICE_30` – Override subscription prices (in

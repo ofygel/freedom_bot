@@ -1,13 +1,19 @@
 import { Pool, PoolClient } from 'pg';
-import dotenv from 'dotenv';
+import type { PoolConfig } from 'pg';
 
-dotenv.config();
+import { config } from '../config';
+
+const createSslOptions = (): PoolConfig['ssl'] => {
+  if (!config.database.ssl) {
+    return false;
+  }
+
+  return { rejectUnauthorized: true } satisfies NonNullable<PoolConfig['ssl']>;
+};
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production'
-    ? { rejectUnauthorized: false }
-    : false,
+  connectionString: config.database.url,
+  ssl: createSslOptions(),
 });
 
 export { pool };           // Named export (import { pool } from ...)
