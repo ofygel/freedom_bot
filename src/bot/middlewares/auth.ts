@@ -193,29 +193,47 @@ const applyAuthState = (ctx: BotContext, authState: AuthState): void => {
   }
 };
 
+type ChatWithType = Nullable<{ type?: string }>;
+
+const isChannelChat = (chat: ChatWithType): boolean => chat?.type === 'channel';
+
+const hasChannelSender = (sender: ChatWithType): boolean => sender?.type === 'channel';
+
 const isChannelUpdate = (ctx: BotContext): boolean => {
-  if (ctx.chat?.type === 'channel') {
+  if (isChannelChat(ctx.chat)) {
     return true;
   }
 
-  if (ctx.channelPost) {
+  if (ctx.channelPost && isChannelChat(ctx.channelPost.chat)) {
     return true;
   }
 
-  if (ctx.senderChat?.type === 'channel') {
+  if (hasChannelSender(ctx.senderChat)) {
     return true;
   }
 
   const update = ctx.update as {
     channel_post?: { chat?: { type?: string } };
     edited_channel_post?: { chat?: { type?: string } };
+    message?: { chat?: { type?: string }; sender_chat?: { type?: string } };
+    edited_message?: { chat?: { type?: string }; sender_chat?: { type?: string } };
   };
 
-  if (update.channel_post?.chat?.type === 'channel') {
+  if (
+    isChannelChat(update.channel_post?.chat) ||
+    isChannelChat(update.edited_channel_post?.chat)
+  ) {
     return true;
   }
 
-  if (update.edited_channel_post?.chat?.type === 'channel') {
+  if (
+    hasChannelSender(update.message?.sender_chat) ||
+    hasChannelSender(update.edited_message?.sender_chat)
+  ) {
+    return true;
+  }
+
+  if (isChannelChat(update.message?.chat) || isChannelChat(update.edited_message?.chat)) {
     return true;
   }
 
