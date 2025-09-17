@@ -17,18 +17,22 @@ BEGIN
                 ALTER COLUMN status TYPE text USING status::text;
         END IF;
 
-        UPDATE verifications SET status = 'active' WHERE status = 'approved';
-        UPDATE verifications SET status = 'expired' WHERE status IN ('cancelled', 'canceled');
+        UPDATE verifications
+        SET status = 'approved'
+        WHERE status IN ('active', 'approved', 'expired');
+        UPDATE verifications
+        SET status = 'rejected'
+        WHERE status IN ('cancelled', 'canceled');
         UPDATE verifications
         SET status = 'pending'
-        WHERE status NOT IN ('pending', 'active', 'rejected', 'expired') OR status IS NULL;
+        WHERE status NOT IN ('pending', 'approved', 'rejected') OR status IS NULL;
 
         DROP TYPE verification_status;
     END IF;
 END
 $$;
 
-CREATE TYPE IF NOT EXISTS verification_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+CREATE TYPE IF NOT EXISTS verification_status AS ENUM ('pending', 'approved', 'rejected');
 
 DO $$
 BEGIN
@@ -122,11 +126,15 @@ BEGIN
         ALTER TABLE payments
             ALTER COLUMN status TYPE text USING status::text;
 
-        UPDATE payments SET status = 'active' WHERE status = 'succeeded';
-        UPDATE payments SET status = 'rejected' WHERE status IN ('failed', 'rejected');
+        UPDATE payments
+        SET status = 'approved'
+        WHERE status IN ('succeeded', 'active', 'approved');
+        UPDATE payments
+        SET status = 'rejected'
+        WHERE status IN ('failed', 'rejected', 'cancelled', 'canceled', 'expired');
         UPDATE payments
         SET status = 'pending'
-        WHERE status NOT IN ('pending', 'active', 'rejected', 'expired') OR status IS NULL;
+        WHERE status NOT IN ('pending', 'approved', 'rejected') OR status IS NULL;
     END IF;
 END
 $$;
@@ -139,7 +147,7 @@ BEGIN
 END
 $$;
 
-CREATE TYPE IF NOT EXISTS payment_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+CREATE TYPE IF NOT EXISTS payment_status AS ENUM ('pending', 'approved', 'rejected');
 
 DO $$
 BEGIN
@@ -169,36 +177,125 @@ $$;
 
 -- Ensure tables exist so later alterations succeed.
 CREATE TABLE IF NOT EXISTS users (
-    id          bigserial PRIMARY KEY,
-    tg_id       bigint      NOT NULL,
+    tg_id       bigint      PRIMARY KEY,
     username    text,
     first_name  text,
     last_name   text,
     phone       text,
     role        user_role   NOT NULL DEFAULT 'client',
-    is_verified boolean     NOT NULL DEFAULT false,
-    marketing_opt_in boolean NOT NULL DEFAULT false,
-    is_blocked  boolean     NOT NULL DEFAULT false,
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT users_tg_id_unique UNIQUE (tg_id),
     CONSTRAINT users_phone_unique UNIQUE (phone)
 );
 
 DO $$
+DECLARE
+    has_legacy_id boolean;
 BEGIN
-    IF NOT EXISTS (
+    SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'users'
+          AND column_name = 'id'
+    )
+    INTO has_legacy_id;
+
+    IF has_legacy_id THEN
+        UPDATE verifications v
+        SET user_id = u.tg_id
+        FROM users u
+        WHERE v.user_id = u.id;
+
+        UPDATE orders o
+        SET client_id = u.tg_id
+        FROM users u
+        WHERE o.client_id = u.id;
+
+        UPDATE orders o
+        SET claimed_by = u.tg_id
+        FROM users u
+        WHERE o.claimed_by = u.id;
+
+        UPDATE subscriptions s
+        SET user_id = u.tg_id
+        FROM users u
+        WHERE s.user_id = u.id;
+
+        UPDATE payments p
+        SET user_id = u.tg_id
+        FROM users u
+        WHERE p.user_id = u.id;
+
+        UPDATE support_threads st
+        SET user_tg_id = u.tg_id
+        FROM users u
+        WHERE st.user_tg_id = u.id;
+
+        ALTER TABLE users DROP CONSTRAINT IF EXISTS users_pkey;
+        ALTER TABLE users DROP COLUMN id;
+        IF EXISTS (
+            SELECT 1 FROM pg_class WHERE relname = 'users_id_seq'
+        ) THEN
+            EXECUTE 'DROP SEQUENCE users_id_seq';
+        END IF;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'users'
+          AND column_name = 'is_verified'
+    ) THEN
+        ALTER TABLE users DROP COLUMN is_verified;
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'users'
+          AND column_name = 'marketing_opt_in'
+    ) THEN
+        ALTER TABLE users DROP COLUMN marketing_opt_in;
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'users'
+          AND column_name = 'is_blocked'
+    ) THEN
+        ALTER TABLE users DROP COLUMN is_blocked;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    ALTER TABLE users ALTER COLUMN tg_id SET NOT NULL;
+    IF EXISTS (
         SELECT 1
         FROM pg_constraint
-        WHERE conname = 'users_tg_id_unique'
+        WHERE conrelid = 'users'::regclass
+          AND conname = 'users_tg_id_unique'
     ) THEN
-        ALTER TABLE users
-            ADD CONSTRAINT users_tg_id_unique UNIQUE (tg_id);
+        ALTER TABLE users DROP CONSTRAINT users_tg_id_unique;
     END IF;
     IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint
-        WHERE conname = 'users_phone_unique'
+        WHERE conrelid = 'users'::regclass
+          AND contype = 'p'
+    ) THEN
+        ALTER TABLE users
+            ADD CONSTRAINT users_pkey PRIMARY KEY (tg_id);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'users'::regclass
+          AND conname = 'users_phone_unique'
     ) THEN
         ALTER TABLE users
             ADD CONSTRAINT users_phone_unique UNIQUE (phone);
@@ -261,19 +358,18 @@ CREATE TABLE IF NOT EXISTS orders (
     distance_km       double precision NOT NULL,
     channel_message_id bigint,
     created_at        timestamptz NOT NULL DEFAULT now(),
+    updated_at        timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT orders_short_id_unique UNIQUE (short_id)
 );
 
 CREATE TABLE IF NOT EXISTS order_channel_posts (
     id          bigserial PRIMARY KEY,
     order_id    bigint      NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    idx         integer     NOT NULL,
     channel_id  bigint      NOT NULL,
     message_id  bigint      NOT NULL,
     thread_id   bigint,
     published_at timestamptz NOT NULL DEFAULT now(),
-    updated_at   timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT order_channel_posts_order_idx_unique UNIQUE (order_id, idx),
+    CONSTRAINT order_channel_posts_order_channel_unique UNIQUE (order_id, channel_id),
     CONSTRAINT order_channel_posts_channel_message_unique UNIQUE (channel_id, message_id)
 );
 
@@ -283,16 +379,12 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     user_id            bigint      NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
     chat_id            bigint      NOT NULL,
     plan               text        NOT NULL,
-    tier               text,
     status             subscription_status NOT NULL DEFAULT 'pending',
     currency           text        NOT NULL,
     amount             integer     NOT NULL,
-    interval           text        NOT NULL,
-    interval_count     integer     NOT NULL DEFAULT 1,
-    days               integer     NOT NULL DEFAULT 0,
+    period_days        integer     NOT NULL DEFAULT 0,
     next_billing_at    timestamptz,
     grace_until        timestamptz,
-    cancel_at_period_end boolean   NOT NULL DEFAULT false,
     cancelled_at       timestamptz,
     ended_at           timestamptz,
     metadata           jsonb       NOT NULL DEFAULT '{}'::jsonb,
@@ -311,16 +403,15 @@ CREATE TABLE IF NOT EXISTS payments (
     amount              integer     NOT NULL,
     currency            text        NOT NULL,
     status              payment_status NOT NULL DEFAULT 'pending',
-    payment_provider    text        NOT NULL,
+    provider            text        NOT NULL,
     provider_payment_id text,
-    provider_customer_id text,
     invoice_url         text,
     receipt_url         text,
     period_start        timestamptz,
     period_end          timestamptz,
     paid_at             timestamptz,
-    days                integer,
-    file_id             text,
+    period_days         integer,
+    receipt_file_id     text,
     metadata            jsonb       NOT NULL DEFAULT '{}'::jsonb,
     created_at          timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT payments_short_id_unique UNIQUE (short_id),
@@ -328,7 +419,7 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 
 CREATE TABLE IF NOT EXISTS callback_map (
-    idx        bigserial PRIMARY KEY,
+    id         bigserial PRIMARY KEY,
     token      text        NOT NULL UNIQUE,
     action     text        NOT NULL,
     chat_id    bigint,
@@ -349,7 +440,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS support_threads (
     id                    text PRIMARY KEY,
-    short_id              text        NOT NULL DEFAULT substr(gen_random_uuid()::text, 1, 8),
     user_chat_id          bigint      NOT NULL,
     user_tg_id            bigint REFERENCES users(tg_id),
     user_message_id       bigint      NOT NULL,
@@ -359,40 +449,8 @@ CREATE TABLE IF NOT EXISTS support_threads (
     closed_at             timestamptz,
     created_at            timestamptz NOT NULL DEFAULT now(),
     updated_at            timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT support_threads_status_check CHECK (status IN ('open', 'closed')),
-    CONSTRAINT support_threads_short_id_unique UNIQUE (short_id)
+    CONSTRAINT support_threads_status_check CHECK (status IN ('open', 'closed'))
 );
-
--- Bring legacy foreign keys in line with the tg_id based relationships.
-UPDATE verifications v
-SET user_id = u.tg_id
-FROM users u
-WHERE v.user_id = u.id;
-
-UPDATE orders o
-SET client_id = u.tg_id
-FROM users u
-WHERE o.client_id = u.id;
-
-UPDATE orders o
-SET claimed_by = u.tg_id
-FROM users u
-WHERE o.claimed_by = u.id;
-
-UPDATE subscriptions s
-SET user_id = u.tg_id
-FROM users u
-WHERE s.user_id = u.id;
-
-UPDATE payments p
-SET user_id = u.tg_id
-FROM users u
-WHERE p.user_id = u.id;
-
-UPDATE support_threads st
-SET user_tg_id = u.tg_id
-FROM users u
-WHERE st.user_tg_id = u.id;
 
 ALTER TABLE verifications DROP CONSTRAINT IF EXISTS verifications_user_id_fkey;
 ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_client_id_fkey;
@@ -451,38 +509,53 @@ BEGIN
 END
 $$;
 
-ALTER TABLE order_channel_posts
-    ADD COLUMN IF NOT EXISTS idx integer;
-
-WITH ordered AS (
-    SELECT id, order_id,
-           ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY id) AS rn
-    FROM order_channel_posts
-)
-UPDATE order_channel_posts ocp
-SET idx = ordered.rn
-FROM ordered
-WHERE ocp.id = ordered.id
-  AND (ocp.idx IS NULL OR ocp.idx <= 0);
-
 DO $$
 BEGIN
-    ALTER TABLE order_channel_posts ALTER COLUMN idx SET NOT NULL;
-EXCEPTION
-    WHEN not_null_violation THEN
-        NULL;
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'order_channel_posts'
+          AND column_name = 'idx'
+    ) THEN
+        ALTER TABLE order_channel_posts
+            DROP CONSTRAINT IF EXISTS order_channel_posts_order_idx_unique;
+        ALTER TABLE order_channel_posts
+            DROP COLUMN idx;
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'order_channel_posts'
+          AND column_name = 'updated_at'
+    ) THEN
+        ALTER TABLE order_channel_posts DROP COLUMN updated_at;
+    END IF;
 END
 $$;
+
+WITH duplicates AS (
+    SELECT id
+    FROM (
+        SELECT id,
+               ROW_NUMBER() OVER (PARTITION BY order_id, channel_id ORDER BY id) AS rn
+        FROM order_channel_posts
+    ) ranked
+    WHERE ranked.rn > 1
+)
+DELETE FROM order_channel_posts
+WHERE id IN (SELECT id FROM duplicates);
 
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint
-        WHERE conname = 'order_channel_posts_order_idx_unique'
+        WHERE conname = 'order_channel_posts_order_channel_unique'
     ) THEN
         ALTER TABLE order_channel_posts
-            ADD CONSTRAINT order_channel_posts_order_idx_unique UNIQUE (order_id, idx);
+            ADD CONSTRAINT order_channel_posts_order_channel_unique UNIQUE (order_id, channel_id);
     END IF;
     IF NOT EXISTS (
         SELECT 1
@@ -492,6 +565,25 @@ BEGIN
         ALTER TABLE order_channel_posts
             ADD CONSTRAINT order_channel_posts_channel_message_unique UNIQUE (channel_id, message_id);
     END IF;
+END
+$$;
+
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+UPDATE orders
+SET updated_at = COALESCE(updated_at, created_at, now())
+WHERE updated_at IS NULL;
+
+ALTER TABLE orders
+    ALTER COLUMN updated_at SET DEFAULT now();
+
+DO $$
+BEGIN
+    ALTER TABLE orders ALTER COLUMN updated_at SET NOT NULL;
+EXCEPTION
+    WHEN not_null_violation THEN
+        NULL;
 END
 $$;
 
@@ -529,25 +621,54 @@ $$;
 
 ALTER TABLE subscriptions
     ADD COLUMN IF NOT EXISTS short_id text;
-ALTER TABLE subscriptions
-    ADD COLUMN IF NOT EXISTS days integer;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'subscriptions'
+          AND column_name = 'days'
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'subscriptions'
+          AND column_name = 'period_days'
+    ) THEN
+        ALTER TABLE subscriptions
+            RENAME COLUMN days TO period_days;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'subscriptions'
+          AND column_name = 'period_days'
+    ) THEN
+        ALTER TABLE subscriptions
+            ADD COLUMN period_days integer;
+    END IF;
+END
+$$;
 
 UPDATE subscriptions
 SET short_id = substr(gen_random_uuid()::text, 1, 8)
 WHERE short_id IS NULL OR length(trim(short_id)) = 0;
 
 UPDATE subscriptions
-SET days = COALESCE(days, 0)
-WHERE days IS NULL;
+SET period_days = COALESCE(period_days, 0)
+WHERE period_days IS NULL;
 
 UPDATE subscriptions
-SET days = GREATEST(interval_count, 0)
-WHERE days = 0 AND interval_count IS NOT NULL;
+SET period_days = GREATEST(interval_count, 0)
+WHERE period_days = 0 AND interval_count IS NOT NULL;
 
 ALTER TABLE subscriptions
     ALTER COLUMN short_id SET DEFAULT substr(gen_random_uuid()::text, 1, 8);
 ALTER TABLE subscriptions
-    ALTER COLUMN days SET DEFAULT 0;
+    ALTER COLUMN period_days SET DEFAULT 0;
 
 DO $$
 BEGIN
@@ -560,12 +681,17 @@ $$;
 
 DO $$
 BEGIN
-    ALTER TABLE subscriptions ALTER COLUMN days SET NOT NULL;
+    ALTER TABLE subscriptions ALTER COLUMN period_days SET NOT NULL;
 EXCEPTION
     WHEN not_null_violation THEN
         NULL;
 END
 $$;
+
+ALTER TABLE subscriptions DROP COLUMN IF EXISTS tier;
+ALTER TABLE subscriptions DROP COLUMN IF EXISTS interval;
+ALTER TABLE subscriptions DROP COLUMN IF EXISTS interval_count;
+ALTER TABLE subscriptions DROP COLUMN IF EXISTS cancel_at_period_end;
 
 DO $$
 BEGIN
@@ -590,10 +716,85 @@ $$;
 
 ALTER TABLE payments
     ADD COLUMN IF NOT EXISTS short_id text;
-ALTER TABLE payments
-    ADD COLUMN IF NOT EXISTS days integer;
-ALTER TABLE payments
-    ADD COLUMN IF NOT EXISTS file_id text;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payments'
+          AND column_name = 'payment_provider'
+    ) THEN
+        ALTER TABLE payments
+            RENAME COLUMN payment_provider TO provider;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payments'
+          AND column_name = 'days'
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payments'
+          AND column_name = 'period_days'
+    ) THEN
+        ALTER TABLE payments
+            RENAME COLUMN days TO period_days;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payments'
+          AND column_name = 'period_days'
+    ) THEN
+        ALTER TABLE payments
+            ADD COLUMN period_days integer;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payments'
+          AND column_name = 'file_id'
+    ) AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payments'
+          AND column_name = 'receipt_file_id'
+    ) THEN
+        ALTER TABLE payments
+            RENAME COLUMN file_id TO receipt_file_id;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payments'
+          AND column_name = 'receipt_file_id'
+    ) THEN
+        ALTER TABLE payments
+            ADD COLUMN receipt_file_id text;
+    END IF;
+END
+$$;
+
+ALTER TABLE payments DROP COLUMN IF EXISTS provider_customer_id;
 
 UPDATE payments
 SET short_id = substr(gen_random_uuid()::text, 1, 8)
@@ -624,8 +825,39 @@ BEGIN
 END
 $$;
 
-ALTER TABLE callback_map
-    ADD COLUMN IF NOT EXISTS idx bigserial;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'callback_map'
+          AND column_name = 'idx'
+    ) THEN
+        ALTER TABLE callback_map RENAME COLUMN idx TO id;
+        IF EXISTS (
+            SELECT 1 FROM pg_class WHERE relname = 'callback_map_idx_seq'
+        ) THEN
+            EXECUTE 'ALTER SEQUENCE callback_map_idx_seq RENAME TO callback_map_id_seq';
+        END IF;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class
+        WHERE relname = 'callback_map_id_seq'
+          AND relkind = 'S'
+    ) THEN
+        EXECUTE 'CREATE SEQUENCE callback_map_id_seq';
+    END IF;
+    EXECUTE 'ALTER SEQUENCE callback_map_id_seq OWNED BY callback_map.id';
+    EXECUTE 'ALTER TABLE callback_map ALTER COLUMN id SET DEFAULT nextval(''callback_map_id_seq'')';
+END
+$$;
 
 DO $$
 BEGIN
@@ -641,7 +873,7 @@ END
 $$;
 
 ALTER TABLE callback_map
-    ADD CONSTRAINT callback_map_pkey PRIMARY KEY (idx);
+    ADD CONSTRAINT callback_map_pkey PRIMARY KEY (id);
 
 DO $$
 BEGIN
@@ -656,34 +888,19 @@ BEGIN
 END
 $$;
 
-ALTER TABLE support_threads
-    ADD COLUMN IF NOT EXISTS short_id text;
-
-UPDATE support_threads
-SET short_id = substr(gen_random_uuid()::text, 1, 8)
-WHERE short_id IS NULL OR length(trim(short_id)) = 0;
-
-ALTER TABLE support_threads
-    ALTER COLUMN short_id SET DEFAULT substr(gen_random_uuid()::text, 1, 8);
-
 DO $$
 BEGIN
-    ALTER TABLE support_threads ALTER COLUMN short_id SET NOT NULL;
-EXCEPTION
-    WHEN not_null_violation THEN
-        NULL;
-END
-$$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
+    IF EXISTS (
         SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'support_threads_short_id_unique'
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'support_threads'
+          AND column_name = 'short_id'
     ) THEN
         ALTER TABLE support_threads
-            ADD CONSTRAINT support_threads_short_id_unique UNIQUE (short_id);
+            DROP CONSTRAINT IF EXISTS support_threads_short_id_unique;
+        ALTER TABLE support_threads
+            DROP COLUMN short_id;
     END IF;
 END
 $$;
