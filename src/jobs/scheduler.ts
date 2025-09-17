@@ -16,6 +16,23 @@ const CRON_EXPRESSION = '*/10 * * * *';
 let task: ScheduledTask | null = null;
 let running = false;
 
+const isPromiseLike = (value: unknown): value is PromiseLike<void> =>
+  typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function';
+
+const runSafely = (action: () => void | Promise<void>, errorMessage: string): void => {
+  try {
+    const result = action();
+
+    if (isPromiseLike(result)) {
+      void result.catch((error) => {
+        logger.error({ err: error }, errorMessage);
+      });
+    }
+  } catch (error) {
+    logger.error({ err: error }, errorMessage);
+  }
+};
+
 const formatDateTime = (date: Date): string =>
   new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'long',
@@ -244,4 +261,19 @@ export const startSubscriptionScheduler = (
   });
 
   logger.info('Subscription scheduler initialised');
+};
+
+export const stopSubscriptionScheduler = (): void => {
+  if (!task) {
+    return;
+  }
+
+  const scheduledTask = task;
+  task = null;
+  running = false;
+
+  runSafely(() => scheduledTask.stop(), 'Failed to stop subscription scheduler task');
+  runSafely(() => scheduledTask.destroy(), 'Failed to destroy subscription scheduler task');
+
+  logger.info('Subscription scheduler stopped');
 };

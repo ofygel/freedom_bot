@@ -1,5 +1,6 @@
 import { app, isShutdownInProgress, setupGracefulShutdown } from './app';
 import { logger } from './config';
+import { registerJobs } from './jobs';
 
 const gracefulShutdownErrorPatterns = [
   /bot is not running/i,
@@ -50,6 +51,7 @@ const isGracefulShutdownError = (error: unknown): boolean => {
 const start = async (): Promise<void> => {
   try {
     await app.launch();
+    registerJobs(app);
     logger.info('Bot started using long polling');
   } catch (error) {
     if (isShutdownInProgress()) {
@@ -57,7 +59,7 @@ const start = async (): Promise<void> => {
     } else if (isGracefulShutdownError(error)) {
       logger.info({ err: error }, 'Bot stopped gracefully');
     } else {
-      logger.fatal({ err: error }, 'Failed to launch bot');
+      logger.fatal({ err: error }, 'Failed to start bot or jobs');
       process.exitCode = 1;
     }
   }

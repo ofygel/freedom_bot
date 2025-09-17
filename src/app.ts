@@ -20,7 +20,6 @@ import { session } from './bot/middlewares/session';
 import type { BotContext } from './bot/types';
 import { config, logger } from './config';
 import { pool } from './db';
-import { registerJobs } from './jobs';
 
 export const app = new Telegraf<BotContext>(config.bot.token);
 
@@ -46,7 +45,6 @@ registerVerificationModerationQueue(app);
 registerPaymentModerationQueue(app);
 registerOrdersChannel(app);
 registerJoinRequests(app);
-registerJobs(app);
 
 let gracefulShutdownConfigured = false;
 let cleanupStarted = false;
