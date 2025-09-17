@@ -1,4 +1,4 @@
-import { app, setupGracefulShutdown } from './app';
+import { app, isShutdownInProgress, setupGracefulShutdown } from './app';
 import { logger } from './config';
 
 const gracefulShutdownErrorPatterns = [
@@ -52,7 +52,9 @@ const start = async (): Promise<void> => {
     await app.launch();
     logger.info('Bot started using long polling');
   } catch (error) {
-    if (isGracefulShutdownError(error)) {
+    if (isShutdownInProgress()) {
+      logger.info({ err: error }, 'Bot stopped gracefully');
+    } else if (isGracefulShutdownError(error)) {
       logger.info({ err: error }, 'Bot stopped gracefully');
     } else {
       logger.fatal({ err: error }, 'Failed to launch bot');
