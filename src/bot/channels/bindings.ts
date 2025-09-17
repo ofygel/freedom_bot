@@ -40,7 +40,7 @@ export const saveChannelBinding = async (
   await pool.query(
     `
       INSERT INTO channels (id, ${column})
-      VALUES (true, $1)
+      VALUES (1, $1)
       ON CONFLICT (id) DO UPDATE
       SET ${column} = EXCLUDED.${column}
     `,
@@ -57,7 +57,7 @@ export const getChannelBinding = async (
     `
       SELECT verify_channel_id, drivers_channel_id
       FROM channels
-      WHERE id = true
+      WHERE id = 1
       LIMIT 1
     `,
   );
