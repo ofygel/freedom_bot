@@ -1477,6 +1477,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 
 ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS short_id text;
+ALTER TABLE subscriptions
     ADD COLUMN IF NOT EXISTS user_id bigint;
 ALTER TABLE subscriptions
     ADD COLUMN IF NOT EXISTS chat_id bigint;
@@ -1553,6 +1555,22 @@ BEGIN
         ALTER TABLE subscriptions
             RENAME COLUMN period_days TO days;
     END IF;
+END
+$$;
+
+UPDATE subscriptions
+SET short_id = substr(gen_random_uuid()::text, 1, 8)
+WHERE short_id IS NULL OR length(trim(short_id)) = 0;
+
+ALTER TABLE subscriptions
+    ALTER COLUMN short_id SET DEFAULT substr(gen_random_uuid()::text, 1, 8);
+
+DO $$
+BEGIN
+    ALTER TABLE subscriptions ALTER COLUMN short_id SET NOT NULL;
+EXCEPTION
+    WHEN not_null_violation THEN
+        NULL;
 END
 $$;
 
