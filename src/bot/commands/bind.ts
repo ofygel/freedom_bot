@@ -22,7 +22,7 @@ const BIND_COMMANDS: BindCommandConfig[] = [
   {
     command: 'bind_drivers_channel',
     type: 'drivers',
-    successLabel: 'Канал курьеров',
+    successLabel: 'Канал исполнителей',
   },
 ];
 

@@ -5,7 +5,7 @@ interface Build2GisLinkOptions {
 }
 
 const DEFAULT_ZOOM = 18;
-const DEFAULT_2GIS_HOST = 'https://2gis.com/';
+const DEFAULT_2GIS_HOST = 'https://2gis.kz/almaty/';
 
 const clampZoom = (zoom: number): number => {
   if (!Number.isFinite(zoom)) {

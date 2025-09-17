@@ -235,6 +235,28 @@ export const tryClaimOrder = async (
   return row ? mapOrderRow(row) : null;
 };
 
+export const tryReleaseOrder = async (
+  client: PoolClient,
+  id: number,
+  claimedBy: number,
+): Promise<OrderRecord | null> => {
+  const { rows } = await client.query<OrderRow>(
+    `
+      UPDATE orders
+      SET status = 'open',
+          claimed_by = NULL,
+          claimed_at = NULL,
+          channel_message_id = NULL
+      WHERE id = $1 AND status = 'claimed' AND claimed_by = $2
+      RETURNING *
+    `,
+    [id, claimedBy],
+  );
+
+  const [row] = rows;
+  return row ? mapOrderRow(row) : null;
+};
+
 export const tryCancelOrder = async (
   client: PoolClient,
   id: number,
