@@ -11,7 +11,7 @@ export type SubscriptionStatus =
 
 interface SubscriptionRow {
   id: string | number;
-  short_id: string;
+  short_id?: string | null;
   user_id: string | number;
   chat_id: string | number;
   status: SubscriptionStatus;
@@ -106,6 +106,10 @@ const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
     throw new Error(`Failed to parse subscription id: ${row.id}`);
   }
 
+  const shortIdRaw =
+    typeof row.short_id === 'string' ? row.short_id.trim() : undefined;
+  const shortId = shortIdRaw && shortIdRaw.length > 0 ? shortIdRaw : String(id);
+
   const telegramId = parseNumeric(row.user_id);
   if (telegramId === undefined) {
     throw new Error(`Failed to parse subscription telegram id for ${row.id}`);
@@ -131,7 +135,7 @@ const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
 
   return {
     id,
-    shortId: row.short_id,
+    shortId,
     chatId,
     telegramId,
     status: row.status,
@@ -439,7 +443,6 @@ export const findSubscriptionsExpiringSoon = async (
     `
       SELECT
         s.id,
-        s.short_id,
         s.user_id,
         s.chat_id,
         s.status,
@@ -477,7 +480,6 @@ export const findSubscriptionsToExpire = async (
     `
       SELECT
         s.id,
-        s.short_id,
         s.user_id,
         s.chat_id,
         s.status,
