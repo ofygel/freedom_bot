@@ -6,25 +6,20 @@ CREATE TYPE IF NOT EXISTS user_role AS ENUM ('client', 'courier', 'driver');
 CREATE TYPE IF NOT EXISTS order_kind AS ENUM ('taxi', 'delivery');
 CREATE TYPE IF NOT EXISTS order_status AS ENUM ('open', 'claimed', 'cancelled', 'done');
 CREATE TYPE IF NOT EXISTS verification_role AS ENUM ('courier', 'driver');
-CREATE TYPE IF NOT EXISTS verification_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+CREATE TYPE IF NOT EXISTS verification_status AS ENUM ('pending', 'approved', 'rejected');
 CREATE TYPE IF NOT EXISTS subscription_status AS ENUM ('pending', 'active', 'rejected', 'expired');
-CREATE TYPE IF NOT EXISTS payment_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+CREATE TYPE IF NOT EXISTS payment_status AS ENUM ('pending', 'approved', 'rejected');
 
 -- Core reference data.
 CREATE TABLE IF NOT EXISTS users (
-    id          bigserial PRIMARY KEY,
-    tg_id       bigint      NOT NULL,
+    tg_id       bigint      PRIMARY KEY,
     username    text,
     first_name  text,
     last_name   text,
     phone       text,
     role        user_role   NOT NULL DEFAULT 'client',
-    is_verified boolean     NOT NULL DEFAULT false,
-    marketing_opt_in boolean NOT NULL DEFAULT false,
-    is_blocked  boolean     NOT NULL DEFAULT false,
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT users_tg_id_unique UNIQUE (tg_id),
     CONSTRAINT users_phone_unique UNIQUE (phone)
 );
 
@@ -89,19 +84,18 @@ CREATE TABLE IF NOT EXISTS orders (
     distance_km       double precision NOT NULL,
     channel_message_id bigint,
     created_at        timestamptz NOT NULL DEFAULT now(),
+    updated_at        timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT orders_short_id_unique UNIQUE (short_id)
 );
 
 CREATE TABLE IF NOT EXISTS order_channel_posts (
     id          bigserial PRIMARY KEY,
     order_id    bigint      NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    idx         integer     NOT NULL,
     channel_id  bigint      NOT NULL,
     message_id  bigint      NOT NULL,
     thread_id   bigint,
     published_at timestamptz NOT NULL DEFAULT now(),
-    updated_at   timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT order_channel_posts_order_idx_unique UNIQUE (order_id, idx),
+    CONSTRAINT order_channel_posts_order_channel_unique UNIQUE (order_id, channel_id),
     CONSTRAINT order_channel_posts_channel_message_unique UNIQUE (channel_id, message_id)
 );
 
@@ -112,16 +106,12 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     user_id            bigint      NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
     chat_id            bigint      NOT NULL,
     plan               text        NOT NULL,
-    tier               text,
     status             subscription_status NOT NULL DEFAULT 'pending',
     currency           text        NOT NULL,
     amount             integer     NOT NULL,
-    interval           text        NOT NULL,
-    interval_count     integer     NOT NULL DEFAULT 1,
-    days               integer     NOT NULL DEFAULT 0,
+    period_days        integer     NOT NULL DEFAULT 0,
     next_billing_at    timestamptz,
     grace_until        timestamptz,
-    cancel_at_period_end boolean   NOT NULL DEFAULT false,
     cancelled_at       timestamptz,
     ended_at           timestamptz,
     metadata           jsonb       NOT NULL DEFAULT '{}'::jsonb,
@@ -140,16 +130,15 @@ CREATE TABLE IF NOT EXISTS payments (
     amount              integer     NOT NULL,
     currency            text        NOT NULL,
     status              payment_status NOT NULL DEFAULT 'pending',
-    payment_provider    text        NOT NULL,
+    provider            text        NOT NULL,
     provider_payment_id text,
-    provider_customer_id text,
     invoice_url         text,
     receipt_url         text,
     period_start        timestamptz,
     period_end          timestamptz,
     paid_at             timestamptz,
-    days                integer,
-    file_id             text,
+    period_days         integer,
+    receipt_file_id     text,
     metadata            jsonb       NOT NULL DEFAULT '{}'::jsonb,
     created_at          timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT payments_short_id_unique UNIQUE (short_id),
@@ -158,7 +147,7 @@ CREATE TABLE IF NOT EXISTS payments (
 
 -- Generic callback storage used by interactive flows.
 CREATE TABLE IF NOT EXISTS callback_map (
-    idx        bigserial PRIMARY KEY,
+    id         bigserial PRIMARY KEY,
     token      text        NOT NULL UNIQUE,
     action     text        NOT NULL,
     chat_id    bigint,
@@ -181,7 +170,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- Support conversations between users and moderators.
 CREATE TABLE IF NOT EXISTS support_threads (
     id                    text PRIMARY KEY,
-    short_id              text        NOT NULL DEFAULT substr(gen_random_uuid()::text, 1, 8),
     user_chat_id          bigint      NOT NULL,
     user_tg_id            bigint REFERENCES users(tg_id),
     user_message_id       bigint      NOT NULL,
@@ -191,8 +179,7 @@ CREATE TABLE IF NOT EXISTS support_threads (
     closed_at             timestamptz,
     created_at            timestamptz NOT NULL DEFAULT now(),
     updated_at            timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT support_threads_status_check CHECK (status IN ('open', 'closed')),
-    CONSTRAINT support_threads_short_id_unique UNIQUE (short_id)
+    CONSTRAINT support_threads_status_check CHECK (status IN ('open', 'closed'))
 );
 
 -- Indexes optimising frequent lookups.

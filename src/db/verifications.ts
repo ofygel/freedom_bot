@@ -24,7 +24,7 @@ export interface VerificationDecisionPayload {
   expiresAt?: Date | string | number | null;
 }
 
-type VerificationStatus = 'pending' | 'active' | 'rejected' | 'expired';
+type VerificationStatus = 'pending' | 'approved' | 'rejected';
 
 const parseNumeric = (value: string | number | null | undefined): number | undefined => {
   if (value === null || value === undefined) {
@@ -230,21 +230,11 @@ const applyVerificationDecision = async (
       payload.applicant,
       payload.role,
     );
-    const expiresAt = status === 'active'
+    const expiresAt = status === 'approved'
       ? normaliseExpiration(payload.expiresAt)
       : null;
 
     await updateVerificationStatus(client, telegramId, payload.role, status, expiresAt);
-
-    await client.query(
-      `
-        UPDATE users
-        SET is_verified = $2,
-            updated_at = now()
-        WHERE tg_id = $1
-      `,
-      [telegramId, status === 'active'],
-    );
   });
 };
 
@@ -264,7 +254,7 @@ export const persistVerificationSubmission = async (
 export const markVerificationApproved = async (
   payload: VerificationDecisionPayload,
 ): Promise<void> => {
-  await applyVerificationDecision('active', payload);
+  await applyVerificationDecision('approved', payload);
 };
 
 export const markVerificationRejected = async (
@@ -273,32 +263,23 @@ export const markVerificationRejected = async (
   await applyVerificationDecision('rejected', payload);
 };
 
-interface VerificationExistsRow {
-  is_verified: boolean;
-}
-
 export const isExecutorVerified = async (
   telegramId: number,
   role: VerificationRole,
 ): Promise<boolean> => {
-  const { rows } = await pool.query<VerificationExistsRow>(
+  const { rows } = await pool.query<{ is_verified: boolean }>(
     `
-      SELECT COALESCE(u.is_verified, false)
-        OR EXISTS (
-          SELECT 1
-          FROM verifications v
-          WHERE v.user_id = u.tg_id
-            AND v.role = $2
-            AND v.status = 'active'
-            AND (v.expires_at IS NULL OR v.expires_at > now())
-        ) AS is_verified
-      FROM users u
-      WHERE u.tg_id = $1
-      LIMIT 1
+      SELECT EXISTS (
+        SELECT 1
+        FROM verifications v
+        WHERE v.user_id = $1
+          AND v.role = $2
+          AND v.status = 'approved'
+          AND (v.expires_at IS NULL OR v.expires_at > now())
+      ) AS is_verified
     `,
     [telegramId, role],
   );
 
-  const [row] = rows;
-  return row?.is_verified ?? false;
+  return rows[0]?.is_verified ?? false;
 };

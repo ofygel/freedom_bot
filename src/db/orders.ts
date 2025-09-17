@@ -35,6 +35,7 @@ interface OrderRow {
   distance_km: number | string;
   channel_message_id: string | number | null;
   created_at: Date | string;
+  updated_at: Date | string;
 }
 
 const parseNumeric = (value: string | number | null | undefined): number | undefined => {
@@ -96,6 +97,7 @@ const mapOrderRow = (row: OrderRow): OrderRecord => ({
   price: mapPrice(row.price_amount, row.price_currency, row.distance_km),
   channelMessageId: parseNumeric(row.channel_message_id),
   createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
+  updatedAt: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at),
 });
 
 export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord> => {
@@ -209,7 +211,7 @@ export const setOrderChannelMessageId = async (
   messageId: number,
 ): Promise<void> => {
   await client.query(
-    `UPDATE orders SET channel_message_id = $2 WHERE id = $1`,
+    `UPDATE orders SET channel_message_id = $2, updated_at = now() WHERE id = $1`,
     [id, messageId],
   );
 };
@@ -224,7 +226,8 @@ export const tryClaimOrder = async (
       UPDATE orders
       SET status = 'claimed',
           claimed_by = $2,
-          claimed_at = now()
+          claimed_at = now(),
+          updated_at = now()
       WHERE id = $1 AND status = 'open'
       RETURNING *
     `,
@@ -240,7 +243,7 @@ export const tryCancelOrder = async (
   id: number,
 ): Promise<OrderRecord | null> => {
   const { rows } = await client.query<OrderRow>(
-    `UPDATE orders SET status = 'cancelled' WHERE id = $1 AND status = 'open' RETURNING *`,
+    `UPDATE orders SET status = 'cancelled', updated_at = now() WHERE id = $1 AND status = 'open' RETURNING *`,
     [id],
   );
 

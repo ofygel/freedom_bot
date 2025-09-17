@@ -33,6 +33,7 @@ export interface OrderRecord {
   price: OrderPriceDetails;
   channelMessageId?: number;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface OrderInsertInput {
