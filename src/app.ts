@@ -49,6 +49,9 @@ registerJoinRequests(app);
 registerJobs(app);
 
 let gracefulShutdownConfigured = false;
+let cleanupStarted = false;
+
+export const isShutdownInProgress = (): boolean => cleanupStarted;
 
 const botAlreadyStoppedPatterns = [
   /bot is not running/i,
@@ -71,7 +74,6 @@ export const setupGracefulShutdown = (bot: Telegraf<BotContext>): void => {
   gracefulShutdownConfigured = true;
 
   const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
-  let cleanupStarted = false;
   for (const signal of signals) {
     process.once(signal, () => {
       if (cleanupStarted) {
