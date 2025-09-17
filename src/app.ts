@@ -19,6 +19,7 @@ import { errorBoundary } from './bot/middlewares/errorBoundary';
 import { session } from './bot/middlewares/session';
 import type { BotContext } from './bot/types';
 import { config, logger } from './config';
+import { pool } from './db';
 import { registerJobs } from './jobs';
 
 export const app = new Telegraf<BotContext>(config.bot.token);
@@ -56,10 +57,29 @@ export const setupGracefulShutdown = (bot: Telegraf<BotContext>): void => {
   gracefulShutdownConfigured = true;
 
   const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
+  let cleanupStarted = false;
   for (const signal of signals) {
     process.once(signal, () => {
+      if (cleanupStarted) {
+        return;
+      }
+      cleanupStarted = true;
+
       logger.info({ signal }, 'Received shutdown signal, stopping bot');
-      void bot.stop(`Received ${signal}`);
+      const cleanup = async (): Promise<void> => {
+        try {
+          bot.stop(`Received ${signal}`);
+          await pool.end();
+          logger.info('Shutdown cleanup completed, exiting process');
+          process.exit(0);
+        } catch (error) {
+          logger.error({ err: error }, 'Failed to shutdown gracefully');
+          process.exitCode = 1;
+          process.exit(1);
+        }
+      };
+
+      void cleanup();
     });
   }
 };
