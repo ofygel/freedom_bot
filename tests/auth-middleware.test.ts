@@ -98,6 +98,36 @@ describe('auth middleware', () => {
     assert.equal(queryInvoked, false);
   });
 
+  it('continues channel updates derived solely from raw payload', async () => {
+    let queryInvoked = false;
+    const queryStub: QueryFunction = async (..._args) => {
+      queryInvoked = true;
+      return { rows: [] } as any;
+    };
+    setPoolQuery(queryStub);
+
+    const middleware = auth();
+    const ctx = {
+      update: {
+        channel_post: {
+          message_id: 42,
+          chat: { id: -100111222, type: 'channel' as const, title: 'Raw Channel' },
+          text: 'Привязка',
+        },
+      },
+      session: createSessionState(),
+      auth: undefined as any,
+    } as unknown as BotContext;
+
+    let nextCalled = false;
+    await middleware(ctx, async () => {
+      nextCalled = true;
+    });
+
+    assert.equal(nextCalled, true);
+    assert.equal(queryInvoked, false);
+  });
+
   it('authenticates user updates and populates ctx.auth', async () => {
     const authRow = {
       tg_id: 321,
