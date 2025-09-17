@@ -15,7 +15,7 @@ interface SubscriptionRow {
   user_id: string | number;
   chat_id: string | number;
   status: SubscriptionStatus;
-  period_days: number | string | null;
+  days: number | string | null;
   next_billing_at: Date | string | null;
   grace_until: Date | string | null;
   expires_at: Date | string | null;
@@ -118,7 +118,7 @@ const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
     );
   }
 
-  const periodDaysRaw = parseNumeric(row.period_days);
+  const periodDaysRaw = parseNumeric(row.days);
   const periodDays = periodDaysRaw === undefined ? 0 : periodDaysRaw;
 
   const nextBillingAt = parseTimestamp(row.next_billing_at);
@@ -267,14 +267,17 @@ export const activateSubscription = async (
               status = 'active',
               amount = $3,
               currency = $4,
-              period_days = $5,
-              next_billing_at = $6,
+              interval = 'day',
+              interval_count = $5,
+              days = $6,
+              next_billing_at = $7,
               grace_until = NULL,
+              cancel_at_period_end = false,
               cancelled_at = NULL,
               ended_at = NULL,
-              metadata = COALESCE(metadata, '{}'::jsonb) || $7::jsonb,
+              metadata = COALESCE(metadata, '{}'::jsonb) || $8::jsonb,
               last_warning_at = NULL,
-              updated_at = $8
+              updated_at = $9
           WHERE id = $1
           RETURNING id
         `,
@@ -283,6 +286,7 @@ export const activateSubscription = async (
           'manual',
           params.amount,
           params.currency,
+          periodDays,
           periodDays,
           periodEnd,
           JSON.stringify(metadataPatch),
@@ -303,12 +307,16 @@ export const activateSubscription = async (
             user_id,
             chat_id,
             plan,
+            tier,
             status,
             currency,
             amount,
-            period_days,
+            interval,
+            interval_count,
+            days,
             next_billing_at,
             grace_until,
+            cancel_at_period_end,
             cancelled_at,
             ended_at,
             metadata
@@ -317,15 +325,19 @@ export const activateSubscription = async (
             $1,
             $2,
             $3,
+            NULL,
             'active',
             $4,
             $5,
+            'day',
             $6,
             $7,
+            $8,
+            NULL,
+            false,
             NULL,
             NULL,
-            NULL,
-            $8::jsonb
+            $9::jsonb
           )
           RETURNING id
         `,
@@ -335,6 +347,7 @@ export const activateSubscription = async (
           'manual',
           params.currency,
           params.amount,
+          periodDays,
           periodDays,
           periodEnd,
           JSON.stringify(metadataPatch),
@@ -360,15 +373,16 @@ export const activateSubscription = async (
           amount,
           currency,
           status,
-          provider,
+          payment_provider,
           provider_payment_id,
+          provider_customer_id,
           invoice_url,
           receipt_url,
           period_start,
           period_end,
           paid_at,
-          period_days,
-          receipt_file_id,
+          days,
+          file_id,
           metadata
         )
         VALUES (
@@ -376,17 +390,18 @@ export const activateSubscription = async (
           $2,
           $3,
           $4,
-          'approved',
-          'manual',
           $5,
-          NULL,
-          NULL,
+          'manual',
           $6,
+          NULL,
+          NULL,
+          NULL,
           $7,
           $8,
           $9,
           $10,
-          $11::jsonb
+          $11,
+          $12::jsonb
         )
       `,
       [
@@ -394,6 +409,7 @@ export const activateSubscription = async (
         telegramId,
         params.amount,
         params.currency,
+        'active',
         params.paymentId,
         periodStart,
         periodEnd,
@@ -427,7 +443,7 @@ export const findSubscriptionsExpiringSoon = async (
         s.user_id,
         s.chat_id,
         s.status,
-        s.period_days,
+        s.days,
         s.next_billing_at,
         s.grace_until,
         COALESCE(s.grace_until, s.next_billing_at) AS expires_at,
@@ -465,7 +481,7 @@ export const findSubscriptionsToExpire = async (
         s.user_id,
         s.chat_id,
         s.status,
-        s.period_days,
+        s.days,
         s.next_billing_at,
         s.grace_until,
         COALESCE(s.grace_until, s.next_billing_at) AS expires_at,
