@@ -74,8 +74,8 @@ export const buildOrderSummary = (
 };
 
 export const buildCustomerName = (ctx: BotContext): string | undefined => {
-  const first = ctx.session.user?.firstName?.trim();
-  const last = ctx.session.user?.lastName?.trim();
+  const first = ctx.auth.user.firstName?.trim();
+  const last = ctx.auth.user.lastName?.trim();
   const full = [first, last].filter(Boolean).join(' ').trim();
   return full || undefined;
 };

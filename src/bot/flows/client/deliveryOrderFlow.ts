@@ -341,10 +341,10 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
   try {
     const order = await createOrder({
       kind: 'delivery',
-      clientId: ctx.session.user?.id,
+      clientId: ctx.auth.user.telegramId,
       clientPhone: ctx.session.phoneNumber,
       customerName: buildCustomerName(ctx),
-      customerUsername: ctx.session.user?.username,
+      customerUsername: ctx.auth.user.username,
       clientComment: draft.notes,
       pickup: draft.pickup,
       dropoff: draft.dropoff,

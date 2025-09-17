@@ -38,7 +38,7 @@ export const buildVerificationSummary = (
   state: ExecutorFlowState,
   options: VerificationSummaryOptions = {},
 ): string => {
-  const applicant = ctx.session.user;
+  const applicant = ctx.auth.user;
   const copy = getExecutorRoleCopy(state.role);
   const verification = state.verification[state.role];
   const lines = [
@@ -60,8 +60,9 @@ export const buildVerificationSummary = (
     lines.push(`Имя: ${fullName}`);
   }
 
-  if (ctx.session.phoneNumber) {
-    lines.push(`Телефон: ${ctx.session.phoneNumber}`);
+  const phone = ctx.auth.user.phone ?? ctx.session.phoneNumber;
+  if (phone) {
+    lines.push(`Телефон: ${phone}`);
   }
 
   const uploaded = options.photoCount ?? verification.uploadedPhotos.length;

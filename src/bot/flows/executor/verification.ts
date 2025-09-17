@@ -46,13 +46,14 @@ const VERIFICATION_ALREADY_ON_REVIEW_STEP_ID = 'executor:verification:on-review'
 const VERIFICATION_START_REMINDER_STEP_ID = 'executor:verification:start-reminder';
 const VERIFICATION_PROGRESS_STEP_ID = 'executor:verification:progress';
 const VERIFICATION_PHOTO_REMINDER_STEP_ID = 'executor:verification:photo-reminder';
+const VERIFICATION_ALREADY_APPROVED_STEP_ID = 'executor:verification:approved';
 
 const submitForModeration = async (
   ctx: BotContext,
   state: ExecutorFlowState,
 ): Promise<boolean> => {
-  const applicantId = ctx.from?.id;
-  if (!applicantId) {
+  const applicantId = ctx.auth?.user.telegramId ?? ctx.from?.id;
+  if (applicantId === undefined) {
     logger.error(
       { chatId: ctx.chat?.id, role: state.role },
       'Cannot submit verification without applicant id',
@@ -73,7 +74,6 @@ const submitForModeration = async (
   const applicationId = `${applicantId.toString(10)}:${submittedAt.toString(10)}`;
   const summaryLines = [`Роль: ${copy.noun} (${role})`];
 
-  const sessionUser = ctx.session.user;
   const application: VerificationApplication = {
     id: applicationId,
     title: `🆕 Новая заявка на верификацию ${copy.genitive}.`,
@@ -81,10 +81,10 @@ const submitForModeration = async (
     summary: summaryLines,
     applicant: {
       telegramId: applicantId,
-      username: sessionUser?.username ?? ctx.from?.username ?? undefined,
-      firstName: sessionUser?.firstName ?? ctx.from?.first_name ?? undefined,
-      lastName: sessionUser?.lastName ?? ctx.from?.last_name ?? undefined,
-      phone: ctx.session.phoneNumber ?? undefined,
+      username: ctx.auth.user.username ?? ctx.from?.username ?? undefined,
+      firstName: ctx.auth.user.firstName ?? ctx.from?.first_name ?? undefined,
+      lastName: ctx.auth.user.lastName ?? ctx.from?.last_name ?? undefined,
+      phone: ctx.auth.user.phone ?? ctx.session.phoneNumber ?? undefined,
     },
     photoCount: verification.uploadedPhotos.length,
     submittedAt,
@@ -281,6 +281,17 @@ export const startExecutorVerification = async (
   const state = ctx.session.executor;
   const role = state.role;
   const verification = state.verification[role];
+  const alreadyVerified = Boolean(ctx.auth.executor.verifiedRoles[role]) || ctx.auth.executor.isVerified;
+
+  if (alreadyVerified) {
+    await ui.step(ctx, {
+      id: VERIFICATION_ALREADY_APPROVED_STEP_ID,
+      text: 'Документы уже подтверждены. Можете переходить к заказам.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+    return;
+  }
 
   if (verification.status === 'submitted') {
     await ui.step(ctx, {
@@ -315,6 +326,17 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
   const role = state.role;
   const verification = state.verification[role];
   const copy = getExecutorRoleCopy(role);
+  const alreadyVerified = Boolean(ctx.auth.executor.verifiedRoles[role]) || ctx.auth.executor.isVerified;
+
+  if (alreadyVerified) {
+    await ui.step(ctx, {
+      id: VERIFICATION_ALREADY_APPROVED_STEP_ID,
+      text: 'Документы уже подтверждены. Можете переходить к заказам.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+    return;
+  }
 
   if (verification.status === 'submitted') {
     await ui.step(ctx, {

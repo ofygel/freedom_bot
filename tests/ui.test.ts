@@ -52,6 +52,25 @@ const createSessionState = (): SessionState => ({
   ui: { steps: {}, homeActions: [] },
 });
 
+const createAuthState = (): BotContext['auth'] => ({
+  user: {
+    telegramId: 42,
+    username: undefined,
+    firstName: undefined,
+    lastName: undefined,
+    phone: undefined,
+    role: 'client',
+    isVerified: false,
+    isBlocked: false,
+  },
+  executor: {
+    verifiedRoles: { courier: false, driver: false },
+    hasActiveSubscription: false,
+    isVerified: false,
+  },
+  isModerator: false,
+});
+
 type EditHandler = (
   chatId: number,
   messageId: number,
@@ -70,8 +89,10 @@ const createMockContext = () => {
   let editOverride: EditHandler | undefined;
 
   const ctx = {
-    chat: { id: 42, type: 'private' },
+    chat: { id: 42, type: 'private' as const },
+    from: { id: 42 },
     session,
+    auth: createAuthState(),
     reply: async (text: string, extra?: unknown) => {
       const messageId = nextMessageId++;
       replyCalls.push({ text, extra, messageId });

@@ -8,11 +8,36 @@ export type ExecutorRole = 'courier' | 'driver';
 
 export const EXECUTOR_ROLES: readonly ExecutorRole[] = ['courier', 'driver'];
 
+export type UserRole = 'client' | 'courier' | 'driver' | 'moderator';
+
 export interface SessionUser {
   id: number;
   username?: string;
   firstName?: string;
   lastName?: string;
+}
+
+export interface AuthUser {
+  telegramId: number;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  role: UserRole;
+  isVerified: boolean;
+  isBlocked: boolean;
+}
+
+export interface AuthExecutorState {
+  verifiedRoles: Record<ExecutorRole, boolean>;
+  hasActiveSubscription: boolean;
+  isVerified: boolean;
+}
+
+export interface AuthState {
+  user: AuthUser;
+  executor: AuthExecutorState;
+  isModerator: boolean;
 }
 
 export interface ExecutorUploadedPhoto {
@@ -107,4 +132,5 @@ export interface SessionState {
 
 export type BotContext = Context & {
   session: SessionState;
+  auth: AuthState;
 };

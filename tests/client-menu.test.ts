@@ -64,6 +64,25 @@ const createSessionState = (): SessionState => ({
   ui: { steps: {}, homeActions: [] },
 });
 
+const createAuthState = (): BotContext['auth'] => ({
+  user: {
+    telegramId: 42,
+    username: undefined,
+    firstName: undefined,
+    lastName: undefined,
+    phone: undefined,
+    role: 'client',
+    isVerified: false,
+    isBlocked: false,
+  },
+  executor: {
+    verifiedRoles: { courier: false, driver: false },
+    hasActiveSubscription: false,
+    isVerified: false,
+  },
+  isModerator: false,
+});
+
 const createMockBot = () => {
   const actions = new Map<string, (ctx: BotContext) => Promise<void>>();
   const commands = new Map<string, (ctx: BotContext) => Promise<void>>();
@@ -93,7 +112,9 @@ const createMockContext = () => {
 
   const ctx = {
     chat: { id: 99, type: 'private' as const },
+    from: { id: 42 },
     session,
+    auth: createAuthState(),
     reply: async (text: string, extra?: unknown) => {
       const messageId = nextMessageId++;
       replyCalls.push({ text, extra, messageId });
