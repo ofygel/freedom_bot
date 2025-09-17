@@ -200,6 +200,29 @@ const isChannelChat = (chat: ChatWithType): boolean => chat?.type === 'channel';
 const hasChannelSender = (sender: ChatWithType): boolean => sender?.type === 'channel';
 
 const isChannelUpdate = (ctx: BotContext): boolean => {
+  const update = ctx.update as {
+    channel_post?: { chat?: { type?: string } };
+    edited_channel_post?: { chat?: { type?: string } };
+    message?: { chat?: { type?: string }; sender_chat?: { type?: string } };
+    edited_message?: { chat?: { type?: string }; sender_chat?: { type?: string } };
+  };
+
+  if ('channel_post' in update) {
+    return true;
+  }
+
+  if ('edited_channel_post' in update) {
+    return true;
+  }
+
+  if (update.message?.sender_chat?.type === 'channel') {
+    return true;
+  }
+
+  if (update.edited_message?.sender_chat?.type === 'channel') {
+    return true;
+  }
+
   if (isChannelChat(ctx.chat)) {
     return true;
   }
@@ -211,13 +234,6 @@ const isChannelUpdate = (ctx: BotContext): boolean => {
   if (hasChannelSender(ctx.senderChat)) {
     return true;
   }
-
-  const update = ctx.update as {
-    channel_post?: { chat?: { type?: string } };
-    edited_channel_post?: { chat?: { type?: string } };
-    message?: { chat?: { type?: string }; sender_chat?: { type?: string } };
-    edited_message?: { chat?: { type?: string }; sender_chat?: { type?: string } };
-  };
 
   if (
     isChannelChat(update.channel_post?.chat) ||
