@@ -33,7 +33,6 @@ const SUBSCRIPTION_RECEIPT_ACCEPTED_STEP_ID = 'executor:subscription:receipt-acc
 const SUBSCRIPTION_RECEIPT_FAILED_STEP_ID = 'executor:subscription:receipt-failed';
 const SUBSCRIPTION_SELECT_PERIOD_REMINDER_STEP_ID = 'executor:subscription:select-period';
 const SUBSCRIPTION_RECEIPT_REMINDER_STEP_ID = 'executor:subscription:receipt-reminder';
-const SUBSCRIPTION_SENDER_UNKNOWN_STEP_ID = 'executor:subscription:sender-unknown';
 
 const formatKaspiDetails = (): string[] => [
   'Оплатите через Kaspi по реквизитам:',
@@ -79,10 +78,14 @@ export const startExecutorSubscription = async (
   options: StartExecutorSubscriptionOptions = {},
 ): Promise<void> => {
   const state = ensureExecutorState(ctx);
-  const verification = state.verification[state.role];
   const copy = getExecutorRoleCopy(state.role);
 
-  if (!options.skipVerificationCheck && verification.status !== 'submitted') {
+  const isVerified = Boolean(ctx.auth.executor.verifiedRoles[state.role]) || ctx.auth.executor.isVerified;
+
+  if (!options.skipVerificationCheck && !isVerified) {
+    state.subscription.status = 'idle';
+    state.subscription.selectedPeriodId = undefined;
+    state.subscription.pendingPaymentId = undefined;
     await ui.step(ctx, {
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
       text: 'Сначала завершите проверку документов, чтобы получить ссылку на канал.',
@@ -134,6 +137,22 @@ const handlePeriodSelection = async (
   }
 
   const state = ensureExecutorState(ctx);
+  const isVerified = Boolean(ctx.auth.executor.verifiedRoles[state.role]) || ctx.auth.executor.isVerified;
+
+  if (!isVerified) {
+    state.subscription.status = 'idle';
+    state.subscription.selectedPeriodId = undefined;
+    state.subscription.pendingPaymentId = undefined;
+    await ctx.answerCbQuery('Сначала завершите проверку документов.');
+    await ui.step(ctx, {
+      id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
+      text: 'Сначала завершите проверку документов, чтобы получить ссылку на канал.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+    return;
+  }
+
   state.subscription.status = 'awaitingReceipt';
   state.subscription.selectedPeriodId = period.id;
   state.subscription.pendingPaymentId = undefined;
@@ -230,16 +249,6 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
-  if (!ctx.from) {
-    await ui.step(ctx, {
-      id: SUBSCRIPTION_SENDER_UNKNOWN_STEP_ID,
-      text: 'Не удалось определить отправителя. Попробуйте ещё раз позже.',
-      cleanup: true,
-      homeAction: EXECUTOR_MENU_ACTION,
-    });
-    return;
-  }
-
   const paymentId = buildPaymentId();
   subscription.pendingPaymentId = paymentId;
 
@@ -250,12 +259,12 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
       submittedAt: new Date(),
       executor: {
         role: state.role,
-        telegramId: ctx.from.id,
+        telegramId: ctx.auth.user.telegramId,
         chatId: ctx.chat.id,
-        username: ctx.from.username ?? undefined,
-        firstName: ctx.from.first_name ?? undefined,
-        lastName: ctx.from.last_name ?? undefined,
-        phone: ctx.session.phoneNumber ?? undefined,
+        username: ctx.auth.user.username ?? undefined,
+        firstName: ctx.auth.user.firstName ?? undefined,
+        lastName: ctx.auth.user.lastName ?? undefined,
+        phone: ctx.auth.user.phone ?? ctx.session.phoneNumber ?? undefined,
       },
       receipt: {
         chatId: ctx.chat.id,
@@ -280,7 +289,7 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
     await showExecutorMenu(ctx, { skipAccessCheck: true });
   } catch (error) {
     logger.error(
-      { err: error, paymentId, telegramId: ctx.from.id },
+      { err: error, paymentId, telegramId: ctx.auth.user.telegramId },
       'Failed to submit subscription payment for moderation',
     );
     subscription.status = 'awaitingReceipt';

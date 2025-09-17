@@ -10,6 +10,25 @@ type QueryHandler = (
   params?: ReadonlyArray<unknown>,
 ) => Promise<{ rows: unknown[] }>;
 
+const createAuthState = (telegramId = 555): BotContext['auth'] => ({
+  user: {
+    telegramId,
+    username: undefined,
+    firstName: undefined,
+    lastName: undefined,
+    phone: undefined,
+    role: 'client',
+    isVerified: false,
+    isBlocked: false,
+  },
+  executor: {
+    verifiedRoles: { courier: false, driver: false },
+    hasActiveSubscription: false,
+    isVerified: false,
+  },
+  isModerator: false,
+});
+
 const originalConnect = pool.connect.bind(pool);
 const originalQuery = pool.query.bind(pool);
 
@@ -78,7 +97,11 @@ afterEach(() => {
 describe('session middleware', () => {
   it('resets session state to initial values after clearing', async () => {
     const middleware = session();
-    const ctx = { chat: { id: 999, type: 'private' }, from: { id: 555 } } as unknown as BotContext;
+    const ctx = {
+      chat: { id: 999, type: 'private' as const },
+      from: { id: 555 },
+      auth: createAuthState(555),
+    } as unknown as BotContext;
 
     await middleware(ctx, async () => {
       ctx.session.isAuthenticated = true;
@@ -97,7 +120,11 @@ describe('session middleware', () => {
 
     await clearSession(ctx);
 
-    const ctx2 = { chat: { id: 999, type: 'private' }, from: { id: 555 } } as unknown as BotContext;
+    const ctx2 = {
+      chat: { id: 999, type: 'private' as const },
+      from: { id: 555 },
+      auth: createAuthState(555),
+    } as unknown as BotContext;
     await middleware(ctx2, async () => {});
 
     assert.equal(ctx2.session.isAuthenticated, false);

@@ -1,19 +1,14 @@
 import { Markup, Telegraf } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
-import { logger } from '../../../config';
-import { hasActiveSubscription } from '../../../db/subscriptions';
-import { isExecutorVerified } from '../../../db/verifications';
 import {
   EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
   type BotContext,
   type ExecutorFlowState,
-  type ExecutorRole,
   type ExecutorSubscriptionState,
   type ExecutorVerificationRoleState,
 } from '../../types';
-import { getChannelBinding } from '../../channels/bindings';
 import { ui } from '../../ui';
 import { startExecutorSubscription } from './subscription';
 import { getExecutorRoleCopy } from './roleCopy';
@@ -184,44 +179,18 @@ interface ExecutorAccessStatus {
   hasActiveSubscription: boolean;
 }
 
-const determineExecutorAccessStatus = async (
-  role: ExecutorRole,
-  telegramId: number | undefined,
-): Promise<ExecutorAccessStatus> => {
-  if (telegramId === undefined) {
-    return { isVerified: false, hasActiveSubscription: false } satisfies ExecutorAccessStatus;
-  }
+const determineExecutorAccessStatus = (
+  ctx: BotContext,
+  state: ExecutorFlowState,
+): ExecutorAccessStatus => {
+  const verifiedRoles = ctx.auth.executor.verifiedRoles;
+  const role = state.role;
+  const isVerified = Boolean(verifiedRoles[role]) || ctx.auth.executor.isVerified;
 
-  let verified = false;
-  try {
-    verified = await isExecutorVerified(telegramId, role);
-  } catch (error) {
-    logger.error(
-      { err: error, telegramId, role },
-      'Failed to determine executor verification status',
-    );
-    return { isVerified: false, hasActiveSubscription: false } satisfies ExecutorAccessStatus;
-  }
-
-  if (!verified) {
-    return { isVerified: false, hasActiveSubscription: false } satisfies ExecutorAccessStatus;
-  }
-
-  try {
-    const binding = await getChannelBinding('drivers');
-    if (!binding) {
-      return { isVerified: true, hasActiveSubscription: false } satisfies ExecutorAccessStatus;
-    }
-
-    const active = await hasActiveSubscription(binding.chatId, telegramId);
-    return { isVerified: true, hasActiveSubscription: active } satisfies ExecutorAccessStatus;
-  } catch (error) {
-    logger.error(
-      { err: error, telegramId, role },
-      'Failed to determine executor subscription status',
-    );
-    return { isVerified: true, hasActiveSubscription: false } satisfies ExecutorAccessStatus;
-  }
+  return {
+    isVerified,
+    hasActiveSubscription: ctx.auth.executor.hasActiveSubscription,
+  } satisfies ExecutorAccessStatus;
 };
 
 const shouldRedirectToVerification = (
@@ -378,10 +347,9 @@ export const showExecutorMenu = async (
   }
 
   const state = ensureExecutorState(ctx);
-  const telegramId = ctx.from?.id;
-  const access = await determineExecutorAccessStatus(state.role, telegramId);
+  const access = determineExecutorAccessStatus(ctx, state);
 
-  if (!options.skipAccessCheck && telegramId !== undefined) {
+  if (!options.skipAccessCheck) {
     if (shouldRedirectToVerification(state, access)) {
       await startExecutorVerification(ctx);
       return;

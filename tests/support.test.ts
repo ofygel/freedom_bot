@@ -46,6 +46,25 @@ const setPoolQuery = (fn: typeof pool.query) => {
   (pool as unknown as { query: typeof pool.query }).query = fn;
 };
 
+const createAuthState = (telegramId: number): BotContext['auth'] => ({
+  user: {
+    telegramId,
+    username: undefined,
+    firstName: undefined,
+    lastName: undefined,
+    phone: undefined,
+    role: 'client',
+    isVerified: false,
+    isBlocked: false,
+  },
+  executor: {
+    verifiedRoles: { courier: false, driver: false },
+    hasActiveSubscription: false,
+    isVerified: false,
+  },
+  isModerator: false,
+});
+
 type SupportModule = typeof import('../src/bot/services/support');
 
 let __testing__: SupportModule['__testing__'];
@@ -102,6 +121,7 @@ describe('support service', () => {
       },
       message: { message_id: 123, text: 'Нужна помощь' },
       telegram: telegram.api,
+      auth: createAuthState(222),
     } as unknown as BotContext;
 
     const result = (await forwardSupportMessage(ctx)) as SupportForwardResult;
@@ -153,6 +173,7 @@ describe('support service', () => {
       }),
       answerCbQuery: async () => {},
       telegram: telegram.api,
+      auth: createAuthState(555),
     } as unknown as BotContext;
 
     await __testing__.handleReplyAction(ctx, threadId);
@@ -170,6 +191,7 @@ describe('support service', () => {
       },
       reply: async () => {},
       telegram: telegram.api,
+      auth: createAuthState(555),
     } as unknown as BotContext;
 
     const handled = await __testing__.handleModeratorReplyMessage(replyCtx);
@@ -206,6 +228,7 @@ describe('support service', () => {
       from: { id: 777 },
       answerCbQuery: async () => {},
       telegram: telegram.api,
+      auth: createAuthState(777),
     } as unknown as BotContext;
 
     await __testing__.handleCloseAction(ctx, threadId);
