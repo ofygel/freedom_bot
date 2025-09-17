@@ -137,68 +137,94 @@ describe('auth middleware', () => {
 });
 
 describe('bind command channel flow', () => {
-  it('saves bindings when command is posted inside a channel', async () => {
-    const queries: Array<{ text: string; params?: ReadonlyArray<unknown> }> = [];
-    const queryStub: QueryFunction = async (...args) => {
-      const [firstArg, secondArg] = args;
-      if (typeof firstArg === 'string') {
-        queries.push({ text: firstArg, params: secondArg as ReadonlyArray<unknown> | undefined });
-      } else if (firstArg && typeof firstArg === 'object' && 'text' in firstArg) {
-        const config = firstArg as { text?: string; values?: ReadonlyArray<unknown> };
-        queries.push({ text: config.text ?? '', params: config.values });
-      }
-      return { rows: [] } as any;
-    };
-    setPoolQuery(queryStub);
+  const channelCases = [
+    {
+      command: '/bind_verify_channel',
+      chatId: -100987654,
+      title: 'Freedom Announcements',
+      username: 'freedom_announcements',
+      expectedColumn: 'verify_channel_id',
+      expectedMessage: /Готово! Канал верификации привязан к @freedom_announcements\./u,
+    },
+    {
+      command: '/bind_drivers_channel',
+      chatId: -100555666,
+      title: 'Freedom Drivers',
+      username: 'freedom_drivers',
+      expectedColumn: 'drivers_channel_id',
+      expectedMessage: /Готово! Канал курьеров привязан к @freedom_drivers\./u,
+    },
+  ] as const;
 
-    const handleChannelPost = registerChannelPostHandler();
-    const replies: string[] = [];
-    const ctx = {
-      chat: {
-        id: -100987654,
-        type: 'channel' as const,
-        title: 'Freedom Announcements',
-        username: 'freedom_announcements',
-      },
-      channelPost: {
+  for (const {
+    command,
+    chatId,
+    title,
+    username,
+    expectedColumn,
+    expectedMessage,
+  } of channelCases) {
+    it(`saves bindings when ${command} is posted inside a channel`, async () => {
+      const queries: Array<{ text: string; params?: ReadonlyArray<unknown> }> = [];
+      const queryStub: QueryFunction = async (...args) => {
+        const [firstArg, secondArg] = args;
+        if (typeof firstArg === 'string') {
+          queries.push({ text: firstArg, params: secondArg as ReadonlyArray<unknown> | undefined });
+        } else if (firstArg && typeof firstArg === 'object' && 'text' in firstArg) {
+          const config = firstArg as { text?: string; values?: ReadonlyArray<unknown> };
+          queries.push({ text: config.text ?? '', params: config.values });
+        }
+        return { rows: [] } as any;
+      };
+      setPoolQuery(queryStub);
+
+      const handleChannelPost = registerChannelPostHandler();
+      const replies: string[] = [];
+      const ctx = {
         chat: {
-          id: -100987654,
+          id: chatId,
           type: 'channel' as const,
-          title: 'Freedom Announcements',
-          username: 'freedom_announcements',
+          title,
+          username,
         },
-        text: '/bind_verify_channel',
-        entities: [{ type: 'bot_command', offset: 0, length: 20 }],
-      },
-      senderChat: {
-        id: -100987654,
-        type: 'channel' as const,
-        title: 'Freedom Announcements',
-        username: 'freedom_announcements',
-      },
-      update: { channel_post: { chat: { id: -100987654, type: 'channel' as const } } },
-      reply: async (text: string) => {
-        replies.push(text);
-        return { message_id: 42, text, chat: { id: -100987654 } };
-      },
-      session: createSessionState(),
-      auth: undefined as any,
-    } as unknown as BotContext;
+        channelPost: {
+          chat: {
+            id: chatId,
+            type: 'channel' as const,
+            title,
+            username,
+          },
+          text: command,
+          entities: [{ type: 'bot_command', offset: 0, length: command.length }],
+        },
+        senderChat: {
+          id: chatId,
+          type: 'channel' as const,
+          title,
+          username,
+        },
+        update: { channel_post: { chat: { id: chatId, type: 'channel' as const } } },
+        reply: async (text: string) => {
+          replies.push(text);
+          return { message_id: 42, text, chat: { id: chatId } };
+        },
+        session: createSessionState(),
+        auth: undefined as any,
+      } as unknown as BotContext;
 
-    const middleware = auth();
+      const middleware = auth();
 
-    await middleware(ctx, async () => {
-      await handleChannelPost(ctx, async () => {});
+      await middleware(ctx, async () => {
+        await handleChannelPost(ctx, async () => {});
+      });
+
+      assert.equal(replies.length, 1);
+      assert.match(replies[0], expectedMessage);
+
+      assert.equal(queries.length, 1);
+      assert.ok(queries[0].text.includes('INSERT INTO channels'));
+      assert.ok(queries[0].text.includes(expectedColumn));
+      assert.equal(queries[0].params?.[0], chatId);
     });
-
-    assert.equal(replies.length, 1);
-    assert.match(
-      replies[0],
-      /Готово! Канал верификации привязан к @freedom_announcements\./u,
-    );
-
-    assert.equal(queries.length, 1);
-    assert.ok(queries[0].text.includes('INSERT INTO channels'));
-    assert.equal(queries[0].params?.[0], -100987654);
-  });
+  }
 });
