@@ -193,8 +193,42 @@ const applyAuthState = (ctx: BotContext, authState: AuthState): void => {
   }
 };
 
+const isChannelUpdate = (ctx: BotContext): boolean => {
+  if (ctx.chat?.type === 'channel') {
+    return true;
+  }
+
+  if (ctx.channelPost) {
+    return true;
+  }
+
+  if (ctx.senderChat?.type === 'channel') {
+    return true;
+  }
+
+  const update = ctx.update as {
+    channel_post?: { chat?: { type?: string } };
+    edited_channel_post?: { chat?: { type?: string } };
+  };
+
+  if (update.channel_post?.chat?.type === 'channel') {
+    return true;
+  }
+
+  if (update.edited_channel_post?.chat?.type === 'channel') {
+    return true;
+  }
+
+  return false;
+};
+
 export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   if (!ctx.from) {
+    if (isChannelUpdate(ctx)) {
+      await next();
+      return;
+    }
+
     logger.warn({ update: ctx.update }, 'Received update without sender information');
     return;
   }
