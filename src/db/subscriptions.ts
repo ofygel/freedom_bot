@@ -457,7 +457,7 @@ export const findSubscriptionsExpiringSoon = async (
         u.last_name
       FROM subscriptions s
       JOIN users u ON u.tg_id = s.user_id
-      WHERE s.status = ANY($3::text[])
+      WHERE s.status = ANY($3::subscription_status[])
         AND COALESCE(s.grace_until, s.next_billing_at) IS NOT NULL
         AND COALESCE(s.grace_until, s.next_billing_at) > $1
         AND COALESCE(s.grace_until, s.next_billing_at) <= $2
@@ -494,7 +494,7 @@ export const findSubscriptionsToExpire = async (
         u.last_name
       FROM subscriptions s
       JOIN users u ON u.tg_id = s.user_id
-      WHERE s.status = ANY($2::text[])
+      WHERE s.status = ANY($2::subscription_status[])
         AND COALESCE(s.grace_until, s.next_billing_at) IS NOT NULL
         AND COALESCE(s.grace_until, s.next_billing_at) <= $1
       ORDER BY COALESCE(s.grace_until, s.next_billing_at) ASC
@@ -530,7 +530,7 @@ export const hasActiveSubscription = async (
       FROM subscriptions s
       WHERE s.chat_id = $1
         AND s.user_id = $2
-        AND s.status = ANY($3::text[])
+        AND s.status = ANY($3::subscription_status[])
         AND (
           COALESCE(s.grace_until, s.next_billing_at) IS NULL
           OR COALESCE(s.grace_until, s.next_billing_at) > now()
