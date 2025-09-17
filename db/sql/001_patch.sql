@@ -6,13 +6,407 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ---------------------------------------------------------------------------
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_status') THEN
-        PERFORM 1
-        FROM pg_enum
-        WHERE enumtypid = 'verification_status'::regtype
-          AND enumlabel = 'expired';
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        IF EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'user_role'::regtype
+              AND enumlabel NOT IN ('client', 'courier', 'driver', 'moderator')
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'user_role'::regtype
+              AND enumlabel = 'client'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'user_role'::regtype
+              AND enumlabel = 'courier'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'user_role'::regtype
+              AND enumlabel = 'driver'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'user_role'::regtype
+              AND enumlabel = 'moderator'
+        ) THEN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'users'
+                  AND column_name = 'role'
+                  AND udt_name = 'user_role'
+            ) THEN
+                ALTER TABLE users
+                    ALTER COLUMN role TYPE text USING role::text;
+            END IF;
 
-        IF NOT FOUND THEN
+            DROP TYPE user_role;
+        END IF;
+    END IF;
+END
+$$;
+
+CREATE TYPE IF NOT EXISTS user_role AS ENUM ('client', 'courier', 'driver', 'moderator');
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'users'
+          AND column_name = 'role'
+    ) THEN
+        IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'users'
+              AND column_name = 'role'
+              AND udt_name <> 'user_role'
+        ) THEN
+            UPDATE users
+            SET role = CASE
+                WHEN role IS NULL THEN 'client'
+                WHEN role::text IN ('client', 'courier', 'driver', 'moderator') THEN role::text
+                WHEN role::text IN ('admin', 'administrator', 'support', 'moderator') THEN 'moderator'
+                WHEN role::text IN ('executor', 'driver_role', 'driver') THEN 'driver'
+                WHEN role::text IN ('courier', 'delivery') THEN 'courier'
+                ELSE 'client'
+            END;
+
+            ALTER TABLE users
+                ALTER COLUMN role TYPE user_role USING role::user_role;
+        END IF;
+
+        UPDATE users
+        SET role = COALESCE(role, 'client'::user_role);
+
+        ALTER TABLE users
+            ALTER COLUMN role SET DEFAULT 'client';
+
+        BEGIN
+            ALTER TABLE users
+                ALTER COLUMN role SET NOT NULL;
+        EXCEPTION
+            WHEN not_null_violation THEN
+                NULL;
+        END;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_kind') THEN
+        IF EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'order_kind'::regtype
+              AND enumlabel NOT IN ('taxi', 'delivery')
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'order_kind'::regtype
+              AND enumlabel = 'taxi'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'order_kind'::regtype
+              AND enumlabel = 'delivery'
+        ) THEN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'orders'
+                  AND column_name = 'kind'
+                  AND udt_name = 'order_kind'
+            ) THEN
+                ALTER TABLE orders
+                    ALTER COLUMN kind TYPE text USING kind::text;
+            END IF;
+
+            DROP TYPE order_kind;
+        END IF;
+    END IF;
+END
+$$;
+
+CREATE TYPE IF NOT EXISTS order_kind AS ENUM ('taxi', 'delivery');
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'orders'
+          AND column_name = 'kind'
+    ) THEN
+        IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'orders'
+              AND column_name = 'kind'
+              AND udt_name <> 'order_kind'
+        ) THEN
+            UPDATE orders
+            SET kind = CASE
+                WHEN kind IS NULL THEN 'taxi'
+                WHEN kind::text IN ('taxi', 'ride', 'passenger', 'driver') THEN 'taxi'
+                WHEN kind::text IN ('delivery', 'courier', 'parcel', 'cargo', 'express') THEN 'delivery'
+                ELSE 'taxi'
+            END;
+
+            ALTER TABLE orders
+                ALTER COLUMN kind TYPE order_kind USING kind::order_kind;
+        END IF;
+
+        UPDATE orders
+        SET kind = COALESCE(kind, 'taxi'::order_kind);
+
+        BEGIN
+            ALTER TABLE orders
+                ALTER COLUMN kind SET NOT NULL;
+        EXCEPTION
+            WHEN not_null_violation THEN
+                NULL;
+        END;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
+        IF EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'order_status'::regtype
+              AND enumlabel NOT IN ('open', 'claimed', 'cancelled', 'done')
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'order_status'::regtype
+              AND enumlabel = 'open'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'order_status'::regtype
+              AND enumlabel = 'claimed'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'order_status'::regtype
+              AND enumlabel = 'cancelled'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'order_status'::regtype
+              AND enumlabel = 'done'
+        ) THEN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'orders'
+                  AND column_name = 'status'
+                  AND udt_name = 'order_status'
+            ) THEN
+                ALTER TABLE orders
+                    ALTER COLUMN status TYPE text USING status::text;
+            END IF;
+
+            DROP TYPE order_status;
+        END IF;
+    END IF;
+END
+$$;
+
+CREATE TYPE IF NOT EXISTS order_status AS ENUM ('open', 'claimed', 'cancelled', 'done');
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'orders'
+          AND column_name = 'status'
+    ) THEN
+        IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'orders'
+              AND column_name = 'status'
+              AND udt_name <> 'order_status'
+        ) THEN
+            UPDATE orders
+            SET status = CASE
+                WHEN status IS NULL THEN 'open'
+                WHEN status::text IN ('open', 'pending', 'new', 'created') THEN 'open'
+                WHEN status::text IN ('claimed', 'accepted', 'assigned', 'in_progress', 'taken') THEN 'claimed'
+                WHEN status::text IN ('cancelled', 'canceled', 'declined', 'rejected', 'void', 'voided') THEN 'cancelled'
+                WHEN status::text IN ('done', 'completed', 'finished', 'closed') THEN 'done'
+                ELSE 'open'
+            END;
+
+            ALTER TABLE orders
+                ALTER COLUMN status TYPE order_status USING status::order_status;
+        END IF;
+
+        UPDATE orders
+        SET status = COALESCE(status, 'open'::order_status);
+
+        ALTER TABLE orders
+            ALTER COLUMN status SET DEFAULT 'open';
+
+        BEGIN
+            ALTER TABLE orders
+                ALTER COLUMN status SET NOT NULL;
+        EXCEPTION
+            WHEN not_null_violation THEN
+                NULL;
+        END;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_role') THEN
+        IF EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'verification_role'::regtype
+              AND enumlabel NOT IN ('courier', 'driver')
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'verification_role'::regtype
+              AND enumlabel = 'courier'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'verification_role'::regtype
+              AND enumlabel = 'driver'
+        ) THEN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'verifications'
+                  AND column_name = 'role'
+                  AND udt_name = 'verification_role'
+            ) THEN
+                ALTER TABLE verifications
+                    ALTER COLUMN role TYPE text USING role::text;
+            END IF;
+
+            DROP TYPE verification_role;
+        END IF;
+    END IF;
+END
+$$;
+
+CREATE TYPE IF NOT EXISTS verification_role AS ENUM ('courier', 'driver');
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'verifications'
+          AND column_name = 'role'
+    ) THEN
+        IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'verifications'
+              AND column_name = 'role'
+              AND udt_name <> 'verification_role'
+        ) THEN
+            UPDATE verifications
+            SET role = CASE
+                WHEN role IS NULL THEN 'courier'
+                WHEN role::text IN ('driver', 'auto', 'car', 'taxi') THEN 'driver'
+                WHEN role::text IN ('courier', 'delivery', 'bike', 'foot', 'walker') THEN 'courier'
+                ELSE 'courier'
+            END;
+
+            ALTER TABLE verifications
+                ALTER COLUMN role TYPE verification_role USING role::verification_role;
+        END IF;
+
+        UPDATE verifications
+        SET role = COALESCE(role, 'courier'::verification_role);
+
+        BEGIN
+            ALTER TABLE verifications
+                ALTER COLUMN role SET NOT NULL;
+        EXCEPTION
+            WHEN not_null_violation THEN
+                NULL;
+        END;
+    END IF;
+END
+$$;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_status') THEN
+        IF EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'verification_status'::regtype
+              AND enumlabel NOT IN ('pending', 'active', 'rejected', 'expired')
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'verification_status'::regtype
+              AND enumlabel = 'pending'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'verification_status'::regtype
+              AND enumlabel = 'active'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'verification_status'::regtype
+              AND enumlabel = 'rejected'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'verification_status'::regtype
+              AND enumlabel = 'expired'
+        ) THEN
             IF EXISTS (
                 SELECT 1
                 FROM information_schema.columns
@@ -24,14 +418,6 @@ BEGIN
                 ALTER TABLE verifications
                     ALTER COLUMN status TYPE text USING status::text;
             END IF;
-
-            UPDATE verifications
-            SET status = CASE
-                WHEN status = 'approved' THEN 'active'
-                WHEN status IN ('cancelled', 'canceled') THEN 'expired'
-                WHEN status NOT IN ('pending', 'active', 'rejected', 'expired') OR status IS NULL THEN 'pending'
-                ELSE status
-            END;
 
             DROP TYPE verification_status;
         END IF;
@@ -49,20 +435,42 @@ BEGIN
         WHERE table_schema = 'public'
           AND table_name = 'verifications'
           AND column_name = 'status'
-          AND udt_name <> 'verification_status'
     ) THEN
-        ALTER TABLE verifications
-            ALTER COLUMN status TYPE verification_status USING status::verification_status;
-    END IF;
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'verifications'
-          AND column_name = 'status'
-    ) THEN
+        IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'verifications'
+              AND column_name = 'status'
+              AND udt_name <> 'verification_status'
+        ) THEN
+            UPDATE verifications
+            SET status = CASE
+                WHEN status IS NULL THEN 'pending'
+                WHEN status::text IN ('pending', 'collecting', 'submitted') THEN 'pending'
+                WHEN status::text IN ('active', 'approved') THEN 'active'
+                WHEN status::text IN ('rejected', 'declined', 'denied') THEN 'rejected'
+                WHEN status::text IN ('expired', 'cancelled', 'canceled') THEN 'expired'
+                ELSE 'pending'
+            END;
+
+            ALTER TABLE verifications
+                ALTER COLUMN status TYPE verification_status USING status::verification_status;
+        END IF;
+
+        UPDATE verifications
+        SET status = COALESCE(status, 'pending'::verification_status);
+
         ALTER TABLE verifications
             ALTER COLUMN status SET DEFAULT 'pending';
+
+        BEGIN
+            ALTER TABLE verifications
+                ALTER COLUMN status SET NOT NULL;
+        EXCEPTION
+            WHEN not_null_violation THEN
+                NULL;
+        END;
     END IF;
 END
 $$;
@@ -70,12 +478,36 @@ $$;
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status') THEN
-        PERFORM 1
-        FROM pg_enum
-        WHERE enumtypid = 'subscription_status'::regtype
-          AND enumlabel = 'paused';
-
-        IF FOUND THEN
+        IF EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'subscription_status'::regtype
+              AND enumlabel NOT IN ('pending', 'active', 'rejected', 'expired')
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'subscription_status'::regtype
+              AND enumlabel = 'pending'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'subscription_status'::regtype
+              AND enumlabel = 'active'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'subscription_status'::regtype
+              AND enumlabel = 'rejected'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'subscription_status'::regtype
+              AND enumlabel = 'expired'
+        ) THEN
             IF EXISTS (
                 SELECT 1
                 FROM information_schema.columns
@@ -87,14 +519,6 @@ BEGIN
                 ALTER TABLE subscriptions
                     ALTER COLUMN status TYPE text USING status::text;
             END IF;
-
-            UPDATE subscriptions
-            SET status = CASE
-                WHEN status IN ('trialing', 'past_due', 'active') THEN 'active'
-                WHEN status IN ('canceled', 'cancelled', 'expired') THEN 'expired'
-                WHEN status NOT IN ('pending', 'active', 'rejected', 'expired') OR status IS NULL THEN 'pending'
-                ELSE status
-            END;
 
             DROP TYPE subscription_status;
         END IF;
@@ -112,20 +536,42 @@ BEGIN
         WHERE table_schema = 'public'
           AND table_name = 'subscriptions'
           AND column_name = 'status'
-          AND udt_name <> 'subscription_status'
     ) THEN
-        ALTER TABLE subscriptions
-            ALTER COLUMN status TYPE subscription_status USING status::subscription_status;
-    END IF;
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'subscriptions'
-          AND column_name = 'status'
-    ) THEN
+        IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'subscriptions'
+              AND column_name = 'status'
+              AND udt_name <> 'subscription_status'
+        ) THEN
+            UPDATE subscriptions
+            SET status = CASE
+                WHEN status IS NULL THEN 'pending'
+                WHEN status::text IN ('pending', 'waiting', 'created', 'new') THEN 'pending'
+                WHEN status::text IN ('active', 'trialing', 'past_due', 'paid', 'succeeded') THEN 'active'
+                WHEN status::text IN ('rejected', 'failed', 'declined') THEN 'rejected'
+                WHEN status::text IN ('expired', 'canceled', 'cancelled', 'ended', 'stopped', 'terminated', 'paused', 'on_hold') THEN 'expired'
+                ELSE 'pending'
+            END;
+
+            ALTER TABLE subscriptions
+                ALTER COLUMN status TYPE subscription_status USING status::subscription_status;
+        END IF;
+
+        UPDATE subscriptions
+        SET status = COALESCE(status, 'pending'::subscription_status);
+
         ALTER TABLE subscriptions
             ALTER COLUMN status SET DEFAULT 'pending';
+
+        BEGIN
+            ALTER TABLE subscriptions
+                ALTER COLUMN status SET NOT NULL;
+        EXCEPTION
+            WHEN not_null_violation THEN
+                NULL;
+        END;
     END IF;
 END
 $$;
@@ -133,16 +579,35 @@ $$;
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_status') THEN
-        PERFORM 1
-        FROM pg_enum
-        WHERE enumtypid = 'payment_status'::regtype
-          AND enumlabel = 'approved';
-
-        IF FOUND OR NOT EXISTS (
+        IF EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'payment_status'::regtype
+              AND enumlabel NOT IN ('pending', 'active', 'rejected', 'expired')
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'payment_status'::regtype
+              AND enumlabel = 'pending'
+        )
+        OR NOT EXISTS (
             SELECT 1
             FROM pg_enum
             WHERE enumtypid = 'payment_status'::regtype
               AND enumlabel = 'active'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'payment_status'::regtype
+              AND enumlabel = 'rejected'
+        )
+        OR NOT EXISTS (
+            SELECT 1
+            FROM pg_enum
+            WHERE enumtypid = 'payment_status'::regtype
+              AND enumlabel = 'expired'
         ) THEN
             IF EXISTS (
                 SELECT 1
@@ -155,14 +620,6 @@ BEGIN
                 ALTER TABLE payments
                     ALTER COLUMN status TYPE text USING status::text;
             END IF;
-
-            UPDATE payments
-            SET status = CASE
-                WHEN status IN ('approved', 'succeeded', 'active') THEN 'active'
-                WHEN status IN ('failed', 'rejected', 'cancelled', 'canceled', 'expired') THEN 'rejected'
-                WHEN status NOT IN ('pending', 'active', 'rejected', 'expired') OR status IS NULL THEN 'pending'
-                ELSE status
-            END;
 
             DROP TYPE payment_status;
         END IF;
@@ -180,20 +637,41 @@ BEGIN
         WHERE table_schema = 'public'
           AND table_name = 'payments'
           AND column_name = 'status'
-          AND udt_name <> 'payment_status'
     ) THEN
-        ALTER TABLE payments
-            ALTER COLUMN status TYPE payment_status USING status::payment_status;
-    END IF;
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = 'payments'
-          AND column_name = 'status'
-    ) THEN
+        IF EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'payments'
+              AND column_name = 'status'
+              AND udt_name <> 'payment_status'
+        ) THEN
+            UPDATE payments
+            SET status = CASE
+                WHEN status IS NULL THEN 'pending'
+                WHEN status::text IN ('pending', 'processing', 'created', 'new', 'waiting') THEN 'pending'
+                WHEN status::text IN ('active', 'approved', 'succeeded', 'paid', 'completed', 'captured') THEN 'active'
+                WHEN status::text IN ('rejected', 'failed', 'cancelled', 'canceled', 'expired', 'void', 'voided', 'refunded', 'chargeback') THEN 'rejected'
+                ELSE 'pending'
+            END;
+
+            ALTER TABLE payments
+                ALTER COLUMN status TYPE payment_status USING status::payment_status;
+        END IF;
+
+        UPDATE payments
+        SET status = COALESCE(status, 'pending'::payment_status);
+
         ALTER TABLE payments
             ALTER COLUMN status SET DEFAULT 'pending';
+
+        BEGIN
+            ALTER TABLE payments
+                ALTER COLUMN status SET NOT NULL;
+        EXCEPTION
+            WHEN not_null_violation THEN
+                NULL;
+        END;
     END IF;
 END
 $$;
@@ -226,6 +704,21 @@ BEGIN
         WHERE table_schema = 'public'
           AND table_name = 'users'
     ) THEN
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS username text;
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS first_name text;
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS last_name text;
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS phone text;
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS role user_role;
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS created_at timestamptz;
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
         IF NOT EXISTS (
             SELECT 1
             FROM information_schema.columns
@@ -352,6 +845,42 @@ BEGIN
             ALTER TABLE users
                 ALTER COLUMN is_blocked SET NOT NULL;
         END IF;
+
+        UPDATE users
+        SET role = COALESCE(role, 'client'::user_role);
+        ALTER TABLE users
+            ALTER COLUMN role SET DEFAULT 'client';
+        BEGIN
+            ALTER TABLE users
+                ALTER COLUMN role SET NOT NULL;
+        EXCEPTION
+            WHEN not_null_violation THEN
+                NULL;
+        END;
+
+        UPDATE users
+        SET created_at = COALESCE(created_at, now());
+        ALTER TABLE users
+            ALTER COLUMN created_at SET DEFAULT now();
+        BEGIN
+            ALTER TABLE users
+                ALTER COLUMN created_at SET NOT NULL;
+        EXCEPTION
+            WHEN not_null_violation THEN
+                NULL;
+        END;
+
+        UPDATE users
+        SET updated_at = COALESCE(updated_at, now());
+        ALTER TABLE users
+            ALTER COLUMN updated_at SET DEFAULT now();
+        BEGIN
+            ALTER TABLE users
+                ALTER COLUMN updated_at SET NOT NULL;
+        EXCEPTION
+            WHEN not_null_violation THEN
+                NULL;
+        END;
     END IF;
 END
 $$;
@@ -430,6 +959,82 @@ CREATE TABLE IF NOT EXISTS verifications (
     user_id bigint NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE
 );
 
+ALTER TABLE verifications
+    ADD COLUMN IF NOT EXISTS role verification_role;
+ALTER TABLE verifications
+    ADD COLUMN IF NOT EXISTS status verification_status;
+ALTER TABLE verifications
+    ADD COLUMN IF NOT EXISTS photos_required integer;
+ALTER TABLE verifications
+    ADD COLUMN IF NOT EXISTS photos_uploaded integer;
+ALTER TABLE verifications
+    ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+ALTER TABLE verifications
+    ADD COLUMN IF NOT EXISTS created_at timestamptz;
+ALTER TABLE verifications
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+ALTER TABLE verifications DROP CONSTRAINT IF EXISTS verifications_user_id_fkey;
+ALTER TABLE verifications
+    ADD CONSTRAINT verifications_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES users(tg_id) ON DELETE CASCADE;
+
+UPDATE verifications
+SET photos_required = COALESCE(photos_required, 0),
+    photos_uploaded = COALESCE(photos_uploaded, 0);
+
+ALTER TABLE verifications
+    ALTER COLUMN photos_required SET DEFAULT 0;
+ALTER TABLE verifications
+    ALTER COLUMN photos_uploaded SET DEFAULT 0;
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE verifications
+            ALTER COLUMN photos_required SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE verifications
+            ALTER COLUMN photos_uploaded SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+END
+$$;
+
+UPDATE verifications
+SET created_at = COALESCE(created_at, now()),
+    updated_at = COALESCE(updated_at, now());
+
+ALTER TABLE verifications
+    ALTER COLUMN created_at SET DEFAULT now();
+ALTER TABLE verifications
+    ALTER COLUMN updated_at SET DEFAULT now();
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE verifications
+            ALTER COLUMN created_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE verifications
+            ALTER COLUMN updated_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+END
+$$;
+
 CREATE TABLE IF NOT EXISTS verification_photos (
     id bigserial PRIMARY KEY,
     verification_id bigint NOT NULL REFERENCES verifications(id) ON DELETE CASCADE
@@ -437,6 +1042,14 @@ CREATE TABLE IF NOT EXISTS verification_photos (
 
 ALTER TABLE verification_photos
     ADD COLUMN IF NOT EXISTS idx integer;
+ALTER TABLE verification_photos
+    ADD COLUMN IF NOT EXISTS file_id text;
+ALTER TABLE verification_photos
+    ADD COLUMN IF NOT EXISTS file_unique_id text;
+ALTER TABLE verification_photos
+    ADD COLUMN IF NOT EXISTS file_size integer;
+ALTER TABLE verification_photos
+    ADD COLUMN IF NOT EXISTS created_at timestamptz;
 
 WITH numbered AS (
     SELECT id,
@@ -456,6 +1069,39 @@ BEGIN
 EXCEPTION
     WHEN not_null_violation THEN
         NULL;
+END
+$$;
+
+UPDATE verification_photos
+SET file_id = COALESCE(NULLIF(file_id, ''), 'missing');
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE verification_photos
+            ALTER COLUMN file_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+END
+$$;
+
+UPDATE verification_photos
+SET created_at = COALESCE(created_at, now());
+
+ALTER TABLE verification_photos
+    ALTER COLUMN created_at SET DEFAULT now();
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE verification_photos
+            ALTER COLUMN created_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
 END
 $$;
 
@@ -482,6 +1128,52 @@ CREATE TABLE IF NOT EXISTS orders (
 
 ALTER TABLE orders
     ADD COLUMN IF NOT EXISTS short_id text;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS kind order_kind;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS status order_status;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS client_id bigint;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS client_phone text;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS customer_name text;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS customer_username text;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS client_comment text;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS claimed_by bigint;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS claimed_at timestamptz;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS completed_at timestamptz;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS pickup_query text;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS pickup_address text;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS pickup_lat double precision;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS pickup_lon double precision;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS dropoff_query text;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS dropoff_address text;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS dropoff_lat double precision;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS dropoff_lon double precision;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS price_amount integer;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS price_currency text;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS distance_km double precision;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS channel_message_id bigint;
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS created_at timestamptz;
 
 UPDATE orders
 SET short_id = substr(gen_random_uuid()::text, 1, 8)
@@ -514,6 +1206,131 @@ $$;
 
 ALTER TABLE orders DROP COLUMN IF EXISTS updated_at;
 
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_client_id_fkey;
+ALTER TABLE orders
+    ADD CONSTRAINT orders_client_id_fkey
+    FOREIGN KEY (client_id) REFERENCES users(tg_id) ON DELETE SET NULL;
+
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_claimed_by_fkey;
+ALTER TABLE orders
+    ADD CONSTRAINT orders_claimed_by_fkey
+    FOREIGN KEY (claimed_by) REFERENCES users(tg_id) ON DELETE SET NULL;
+
+UPDATE orders
+SET pickup_query = COALESCE(NULLIF(pickup_query, ''), 'N/A'),
+    pickup_address = COALESCE(NULLIF(pickup_address, ''), 'N/A'),
+    dropoff_query = COALESCE(NULLIF(dropoff_query, ''), 'N/A'),
+    dropoff_address = COALESCE(NULLIF(dropoff_address, ''), 'N/A');
+
+UPDATE orders
+SET pickup_lat = COALESCE(pickup_lat, 0),
+    pickup_lon = COALESCE(pickup_lon, 0),
+    dropoff_lat = COALESCE(dropoff_lat, 0),
+    dropoff_lon = COALESCE(dropoff_lon, 0),
+    price_amount = COALESCE(price_amount, 0),
+    distance_km = COALESCE(distance_km, 0),
+    price_currency = COALESCE(NULLIF(price_currency, ''), 'KZT');
+
+UPDATE orders
+SET created_at = COALESCE(created_at, now());
+
+ALTER TABLE orders
+    ALTER COLUMN created_at SET DEFAULT now();
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN created_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+END
+$$;
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN pickup_query SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN pickup_address SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN dropoff_query SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN dropoff_address SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN pickup_lat SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN pickup_lon SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN dropoff_lat SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN dropoff_lon SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN price_amount SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN price_currency SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE orders
+            ALTER COLUMN distance_km SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+END
+$$;
+
 CREATE TABLE IF NOT EXISTS order_channel_posts (
     id bigserial PRIMARY KEY,
     order_id bigint NOT NULL REFERENCES orders(id) ON DELETE CASCADE
@@ -522,11 +1339,22 @@ CREATE TABLE IF NOT EXISTS order_channel_posts (
 ALTER TABLE order_channel_posts
     ADD COLUMN IF NOT EXISTS idx integer;
 ALTER TABLE order_channel_posts
+    ADD COLUMN IF NOT EXISTS channel_id bigint;
+ALTER TABLE order_channel_posts
+    ADD COLUMN IF NOT EXISTS message_id bigint;
+ALTER TABLE order_channel_posts
+    ADD COLUMN IF NOT EXISTS thread_id bigint;
+ALTER TABLE order_channel_posts
+    ADD COLUMN IF NOT EXISTS published_at timestamptz;
+ALTER TABLE order_channel_posts
     ADD COLUMN IF NOT EXISTS updated_at timestamptz;
 
 UPDATE order_channel_posts
 SET updated_at = COALESCE(updated_at, published_at, now())
 WHERE updated_at IS NULL;
+
+UPDATE order_channel_posts
+SET published_at = COALESCE(published_at, now());
 
 WITH ranked AS (
     SELECT id,
@@ -555,6 +1383,46 @@ BEGIN
 EXCEPTION
     WHEN datatype_mismatch THEN
         NULL;
+END
+$$;
+
+UPDATE order_channel_posts
+SET channel_id = COALESCE(channel_id, 0),
+    message_id = COALESCE(message_id, 0);
+
+ALTER TABLE order_channel_posts
+    ALTER COLUMN published_at SET DEFAULT now();
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE order_channel_posts
+            ALTER COLUMN channel_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE order_channel_posts
+            ALTER COLUMN message_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE order_channel_posts
+            ALTER COLUMN published_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE order_channel_posts
+            ALTER COLUMN updated_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
 END
 $$;
 
@@ -609,6 +1477,18 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 
 ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS user_id bigint;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS chat_id bigint;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS plan text;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS status subscription_status;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS currency text;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS amount integer;
+ALTER TABLE subscriptions
     ADD COLUMN IF NOT EXISTS tier text;
 ALTER TABLE subscriptions
     ADD COLUMN IF NOT EXISTS interval text;
@@ -618,6 +1498,48 @@ ALTER TABLE subscriptions
     ADD COLUMN IF NOT EXISTS days integer;
 ALTER TABLE subscriptions
     ADD COLUMN IF NOT EXISTS cancel_at_period_end boolean;
+
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS next_billing_at timestamptz;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS grace_until timestamptz;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS ended_at timestamptz;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS metadata jsonb;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS last_warning_at timestamptz;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS created_at timestamptz;
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+ALTER TABLE subscriptions DROP CONSTRAINT IF EXISTS subscriptions_user_id_fkey;
+ALTER TABLE subscriptions
+    ADD CONSTRAINT subscriptions_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES users(tg_id) ON DELETE CASCADE;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'subscriptions'
+          AND column_name = 'metadata'
+          AND udt_name <> 'jsonb'
+    ) THEN
+        ALTER TABLE subscriptions
+            ALTER COLUMN metadata TYPE jsonb USING
+                CASE
+                    WHEN metadata IS NULL THEN '{}'::jsonb
+                    ELSE metadata::jsonb
+                END;
+    END IF;
+END
+$$;
 
 DO $$
 BEGIN
@@ -645,6 +1567,25 @@ WHERE interval_count IS NULL OR interval_count <= 0;
 UPDATE subscriptions
 SET days = COALESCE(days, interval_count, 0)
 WHERE days IS NULL;
+
+UPDATE subscriptions
+SET plan = COALESCE(NULLIF(plan, ''), 'manual');
+
+UPDATE subscriptions
+SET currency = COALESCE(NULLIF(currency, ''), 'KZT');
+
+UPDATE subscriptions
+SET amount = COALESCE(amount, 0);
+
+UPDATE subscriptions
+SET metadata =
+    CASE
+        WHEN metadata IS NULL THEN '{}'::jsonb
+        ELSE metadata
+    END;
+
+ALTER TABLE subscriptions
+    ALTER COLUMN metadata SET DEFAULT '{}'::jsonb;
 
 ALTER TABLE subscriptions
     ALTER COLUMN interval SET DEFAULT 'day';
@@ -689,6 +1630,83 @@ $$;
 UPDATE subscriptions
 SET cancel_at_period_end = COALESCE(cancel_at_period_end, false)
 WHERE cancel_at_period_end IS NULL;
+
+UPDATE subscriptions
+SET created_at = COALESCE(created_at, now()),
+    updated_at = COALESCE(updated_at, now());
+
+ALTER TABLE subscriptions
+    ALTER COLUMN created_at SET DEFAULT now();
+ALTER TABLE subscriptions
+    ALTER COLUMN updated_at SET DEFAULT now();
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE subscriptions
+            ALTER COLUMN user_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE subscriptions
+            ALTER COLUMN chat_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE subscriptions
+            ALTER COLUMN plan SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE subscriptions
+            ALTER COLUMN status SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE subscriptions
+            ALTER COLUMN currency SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE subscriptions
+            ALTER COLUMN amount SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE subscriptions
+            ALTER COLUMN metadata SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE subscriptions
+            ALTER COLUMN created_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE subscriptions
+            ALTER COLUMN updated_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+END
+$$;
 
 DO $$
 BEGIN
@@ -735,12 +1753,58 @@ END
 $$;
 
 ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS subscription_id bigint;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS user_id bigint;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS amount integer;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS currency text;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS status payment_status;
+ALTER TABLE payments
     ADD COLUMN IF NOT EXISTS payment_provider text;
 ALTER TABLE payments
     ALTER COLUMN payment_provider SET DEFAULT 'manual';
 
 ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS provider_payment_id text;
+ALTER TABLE payments
     ADD COLUMN IF NOT EXISTS provider_customer_id text;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS invoice_url text;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS receipt_url text;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS period_start timestamptz;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS period_end timestamptz;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS paid_at timestamptz;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS metadata jsonb;
+ALTER TABLE payments
+    ADD COLUMN IF NOT EXISTS created_at timestamptz;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'payments'
+          AND column_name = 'metadata'
+          AND udt_name <> 'jsonb'
+    ) THEN
+        ALTER TABLE payments
+            ALTER COLUMN metadata TYPE jsonb USING
+                CASE
+                    WHEN metadata IS NULL THEN '{}'::jsonb
+                    ELSE metadata::jsonb
+                END;
+    END IF;
+END
+$$;
 
 DO $$
 BEGIN
@@ -759,6 +1823,16 @@ $$;
 
 ALTER TABLE payments
     ADD COLUMN IF NOT EXISTS days integer;
+
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_subscription_id_fkey;
+ALTER TABLE payments
+    ADD CONSTRAINT payments_subscription_id_fkey
+    FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE CASCADE;
+
+ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_user_id_fkey;
+ALTER TABLE payments
+    ADD CONSTRAINT payments_user_id_fkey
+    FOREIGN KEY (user_id) REFERENCES users(tg_id) ON DELETE CASCADE;
 
 DO $$
 BEGIN
@@ -788,6 +1862,93 @@ $$;
 
 ALTER TABLE payments
     ADD COLUMN IF NOT EXISTS file_id text;
+
+UPDATE payments
+SET payment_provider = COALESCE(NULLIF(payment_provider, ''), 'manual');
+
+ALTER TABLE payments
+    ALTER COLUMN payment_provider DROP DEFAULT;
+
+UPDATE payments
+SET amount = COALESCE(amount, 0),
+    currency = COALESCE(NULLIF(currency, ''), 'KZT');
+
+UPDATE payments
+SET metadata =
+    CASE
+        WHEN metadata IS NULL THEN '{}'::jsonb
+        ELSE metadata
+    END;
+
+ALTER TABLE payments
+    ALTER COLUMN metadata SET DEFAULT '{}'::jsonb;
+
+UPDATE payments
+SET created_at = COALESCE(created_at, now());
+
+ALTER TABLE payments
+    ALTER COLUMN created_at SET DEFAULT now();
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE payments
+            ALTER COLUMN subscription_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE payments
+            ALTER COLUMN user_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE payments
+            ALTER COLUMN amount SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE payments
+            ALTER COLUMN currency SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE payments
+            ALTER COLUMN status SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE payments
+            ALTER COLUMN payment_provider SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE payments
+            ALTER COLUMN metadata SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE payments
+            ALTER COLUMN created_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+END
+$$;
 
 UPDATE payments
 SET short_id = substr(gen_random_uuid()::text, 1, 8)
@@ -827,12 +1988,185 @@ END
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Session storage alignment.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sessions (
+    scope text NOT NULL,
+    scope_id bigint NOT NULL,
+    state jsonb NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (scope, scope_id)
+);
+
+ALTER TABLE sessions
+    ADD COLUMN IF NOT EXISTS scope text;
+ALTER TABLE sessions
+    ADD COLUMN IF NOT EXISTS scope_id bigint;
+ALTER TABLE sessions
+    ADD COLUMN IF NOT EXISTS state jsonb;
+ALTER TABLE sessions
+    ADD COLUMN IF NOT EXISTS created_at timestamptz;
+ALTER TABLE sessions
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'sessions'
+          AND column_name = 'state'
+          AND udt_name <> 'jsonb'
+    ) THEN
+        ALTER TABLE sessions
+            ALTER COLUMN state TYPE jsonb USING
+                CASE
+                    WHEN state IS NULL THEN '{}'::jsonb
+                    ELSE state::jsonb
+                END;
+    END IF;
+END
+$$;
+
+UPDATE sessions
+SET created_at = COALESCE(created_at, now()),
+    updated_at = COALESCE(updated_at, now());
+
+ALTER TABLE sessions
+    ALTER COLUMN created_at SET DEFAULT now();
+ALTER TABLE sessions
+    ALTER COLUMN updated_at SET DEFAULT now();
+
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_pkey;
+ALTER TABLE sessions
+    ADD CONSTRAINT sessions_pkey PRIMARY KEY (scope, scope_id);
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE sessions
+            ALTER COLUMN scope SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE sessions
+            ALTER COLUMN scope_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE sessions
+            ALTER COLUMN state SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE sessions
+            ALTER COLUMN created_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE sessions
+            ALTER COLUMN updated_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+END
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Callback map storage.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS callback_map (
     idx bigserial PRIMARY KEY,
     token text NOT NULL UNIQUE
 );
+
+ALTER TABLE callback_map
+    ADD COLUMN IF NOT EXISTS action text;
+ALTER TABLE callback_map
+    ADD COLUMN IF NOT EXISTS chat_id bigint;
+ALTER TABLE callback_map
+    ADD COLUMN IF NOT EXISTS message_id bigint;
+ALTER TABLE callback_map
+    ADD COLUMN IF NOT EXISTS payload jsonb;
+ALTER TABLE callback_map
+    ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+ALTER TABLE callback_map
+    ADD COLUMN IF NOT EXISTS created_at timestamptz;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'callback_map'
+          AND column_name = 'payload'
+          AND udt_name <> 'jsonb'
+    ) THEN
+        ALTER TABLE callback_map
+            ALTER COLUMN payload TYPE jsonb USING
+                CASE
+                    WHEN payload IS NULL THEN '{}'::jsonb
+                    ELSE payload::jsonb
+                END;
+    END IF;
+END
+$$;
+
+UPDATE callback_map
+SET action = COALESCE(NULLIF(action, ''), 'noop'),
+    payload = COALESCE(payload, '{}'::jsonb),
+    expires_at = COALESCE(expires_at, now()),
+    created_at = COALESCE(created_at, now());
+
+ALTER TABLE callback_map
+    ALTER COLUMN payload SET DEFAULT '{}'::jsonb;
+ALTER TABLE callback_map
+    ALTER COLUMN created_at SET DEFAULT now();
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE callback_map
+            ALTER COLUMN action SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE callback_map
+            ALTER COLUMN payload SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE callback_map
+            ALTER COLUMN expires_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE callback_map
+            ALTER COLUMN created_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+END
+$$;
 
 DO $$
 BEGIN
@@ -875,6 +2209,29 @@ CREATE TABLE IF NOT EXISTS support_threads (
 
 ALTER TABLE support_threads
     ADD COLUMN IF NOT EXISTS short_id text;
+ALTER TABLE support_threads
+    ADD COLUMN IF NOT EXISTS user_chat_id bigint;
+ALTER TABLE support_threads
+    ADD COLUMN IF NOT EXISTS user_tg_id bigint;
+ALTER TABLE support_threads
+    ADD COLUMN IF NOT EXISTS user_message_id bigint;
+ALTER TABLE support_threads
+    ADD COLUMN IF NOT EXISTS moderator_chat_id bigint;
+ALTER TABLE support_threads
+    ADD COLUMN IF NOT EXISTS moderator_message_id bigint;
+ALTER TABLE support_threads
+    ADD COLUMN IF NOT EXISTS status text;
+ALTER TABLE support_threads
+    ADD COLUMN IF NOT EXISTS closed_at timestamptz;
+ALTER TABLE support_threads
+    ADD COLUMN IF NOT EXISTS created_at timestamptz;
+ALTER TABLE support_threads
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+ALTER TABLE support_threads DROP CONSTRAINT IF EXISTS support_threads_user_tg_id_fkey;
+ALTER TABLE support_threads
+    ADD CONSTRAINT support_threads_user_tg_id_fkey
+    FOREIGN KEY (user_tg_id) REFERENCES users(tg_id);
 
 UPDATE support_threads
 SET short_id = substr(gen_random_uuid()::text, 1, 8)
@@ -882,6 +2239,79 @@ WHERE short_id IS NULL OR length(trim(short_id)) = 0;
 
 ALTER TABLE support_threads
     ALTER COLUMN short_id SET DEFAULT substr(gen_random_uuid()::text, 1, 8);
+
+UPDATE support_threads
+SET status = CASE
+        WHEN status IN ('closed', 'resolved', 'done', 'archived') THEN 'closed'
+        ELSE 'open'
+    END,
+    created_at = COALESCE(created_at, now()),
+    updated_at = COALESCE(updated_at, now());
+
+ALTER TABLE support_threads
+    ALTER COLUMN status SET DEFAULT 'open';
+ALTER TABLE support_threads
+    ALTER COLUMN created_at SET DEFAULT now();
+ALTER TABLE support_threads
+    ALTER COLUMN updated_at SET DEFAULT now();
+
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE support_threads
+            ALTER COLUMN user_chat_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE support_threads
+            ALTER COLUMN user_message_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE support_threads
+            ALTER COLUMN moderator_chat_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE support_threads
+            ALTER COLUMN moderator_message_id SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE support_threads
+            ALTER COLUMN status SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE support_threads
+            ALTER COLUMN created_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+    BEGIN
+        ALTER TABLE support_threads
+            ALTER COLUMN updated_at SET NOT NULL;
+    EXCEPTION
+        WHEN not_null_violation THEN
+            NULL;
+    END;
+END
+$$;
+
+ALTER TABLE support_threads DROP CONSTRAINT IF EXISTS support_threads_status_check;
+ALTER TABLE support_threads
+    ADD CONSTRAINT support_threads_status_check CHECK (status IN ('open', 'closed'));
 
 DO $$
 BEGIN

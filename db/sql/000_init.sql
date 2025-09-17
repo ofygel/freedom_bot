@@ -2,7 +2,7 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Domain types used throughout the schema.
-CREATE TYPE IF NOT EXISTS user_role AS ENUM ('client', 'courier', 'driver');
+CREATE TYPE IF NOT EXISTS user_role AS ENUM ('client', 'courier', 'driver', 'moderator');
 CREATE TYPE IF NOT EXISTS order_kind AS ENUM ('taxi', 'delivery');
 CREATE TYPE IF NOT EXISTS order_status AS ENUM ('open', 'claimed', 'cancelled', 'done');
 CREATE TYPE IF NOT EXISTS verification_role AS ENUM ('courier', 'driver');
