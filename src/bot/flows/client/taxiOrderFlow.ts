@@ -23,7 +23,12 @@ import {
 import { estimateTaxiPrice, formatPriceAmount } from '../../services/pricing';
 import { clearInlineKeyboard } from '../../services/cleanup';
 import { ensurePrivateCallback, isPrivateChat } from '../../services/access';
-import { buildConfirmCancelKeyboard } from '../../keyboards/common';
+import {
+  buildConfirmCancelKeyboard,
+  buildUrlKeyboard,
+  mergeInlineKeyboards,
+} from '../../keyboards/common';
+import { buildOrderLocationsKeyboard } from '../../keyboards/orders';
 import type { BotContext, ClientOrderDraftState } from '../../types';
 import { ui } from '../../ui';
 import { CLIENT_MENU_ACTION } from './menu';
@@ -43,17 +48,20 @@ const TAXI_CREATED_STEP_ID = 'client:taxi:created';
 const TAXI_CONFIRM_ERROR_STEP_ID = 'client:taxi:error:confirm';
 const TAXI_CREATE_ERROR_STEP_ID = 'client:taxi:error:create';
 
-const updateTaxiStep = (
+const updateTaxiStep = async (
   ctx: BotContext,
   text: string,
   keyboard?: InlineKeyboardMarkup,
-) =>
-  ui.step(ctx, {
+) => {
+  await ui.clear(ctx, { ids: TAXI_STEP_ID });
+
+  return ui.step(ctx, {
     id: TAXI_STEP_ID,
     text,
     keyboard,
     homeAction: CLIENT_MENU_ACTION,
   });
+};
 
 const ADDRESS_INPUT_HINTS = [
   '• Отправьте ссылку 2ГИС на точку.',
@@ -63,6 +71,11 @@ const ADDRESS_INPUT_HINTS = [
 
 const buildAddressPrompt = (lines: string[]): string =>
   [...lines, ...ADDRESS_INPUT_HINTS].join('\n');
+
+const TWO_GIS_SHORTCUT_URL = 'https://2gis.kz/almaty';
+
+const buildTwoGisShortcutKeyboard = (): InlineKeyboardMarkup =>
+  buildUrlKeyboard('🗺 Открыть 2ГИС', TWO_GIS_SHORTCUT_URL);
 
 const remindManualAddressAccuracy = async (ctx: BotContext): Promise<void> => {
   await ui.step(ctx, {
@@ -84,6 +97,7 @@ const requestPickupAddress = async (ctx: BotContext): Promise<void> => {
   await updateTaxiStep(
     ctx,
     buildAddressPrompt(['Отправьте точку подачи такси одним из способов:']),
+    buildTwoGisShortcutKeyboard(),
   );
 };
 
@@ -95,6 +109,7 @@ const requestDropoffAddress = async (ctx: BotContext, pickup: CompletedOrderDraf
       '',
       'Теперь отправьте пункт назначения одним из способов:',
     ]),
+    buildTwoGisShortcutKeyboard(),
   );
 };
 
@@ -163,7 +178,9 @@ const showConfirmation = async (ctx: BotContext, draft: CompletedOrderDraft): Pr
     priceLabel: '💰 Оценка стоимости',
   });
 
-  const keyboard = buildConfirmationKeyboard();
+  const locationsKeyboard = buildOrderLocationsKeyboard(draft.pickup, draft.dropoff);
+  const confirmationKeyboard = buildConfirmationKeyboard();
+  const keyboard = mergeInlineKeyboards(locationsKeyboard, confirmationKeyboard);
   const result = await updateTaxiStep(ctx, summary, keyboard);
   draft.confirmationMessageId = result?.messageId;
 };
@@ -236,7 +253,7 @@ const notifyOrderCreated = async (
   ];
 
   if (publishStatus === 'missing_channel') {
-    lines.push('⚠️ Канал курьеров не настроен. Мы свяжемся с вами вручную.');
+    lines.push('⚠️ Канал исполнителей не настроен. Мы свяжемся с вами вручную.');
   }
 
   await ui.step(ctx, {

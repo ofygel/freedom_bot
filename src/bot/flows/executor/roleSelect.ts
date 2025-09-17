@@ -20,13 +20,26 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
   const { genitive } = getExecutorRoleCopy(role);
   await ctx.answerCbQuery(`Вы выбрали роль ${genitive}.`);
 
+  let deleted = false;
   try {
-    await ctx.editMessageReplyMarkup(undefined);
+    await ctx.deleteMessage();
+    deleted = true;
   } catch (error) {
     logger.debug(
       { err: error, chatId: ctx.chat.id },
-      'Failed to clear role selection inline keyboard',
+      'Failed to delete executor role selection message',
     );
+  }
+
+  if (!deleted) {
+    try {
+      await ctx.editMessageReplyMarkup(undefined);
+    } catch (error) {
+      logger.debug(
+        { err: error, chatId: ctx.chat.id },
+        'Failed to clear role selection inline keyboard',
+      );
+    }
   }
 
   await showExecutorMenu(ctx);

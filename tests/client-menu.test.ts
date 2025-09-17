@@ -30,7 +30,7 @@ before(async () => {
 const ROLE_CLIENT_ACTION = 'role:client';
 
 const expectedMenuText = [
-  '🎯 Меню клиента Freedom Bot',
+  '🎯 Меню клиента',
   '',
   'Выберите, что хотите оформить:',
   '• 🚕 Такси — подача машины и поездка по указанному адресу.',
@@ -108,6 +108,7 @@ const createMockContext = () => {
   let nextMessageId = 1;
   const replyCalls: Array<{ text: string; extra?: unknown; messageId: number }> = [];
   const editMarkupCalls: Array<unknown> = [];
+  const deleteMessageCalls: Array<unknown> = [];
   let answerCbQueryCount = 0;
 
   const ctx = {
@@ -124,6 +125,10 @@ const createMockContext = () => {
       editMessageText: async () => true,
       deleteMessage: async () => true,
     },
+    deleteMessage: async () => {
+      deleteMessageCalls.push(true);
+      return true;
+    },
     editMessageReplyMarkup: async (markup?: unknown) => {
       editMarkupCalls.push(markup);
       return true;
@@ -134,7 +139,13 @@ const createMockContext = () => {
     },
   } as unknown as BotContext;
 
-  return { ctx, replyCalls, editMarkupCalls, getAnswerCbQueryCount: () => answerCbQueryCount };
+  return {
+    ctx,
+    replyCalls,
+    editMarkupCalls,
+    deleteMessageCalls,
+    getAnswerCbQueryCount: () => answerCbQueryCount,
+  };
 };
 
 const getButtonText = (button: InlineKeyboardButton): string => {
@@ -152,12 +163,13 @@ describe('client menu role selection', () => {
     const handler = getAction(ROLE_CLIENT_ACTION);
     assert.ok(handler, 'Client role action should be registered');
 
-    const { ctx, replyCalls, editMarkupCalls, getAnswerCbQueryCount } = createMockContext();
+    const { ctx, replyCalls, editMarkupCalls, deleteMessageCalls, getAnswerCbQueryCount } =
+      createMockContext();
 
     await handler(ctx);
 
-    assert.equal(editMarkupCalls.length, 1);
-    assert.equal(editMarkupCalls[0], undefined);
+    assert.equal(deleteMessageCalls.length, 1);
+    assert.equal(editMarkupCalls.length, 0);
     assert.equal(getAnswerCbQueryCount(), 1);
 
     assert.equal(replyCalls.length, 1);

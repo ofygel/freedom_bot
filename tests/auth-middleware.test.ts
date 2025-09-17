@@ -182,7 +182,7 @@ describe('bind command channel flow', () => {
       title: 'Freedom Drivers',
       username: 'freedom_drivers',
       expectedColumn: 'drivers_channel_id',
-      expectedMessage: /Готово! Канал курьеров привязан к @freedom_drivers\./u,
+      expectedMessage: /Готово! Канал исполнителей привязан к @freedom_drivers\./u,
     },
   ] as const;
 

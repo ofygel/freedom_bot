@@ -21,12 +21,34 @@ const buildMenuKeyboard = (): InlineKeyboardMarkup =>
 
 const buildMenuText = (): string =>
   [
-    '🎯 Меню клиента Freedom Bot',
+    '🎯 Меню клиента',
     '',
     'Выберите, что хотите оформить:',
     '• 🚕 Такси — подача машины и поездка по указанному адресу.',
     '• 📦 Доставка — курьер заберёт и доставит вашу посылку.',
   ].join('\n');
+
+const removeRoleSelectionMessage = async (ctx: BotContext): Promise<void> => {
+  if (ctx.chat?.type !== 'private') {
+    return;
+  }
+
+  try {
+    await ctx.deleteMessage();
+    return;
+  } catch (error) {
+    logger.debug({ err: error, chatId: ctx.chat.id }, 'Failed to delete client role message');
+  }
+
+  try {
+    await ctx.editMessageReplyMarkup(undefined);
+  } catch (error) {
+    logger.debug(
+      { err: error, chatId: ctx.chat.id },
+      'Failed to clear role selection keyboard for client',
+    );
+  }
+};
 
 const showMenu = async (ctx: BotContext): Promise<void> => {
   if (ctx.chat?.type !== 'private') {
@@ -52,14 +74,7 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    try {
-      await ctx.editMessageReplyMarkup(undefined);
-    } catch (error) {
-      logger.debug(
-        { err: error, chatId: ctx.chat?.id },
-        'Failed to clear role selection keyboard for client',
-      );
-    }
+    await removeRoleSelectionMessage(ctx);
 
     try {
       await ctx.answerCbQuery();

@@ -1,12 +1,19 @@
-import { Markup, Telegraf, Telegram } from 'telegraf';
+import { Telegraf, Telegram } from 'telegraf';
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { getChannelBinding } from './bindings';
 import { logger } from '../../config';
 import { withTx } from '../../db/client';
-import { lockOrderById, setOrderChannelMessageId, tryClaimOrder } from '../../db/orders';
-import type { OrderKind, OrderLocation, OrderRecord } from '../../types';
+import {
+  lockOrderById,
+  setOrderChannelMessageId,
+  tryClaimOrder,
+  tryReleaseOrder,
+} from '../../db/orders';
+import type { OrderKind, OrderRecord } from '../../types';
 import type { BotContext } from '../types';
-import { build2GisLink } from '../../utils/location';
+import { buildOrderLocationsKeyboard } from '../keyboards/orders';
+import { buildInlineKeyboard, mergeInlineKeyboards } from '../keyboards/common';
 
 export type PublishOrderStatus = 'published' | 'already_published' | 'missing_channel';
 
@@ -17,8 +24,10 @@ export interface PublishOrderResult {
 
 const ACCEPT_ACTION_PREFIX = 'order:accept';
 const DECLINE_ACTION_PREFIX = 'order:decline';
+const RELEASE_ACTION_PREFIX = 'order:release';
 const ACCEPT_ACTION_PATTERN = /^order:accept:(\d+)$/;
 const DECLINE_ACTION_PATTERN = /^order:decline:(\d+)$/;
+const RELEASE_ACTION_PATTERN = /^order:release:(\d+)$/;
 
 const formatOrderType = (kind: OrderKind): string =>
   kind === 'taxi' ? 'Такси' : 'Доставка';
@@ -37,9 +46,6 @@ const formatDistance = (distanceKm: number): string => {
 
 const formatPrice = (amount: number, currency: string): string =>
   `${new Intl.NumberFormat('ru-RU').format(amount)} ${currency}`;
-
-const buildLocationLink = (location: OrderLocation): string =>
-  build2GisLink(location.latitude, location.longitude, { query: location.address });
 
 export const buildOrderMessage = (order: OrderRecord): string => {
   const lines = [
@@ -73,17 +79,20 @@ export const buildOrderMessage = (order: OrderRecord): string => {
   return lines.join('\n');
 };
 
-const buildOrderDirectMessage = (order: OrderRecord): string => {
-  const baseMessage = buildOrderMessage(order);
-  const pickupLink = buildLocationLink(order.pickup);
-  const dropoffLink = buildLocationLink(order.dropoff);
+interface OrderDirectMessage {
+  text: string;
+  keyboard: InlineKeyboardMarkup;
+}
 
-  return [
-    baseMessage,
-    '',
-    `🅰️ 2ГИС: ${pickupLink}`,
-    `🅱️ 2ГИС: ${dropoffLink}`,
-  ].join('\n');
+const buildOrderDirectMessage = (order: OrderRecord): OrderDirectMessage => {
+  const baseMessage = buildOrderMessage(order);
+  const locationsKeyboard = buildOrderLocationsKeyboard(order.pickup, order.dropoff);
+  const cancelKeyboard = buildInlineKeyboard([
+    [{ label: '❌ Отменить заказ', action: `${RELEASE_ACTION_PREFIX}:${order.id}` }],
+  ]);
+  const keyboard = mergeInlineKeyboards(locationsKeyboard, cancelKeyboard) ?? cancelKeyboard;
+
+  return { text: baseMessage, keyboard } satisfies OrderDirectMessage;
 };
 
 type OrderChannelStatus = 'pending' | 'claimed' | 'declined';
@@ -132,6 +141,23 @@ const markOrderDismissedBy = (orderId: number, moderatorId: number): void => {
 
 const clearOrderDismissals = (orderId: number): void => {
   orderDismissals.delete(orderId);
+};
+
+const removeOrderState = async (telegram: Telegram, orderId: number): Promise<void> => {
+  const state = orderStates.get(orderId);
+  if (state) {
+    try {
+      await telegram.deleteMessage(state.chatId, state.messageId);
+    } catch (error) {
+      logger.debug(
+        { err: error, orderId, chatId: state.chatId, messageId: state.messageId },
+        'Failed to delete existing order message before republish',
+      );
+    }
+  }
+
+  orderStates.delete(orderId);
+  clearOrderDismissals(orderId);
 };
 
 const clearInlineKeyboard = async (
@@ -293,15 +319,15 @@ const buildAlreadyProcessedResponse = (state: OrderChannelState): string => {
   return 'Заказ уже обработан.';
 };
 
-const buildActionKeyboard = (order: OrderRecord) =>
-  Markup.inlineKeyboard([
-    [
-      Markup.button.url('Open in 2GIS (A)', buildLocationLink(order.pickup)),
-      Markup.button.url('Open in 2GIS (B)', buildLocationLink(order.dropoff)),
-    ],
-    [Markup.button.callback('✅ Беру заказ', `${ACCEPT_ACTION_PREFIX}:${order.id}`)],
-    [Markup.button.callback('❌ Недоступен', `${DECLINE_ACTION_PREFIX}:${order.id}`)],
+const buildActionKeyboard = (order: OrderRecord): InlineKeyboardMarkup => {
+  const locationsKeyboard = buildOrderLocationsKeyboard(order.pickup, order.dropoff);
+  const decisionsKeyboard = buildInlineKeyboard([
+    [{ label: '✅ Беру заказ', action: `${ACCEPT_ACTION_PREFIX}:${order.id}` }],
+    [{ label: '❌ Недоступен', action: `${DECLINE_ACTION_PREFIX}:${order.id}` }],
   ]);
+
+  return mergeInlineKeyboards(locationsKeyboard, decisionsKeyboard) ?? decisionsKeyboard;
+};
 
 export const publishOrderToDriversChannel = async (
   telegram: Telegram,
@@ -339,7 +365,7 @@ export const publishOrderToDriversChannel = async (
 
         const keyboard = buildActionKeyboard(order);
         const message = await telegram.sendMessage(binding.chatId, messageText, {
-          reply_markup: keyboard.reply_markup,
+          reply_markup: keyboard,
         });
 
         await setOrderChannelMessageId(client, order.id, message.message_id);
@@ -372,6 +398,12 @@ type OrderActionOutcome =
   | { outcome: 'claimed'; order: OrderRecord }
   | { outcome: 'dismissed'; order: OrderRecord }
   | { outcome: 'already_dismissed' };
+
+type OrderReleaseOutcome =
+  | { outcome: 'not_found' }
+  | { outcome: 'not_claimed'; order: OrderRecord }
+  | { outcome: 'forbidden'; order: OrderRecord }
+  | { outcome: 'released'; order: OrderRecord };
 
 const processOrderAction = async (
   orderId: number,
@@ -424,6 +456,38 @@ const processOrderAction = async (
   } else if (result.outcome === 'dismissed' && typeof moderatorId === 'number') {
     markOrderDismissedBy(orderId, moderatorId);
   }
+
+  return result;
+};
+
+const processOrderRelease = async (
+  orderId: number,
+  moderatorId: number,
+): Promise<OrderReleaseOutcome> => {
+  const result = await withTx(
+    async (client) => {
+      const order = await lockOrderById(client, orderId);
+      if (!order) {
+        return { outcome: 'not_found' } as const;
+      }
+
+      if (order.status !== 'claimed' || typeof order.claimedBy !== 'number') {
+        return { outcome: 'not_claimed', order } as const;
+      }
+
+      if (order.claimedBy !== moderatorId) {
+        return { outcome: 'forbidden', order } as const;
+      }
+
+      const updated = await tryReleaseOrder(client, orderId, moderatorId);
+      if (!updated) {
+        throw new Error(`Failed to release order ${orderId}`);
+      }
+
+      return { outcome: 'released', order: updated } as const;
+    },
+    { isolationLevel: 'serializable' },
+  );
 
   return result;
 };
@@ -493,7 +557,9 @@ const handleOrderDecision = async (
       if (typeof moderatorTelegramId === 'number') {
         const directMessage = buildOrderDirectMessage(result.order);
         try {
-          await ctx.telegram.sendMessage(moderatorTelegramId, directMessage);
+          await ctx.telegram.sendMessage(moderatorTelegramId, directMessage.text, {
+            reply_markup: directMessage.keyboard,
+          });
         } catch (error) {
           logger.warn(
             { err: error, orderId, moderatorId: moderatorTelegramId },
@@ -524,6 +590,86 @@ const handleOrderDecision = async (
   }
 };
 
+const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<void> => {
+  const message = ctx.callbackQuery?.message;
+  if (!message || !('message_id' in message) || !message.chat) {
+    await ctx.answerCbQuery('Не удалось обработать действие.');
+    return;
+  }
+
+  const moderatorId = ctx.from?.id;
+  if (typeof moderatorId !== 'number') {
+    await ctx.answerCbQuery('Не удалось определить пользователя.');
+    return;
+  }
+
+  let result: OrderReleaseOutcome;
+  try {
+    result = await processOrderRelease(orderId, moderatorId);
+  } catch (error) {
+    logger.error({ err: error, orderId }, 'Failed to process order release');
+    await ctx.answerCbQuery('Не удалось отменить заказ. Попробуйте позже.');
+    return;
+  }
+
+  switch (result.outcome) {
+    case 'not_found':
+      await ctx.answerCbQuery('Заказ не найден или уже удалён.');
+      return;
+    case 'not_claimed':
+      await ctx.answerCbQuery('Заказ уже недоступен для отмены.');
+      return;
+    case 'forbidden':
+      await ctx.answerCbQuery('Вы не можете отменить этот заказ.');
+      return;
+    case 'released':
+      await removeOrderState(ctx.telegram, orderId);
+
+      let publishResult: PublishOrderResult | undefined;
+      try {
+        publishResult = await publishOrderToDriversChannel(ctx.telegram, orderId);
+      } catch (error) {
+        logger.error({ err: error, orderId }, 'Failed to republish released order');
+      }
+
+      const baseMessage = buildOrderMessage(result.order);
+      const locationKeyboard = buildOrderLocationsKeyboard(result.order.pickup, result.order.dropoff);
+
+      let statusLine = '🚫 Заказ отменён и возвращён в канал.';
+      let answerText = 'Заказ отменён и опубликован в канале.';
+      if (!publishResult || publishResult.status === 'missing_channel') {
+        statusLine =
+          '🚫 Заказ отменён, но канал исполнителей не настроен. Мы свяжемся с вами вручную.';
+        answerText = 'Заказ отменён, канал исполнителей не настроен. Мы свяжемся с вами.';
+      }
+
+      try {
+        await ctx.editMessageText([baseMessage, '', statusLine].join('\n'), {
+          reply_markup: locationKeyboard,
+        });
+      } catch (error) {
+        logger.debug(
+          { err: error, orderId, chatId: message.chat.id, messageId: message.message_id },
+          'Failed to update direct message after release',
+        );
+        try {
+          await ctx.editMessageReplyMarkup(locationKeyboard);
+        } catch (markupError) {
+          logger.debug(
+            { err: markupError, orderId, chatId: message.chat.id, messageId: message.message_id },
+            'Failed to update message keyboard after release',
+          );
+        }
+      }
+
+      await ctx.answerCbQuery(answerText);
+      return;
+    default:
+      await ctx.answerCbQuery('Не удалось отменить заказ.');
+      return;
+  }
+};
+
 export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
   bot.action(ACCEPT_ACTION_PATTERN, async (ctx) => {
     const match = ctx.match as RegExpMatchArray | undefined;
@@ -547,5 +693,17 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
     }
 
     await handleOrderDecision(ctx, orderId, 'decline');
+  });
+
+  bot.action(RELEASE_ACTION_PATTERN, async (ctx) => {
+    const match = ctx.match as RegExpMatchArray | undefined;
+    const idText = match?.[1];
+    const orderId = idText ? Number.parseInt(idText, 10) : NaN;
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      await ctx.answerCbQuery('Некорректный идентификатор заказа.');
+      return;
+    }
+
+    await handleOrderRelease(ctx, orderId);
   });
 };
