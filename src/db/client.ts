@@ -10,6 +10,9 @@ const pool = new Pool({
     : false,
 });
 
+export { pool };           // Named export (import { pool } from ...)
+export default pool;       // Default export (import pool from ...)
+
 export type TransactionCallback<T> = (client: PoolClient) => Promise<T>;
 export interface TransactionOptions {
   isolationLevel?: 'read committed' | 'repeatable read' | 'serializable';
@@ -45,5 +48,4 @@ export const withTx = async <T>(
   }
 };
 
-export default pool;
 export type { PoolClient } from 'pg';
