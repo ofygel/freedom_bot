@@ -39,7 +39,7 @@ const formatKaspiDetails = (): string[] => [
   `Получатель: ${config.subscriptions.payment.kaspi.name}`,
   `Kaspi Gold: ${config.subscriptions.payment.kaspi.card}`,
   `Телефон: ${config.subscriptions.payment.kaspi.phone}`,
-  'Комментарий: Подписка Freedom Bot',
+  'Комментарий: Подписка',
 ];
 
 const buildPeriodKeyboard = (): InlineKeyboardMarkup =>
@@ -54,7 +54,7 @@ const buildPeriodKeyboard = (): InlineKeyboardMarkup =>
 
 const buildSelectionText = (roleCopy: ReturnType<typeof getExecutorRoleCopy>): string => {
   const lines = [
-    `${roleCopy.emoji} Подписка Freedom Bot для ${roleCopy.genitive}`,
+    `${roleCopy.emoji} Подписка для ${roleCopy.genitive}`,
     '',
     'Выберите период подписки и оплатите подходящий вариант.',
     ...SUBSCRIPTION_PERIOD_OPTIONS.map(
@@ -210,21 +210,21 @@ const notifyReceiptFailed = async (ctx: BotContext): Promise<void> => {
 
 const buildPaymentId = (): string => `manual-${Date.now()}-${createShortId({ length: 6 })}`;
 
-const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
+const handleReceiptUpload = async (ctx: BotContext): Promise<boolean> => {
   if (ctx.chat?.type !== 'private') {
-    return;
+    return false;
   }
 
   const message = ctx.message;
   if (!message) {
-    return;
+    return false;
   }
 
   const state = ensureExecutorState(ctx);
   const subscription = state.subscription;
 
   if (subscription.status !== 'awaitingReceipt') {
-    return;
+    return false;
   }
 
   const period = findSubscriptionPeriodOption(subscription.selectedPeriodId);
@@ -235,7 +235,7 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
-    return;
+    return true;
   }
 
   const receipt = extractReceipt(message);
@@ -246,7 +246,7 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
-    return;
+    return true;
   }
 
   const paymentId = buildPaymentId();
@@ -278,7 +278,7 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
       subscription.status = 'awaitingReceipt';
       subscription.pendingPaymentId = undefined;
       await notifyReceiptFailed(ctx);
-      return;
+      return true;
     }
 
     subscription.status = 'pendingModeration';
@@ -287,6 +287,7 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
 
     await notifyReceiptAccepted(ctx);
     await showExecutorMenu(ctx, { skipAccessCheck: true });
+    return true;
   } catch (error) {
     logger.error(
       { err: error, paymentId, telegramId: ctx.auth.user.telegramId },
@@ -295,6 +296,7 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<void> => {
     subscription.status = 'awaitingReceipt';
     subscription.pendingPaymentId = undefined;
     await notifyReceiptFailed(ctx);
+    return true;
   }
 };
 
@@ -326,11 +328,17 @@ export const registerExecutorSubscription = (bot: Telegraf<BotContext>): void =>
     await handlePeriodSelection(ctx, periodId);
   });
 
-  bot.on('photo', async (ctx) => {
-    await handleReceiptUpload(ctx);
+  bot.on('photo', async (ctx, next) => {
+    const handled = await handleReceiptUpload(ctx);
+    if (!handled) {
+      await next();
+    }
   });
 
-  bot.on('document', async (ctx) => {
-    await handleReceiptUpload(ctx);
+  bot.on('document', async (ctx, next) => {
+    const handled = await handleReceiptUpload(ctx);
+    if (!handled) {
+      await next();
+    }
   });
 };

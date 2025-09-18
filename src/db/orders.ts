@@ -7,6 +7,8 @@ import type {
   OrderLocation,
   OrderPriceDetails,
   OrderRecord,
+  OrderStatus,
+  OrderWithExecutor,
 } from '../types';
 
 interface OrderRow {
@@ -35,6 +37,14 @@ interface OrderRow {
   distance_km: number | string;
   channel_message_id: string | number | null;
   created_at: Date | string;
+}
+
+interface OrderWithExecutorRow extends OrderRow {
+  executor_tg_id: string | number | null;
+  executor_username: string | null;
+  executor_first_name: string | null;
+  executor_last_name: string | null;
+  executor_phone: string | null;
 }
 
 const parseNumeric = (value: string | number | null | undefined): number | undefined => {
@@ -97,6 +107,26 @@ const mapOrderRow = (row: OrderRow): OrderRecord => ({
   channelMessageId: parseNumeric(row.channel_message_id),
   createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
 });
+
+const mapOrderWithExecutorRow = (row: OrderWithExecutorRow): OrderWithExecutor => {
+  const order = mapOrderRow(row);
+  const executorId = parseNumeric(row.executor_tg_id);
+
+  if (!executorId) {
+    return { ...order } satisfies OrderWithExecutor;
+  }
+
+  return {
+    ...order,
+    executor: {
+      telegramId: executorId,
+      username: row.executor_username ?? undefined,
+      firstName: row.executor_first_name ?? undefined,
+      lastName: row.executor_last_name ?? undefined,
+      phone: row.executor_phone ?? undefined,
+    },
+  } satisfies OrderWithExecutor;
+};
 
 export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord> => {
   const { rows } = await pool.query<OrderRow>(
@@ -268,5 +298,110 @@ export const tryCancelOrder = async (
 
   const [row] = rows;
   return row ? mapOrderRow(row) : null;
+};
+
+export interface ListClientOrdersOptions {
+  statuses?: OrderStatus[];
+  limit?: number;
+}
+
+const buildClientOrdersQuery = (
+  options: ListClientOrdersOptions,
+): { whereClause: string; params: unknown[]; limitClause: string } => {
+  const params: unknown[] = [];
+  const conditions: string[] = [];
+
+  if (options.statuses && options.statuses.length > 0) {
+    params.push(options.statuses);
+    conditions.push(`o.status = ANY($${params.length + 1}::order_status[])`);
+  }
+
+  const limit = options.limit && options.limit > 0 ? Math.trunc(options.limit) : undefined;
+  const limitClause = limit ? `LIMIT $${params.length + 2}::int` : '';
+  if (limit) {
+    params.push(limit);
+  }
+
+  const whereClause = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
+
+  return { whereClause, params, limitClause };
+};
+
+export const listClientOrders = async (
+  clientId: number,
+  options: ListClientOrdersOptions = {},
+): Promise<OrderWithExecutor[]> => {
+  const { whereClause, params, limitClause } = buildClientOrdersQuery(options);
+
+  const queryParams: unknown[] = [clientId, ...params];
+
+  const { rows } = await pool.query<OrderWithExecutorRow>(
+    `
+      SELECT
+        o.*,
+        e.tg_id AS executor_tg_id,
+        e.username AS executor_username,
+        e.first_name AS executor_first_name,
+        e.last_name AS executor_last_name,
+        e.phone AS executor_phone
+      FROM orders o
+      LEFT JOIN users e ON e.tg_id = o.claimed_by
+      WHERE o.client_id = $1
+        ${whereClause}
+      ORDER BY o.created_at DESC, o.id DESC
+      ${limitClause}
+    `,
+    queryParams,
+  );
+
+  return rows.map(mapOrderWithExecutorRow);
+};
+
+export const getOrderWithExecutorById = async (id: number): Promise<OrderWithExecutor | null> => {
+  const { rows } = await pool.query<OrderWithExecutorRow>(
+    `
+      SELECT
+        o.*,
+        e.tg_id AS executor_tg_id,
+        e.username AS executor_username,
+        e.first_name AS executor_first_name,
+        e.last_name AS executor_last_name,
+        e.phone AS executor_phone
+      FROM orders o
+      LEFT JOIN users e ON e.tg_id = o.claimed_by
+      WHERE o.id = $1
+      LIMIT 1
+    `,
+    [id],
+  );
+
+  const [row] = rows;
+  return row ? mapOrderWithExecutorRow(row) : null;
+};
+
+export const cancelClientOrder = async (
+  orderId: number,
+  clientId: number,
+): Promise<OrderWithExecutor | null> => {
+  const { rows } = await pool.query<OrderWithExecutorRow>(
+    `
+      UPDATE orders o
+      SET status = 'cancelled'
+      WHERE o.id = $1
+        AND o.client_id = $2
+        AND o.status IN ('open', 'claimed')
+      RETURNING
+        o.*,
+        (SELECT u.tg_id FROM users u WHERE u.tg_id = o.claimed_by) AS executor_tg_id,
+        (SELECT u.username FROM users u WHERE u.tg_id = o.claimed_by) AS executor_username,
+        (SELECT u.first_name FROM users u WHERE u.tg_id = o.claimed_by) AS executor_first_name,
+        (SELECT u.last_name FROM users u WHERE u.tg_id = o.claimed_by) AS executor_last_name,
+        (SELECT u.phone FROM users u WHERE u.tg_id = o.claimed_by) AS executor_phone
+    `,
+    [orderId, clientId],
+  );
+
+  const [row] = rows;
+  return row ? mapOrderWithExecutorRow(row) : null;
 };
 

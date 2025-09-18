@@ -69,7 +69,7 @@ const sendWarningMessage = async (
   }
 
   const message = [
-    '⚠️ Ваша подписка Freedom Bot скоро закончится.',
+    '⚠️ Ваша подписка скоро закончится.',
     `Доступ к каналу будет отключён ${formatDateTime(subscription.expiresAt)}.`,
     '',
     'Продлите подписку заранее, чтобы не потерять доступ.',
@@ -91,7 +91,7 @@ const sendExpirationMessage = async (
   }
 
   const message = [
-    '⛔️ Срок вашей подписки Freedom Bot истёк.',
+    '⛔️ Срок вашей подписки истёк.',
     'Доступ к каналу ограничен. Продлите подписку, чтобы вернуть доступ.',
   ].join('\n');
 

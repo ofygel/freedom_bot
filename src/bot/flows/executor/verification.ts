@@ -1,3 +1,4 @@
+import { Markup } from 'telegraf';
 import type { Telegraf } from 'telegraf';
 
 import { logger } from '../../../config';
@@ -10,6 +11,7 @@ import {
 import { persistVerificationSubmission } from '../../../db/verifications';
 import {
   EXECUTOR_MENU_ACTION,
+  EXECUTOR_SUBSCRIPTION_ACTION,
   EXECUTOR_VERIFICATION_ACTION,
   ensureExecutorState,
   resetVerificationState,
@@ -47,6 +49,20 @@ const VERIFICATION_START_REMINDER_STEP_ID = 'executor:verification:start-reminde
 const VERIFICATION_PROGRESS_STEP_ID = 'executor:verification:progress';
 const VERIFICATION_PHOTO_REMINDER_STEP_ID = 'executor:verification:photo-reminder';
 const VERIFICATION_ALREADY_APPROVED_STEP_ID = 'executor:verification:approved';
+
+const buildSubscriptionShortcutKeyboard = () =>
+  Markup.inlineKeyboard([
+    [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
+  ]).reply_markup;
+
+const buildVerificationApprovedText = (
+  copy: ReturnType<typeof getExecutorRoleCopy>,
+): string =>
+  [
+    '✅ Документы подтверждены.',
+    `Чтобы получить доступ к заказам ${copy.genitive}, оформите подписку и запросите ссылку через кнопку ниже.`,
+    'Если потребуется помощь, напишите в поддержку.',
+  ].join('\n');
 
 const submitForModeration = async (
   ctx: BotContext,
@@ -96,14 +112,11 @@ const submitForModeration = async (
         verification.submittedAt = decidedAt;
       }
 
-      const approvalMessage = [
-        '✅ Ваша заявка на верификацию одобрена.',
-        `Доступ к заказам ${copy.genitive} открыт.`,
-        'Если возникнут вопросы, напишите в поддержку бота.',
-      ].join('\n');
+      const approvalText = buildVerificationApprovedText(copy);
+      const keyboard = buildSubscriptionShortcutKeyboard();
 
       try {
-        await telegram.sendMessage(applicantId, approvalMessage);
+        await telegram.sendMessage(applicantId, approvalText, { reply_markup: keyboard });
       } catch (error) {
         logger.error(
           {
@@ -282,11 +295,13 @@ export const startExecutorVerification = async (
   const role = state.role;
   const verification = state.verification[role];
   const alreadyVerified = Boolean(ctx.auth.executor.verifiedRoles[role]) || ctx.auth.executor.isVerified;
+  const copy = getExecutorRoleCopy(role);
 
   if (alreadyVerified) {
     await ui.step(ctx, {
       id: VERIFICATION_ALREADY_APPROVED_STEP_ID,
-      text: 'Документы уже подтверждены. Можете переходить к заказам.',
+      text: buildVerificationApprovedText(copy),
+      keyboard: buildSubscriptionShortcutKeyboard(),
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
@@ -317,12 +332,17 @@ export const startExecutorVerification = async (
   await showExecutorMenu(ctx, { skipAccessCheck: true });
 };
 
-const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
+const handleIncomingPhoto = async (ctx: BotContext): Promise<boolean> => {
   if (ctx.chat?.type !== 'private') {
-    return;
+    return false;
   }
 
   const state = ensureExecutorState(ctx);
+
+  if (state.subscription.status === 'awaitingReceipt' || state.subscription.status === 'pendingModeration') {
+    return false;
+  }
+
   const role = state.role;
   const verification = state.verification[role];
   const copy = getExecutorRoleCopy(role);
@@ -331,11 +351,12 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
   if (alreadyVerified) {
     await ui.step(ctx, {
       id: VERIFICATION_ALREADY_APPROVED_STEP_ID,
-      text: 'Документы уже подтверждены. Можете переходить к заказам.',
+      text: buildVerificationApprovedText(copy),
+      keyboard: buildSubscriptionShortcutKeyboard(),
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
-    return;
+    return true;
   }
 
   if (verification.status === 'submitted') {
@@ -345,7 +366,7 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
-    return;
+    return true;
   }
 
   if (verification.status !== 'collecting') {
@@ -355,12 +376,12 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
-    return;
+    return true;
   }
 
   const message = ctx.message;
   if (!message || !('photo' in message) || !Array.isArray(message.photo) || message.photo.length === 0) {
-    return;
+    return false;
   }
 
   const photoSizes = message.photo;
@@ -382,10 +403,11 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
   if (uploaded >= required) {
     await submitForModeration(ctx, state);
     await showExecutorMenu(ctx, { skipAccessCheck: true });
-    return;
+    return true;
   }
 
   await showExecutorMenu(ctx, { skipAccessCheck: true });
+  return true;
 };
 
 const handleTextDuringCollection = async (ctx: BotContext, next: () => Promise<void>): Promise<void> => {
@@ -431,8 +453,11 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
     await startExecutorVerification(ctx);
   });
 
-  bot.on('photo', async (ctx) => {
-    await handleIncomingPhoto(ctx);
+  bot.on('photo', async (ctx, next) => {
+    const handled = await handleIncomingPhoto(ctx);
+    if (!handled) {
+      await next();
+    }
   });
 
   bot.on('text', async (ctx, next) => {

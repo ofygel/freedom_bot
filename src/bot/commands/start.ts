@@ -41,7 +41,7 @@ const presentRoleSelection = async (ctx: BotContext): Promise<void> => {
     .join('\n');
 
   await ctx.reply(
-    ['Выберите роль, чтобы продолжить работу с Freedom Bot:', description].join('\n\n'),
+    ['Выберите роль, чтобы продолжить работу с ботом:', description].join('\n\n'),
     buildRoleKeyboard(),
   );
 };
