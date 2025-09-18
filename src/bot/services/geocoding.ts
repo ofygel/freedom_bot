@@ -415,6 +415,11 @@ interface TwoGisLookupResult extends Coordinates {
   address?: string;
 }
 
+interface TwoGisScrapeResult {
+  coordinates?: Coordinates;
+  label?: string;
+}
+
 interface TwoGisConfig {
   apiKey: string;
   baseUrl: string;
@@ -757,6 +762,142 @@ const lookupTwoGisItemById = async (
   return null;
 };
 
+const decodeHtmlAttribute = (value: string): string =>
+  value
+    .replace(/&quot;/giu, '"')
+    .replace(/&#39;/giu, "'")
+    .replace(/&amp;/giu, '&')
+    .replace(/&lt;/giu, '<')
+    .replace(/&gt;/giu, '>')
+    .trim();
+
+const decodeJsonEscapedString = (value: string): string => {
+  try {
+    const normalised = value.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"');
+    return JSON.parse(`"${normalised}"`);
+  } catch {
+    return value
+      .replace(/\\u([0-9a-fA-F]{4})/gu, (_, hex: string) =>
+        String.fromCharCode(Number.parseInt(hex, 16)),
+      )
+      .replace(/\\"/gu, '"')
+      .replace(/\\\\/gu, '\\');
+  }
+};
+
+const cleanupTwoGisTitle = (title: string): string =>
+  title.replace(/(?:—|\||·)\s*2ГИС.*$/iu, '').trim();
+
+const CANONICAL_LINK_RE = /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/iu;
+const OG_URL_RE = /<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/iu;
+const OG_TITLE_RE = /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/iu;
+const TITLE_RE = /<title>([^<]+)<\/title>/iu;
+const JSON_CENTER_RE = /"center"\s*:\s*\{\s*"lat"\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*"lon"\s*:\s*(-?\d+(?:\.\d+)?)\s*\}/iu;
+const JSON_LAT_LNG_RE = /"lat"\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*"lng"\s*:\s*(-?\d+(?:\.\d+)?)/iu;
+const JSON_ADDRESS_RE = /"(?:full_name|address_name)"\s*:\s*"((?:\\.|[^"])+)"/iu;
+
+const scrapeTwoGisPlace = async (url: URL): Promise<TwoGisScrapeResult | null> => {
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'GET',
+      redirect: 'follow',
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+      headers: {
+        Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (compatible; FreedomBot/1.0)',
+        'Accept-Language': 'ru,en;q=0.8',
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const html = await response.text();
+    const result: TwoGisScrapeResult = {};
+
+    const finalUrl = response.url ?? url.toString();
+    const urlCoordinates = parseCoordinatePair(finalUrl);
+    if (urlCoordinates) {
+      result.coordinates = urlCoordinates;
+    }
+
+    const canonicalMatch = CANONICAL_LINK_RE.exec(html);
+    if (canonicalMatch) {
+      const canonicalCoordinates = parseCoordinatePair(decodeHtmlAttribute(canonicalMatch[1]));
+      if (canonicalCoordinates) {
+        result.coordinates = canonicalCoordinates;
+      }
+    }
+
+    const ogUrlMatch = OG_URL_RE.exec(html);
+    if (ogUrlMatch) {
+      const ogCoordinates = parseCoordinatePair(decodeHtmlAttribute(ogUrlMatch[1]));
+      if (ogCoordinates) {
+        result.coordinates = ogCoordinates;
+      }
+    }
+
+    if (!result.coordinates) {
+      const centerMatch = JSON_CENTER_RE.exec(html);
+      if (centerMatch) {
+        const latitude = Number.parseFloat(centerMatch[1]);
+        const longitude = Number.parseFloat(centerMatch[2]);
+        if (isValidCoordinate(latitude, longitude)) {
+          result.coordinates = { latitude, longitude } satisfies Coordinates;
+        }
+      }
+    }
+
+    if (!result.coordinates) {
+      const latLngMatch = JSON_LAT_LNG_RE.exec(html);
+      if (latLngMatch) {
+        const latitude = Number.parseFloat(latLngMatch[1]);
+        const longitude = Number.parseFloat(latLngMatch[2]);
+        if (isValidCoordinate(latitude, longitude)) {
+          result.coordinates = { latitude, longitude } satisfies Coordinates;
+        }
+      }
+    }
+
+    const addressMatch = JSON_ADDRESS_RE.exec(html);
+    if (addressMatch) {
+      const decoded = cleanupTwoGisTitle(decodeJsonEscapedString(addressMatch[1]));
+      if (decoded) {
+        result.label = decoded;
+      }
+    }
+
+    if (!result.label) {
+      const ogTitleMatch = OG_TITLE_RE.exec(html);
+      if (ogTitleMatch) {
+        const decoded = cleanupTwoGisTitle(decodeHtmlAttribute(ogTitleMatch[1]));
+        if (decoded) {
+          result.label = decoded;
+        }
+      }
+    }
+
+    if (!result.label) {
+      const titleMatch = TITLE_RE.exec(html);
+      if (titleMatch) {
+        const decoded = cleanupTwoGisTitle(decodeHtmlAttribute(titleMatch[1]));
+        if (decoded) {
+          result.label = decoded;
+        }
+      }
+    }
+
+    if (result.coordinates || result.label) {
+      return result;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 const geocodeWithNominatim = async (
   searchQuery: string,
   normalizedQuery: string,
@@ -920,14 +1061,46 @@ export const geocodeAddress = async (
     );
   }
 
-  if (parsedLink?.itemId && twoGisConfig) {
-    const lookupResult = await lookupTwoGisItemById(parsedLink.itemId, twoGisConfig);
-    if (lookupResult) {
-      return resolveWithFallback(
-        lookupResult.latitude,
-        lookupResult.longitude,
-        lookupResult.address ?? parsedLink.label,
-      );
+  let scrapedTwoGis: TwoGisScrapeResult | null = null;
+
+  if (parsedLink?.itemId) {
+    if (twoGisConfig) {
+      const lookupResult = await lookupTwoGisItemById(parsedLink.itemId, twoGisConfig);
+      if (lookupResult) {
+        return resolveWithFallback(
+          lookupResult.latitude,
+          lookupResult.longitude,
+          lookupResult.address ?? parsedLink.label,
+        );
+      }
+    }
+
+    scrapedTwoGis = await scrapeTwoGisPlace(parsedLink.url);
+  } else if (parsedLink && !parsedLink.coordinates) {
+    scrapedTwoGis = await scrapeTwoGisPlace(parsedLink.url);
+  } else if (!parsedLink && isTwoGisLink(trimmed)) {
+    const parsedUrl = parseUrl(trimmed);
+    if (parsedUrl) {
+      scrapedTwoGis = await scrapeTwoGisPlace(parsedUrl);
+    }
+  }
+
+  if (scrapedTwoGis?.coordinates) {
+    return resolveWithFallback(
+      scrapedTwoGis.coordinates.latitude,
+      scrapedTwoGis.coordinates.longitude,
+      scrapedTwoGis.label ?? parsedLink?.label,
+    );
+  }
+
+  if (scrapedTwoGis?.label) {
+    const trimmedLabel = scrapedTwoGis.label.trim();
+    if (trimmedLabel.length > 0) {
+      const labelSearchQuery = buildCityAwareQuery(trimmedLabel);
+      const fallbackResult = await geocodeWithNominatim(labelSearchQuery, normalizedQuery, nominatimConfig);
+      if (fallbackResult) {
+        return fallbackResult;
+      }
     }
   }
 
