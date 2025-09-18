@@ -35,6 +35,33 @@ const isMessageNotModifiedError = (error: unknown): boolean => {
   return typeof message === 'string' && message.includes('message is not modified');
 };
 
+const isReplyMessageNotFoundError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const description = (error as { description?: unknown }).description;
+  if (
+    typeof description === 'string' &&
+    (description.includes('message to reply not found') ||
+      description.includes('reply message not found') ||
+      description.includes('REPLY_MESSAGE_NOT_FOUND'))
+  ) {
+    return true;
+  }
+
+  const message = (error as { message?: unknown }).message;
+  if (typeof message !== 'string') {
+    return false;
+  }
+
+  return (
+    message.includes('message to reply not found') ||
+    message.includes('reply message not found') ||
+    message.includes('REPLY_MESSAGE_NOT_FOUND')
+  );
+};
+
 const registerHomeAction = (state: UiSessionState, action: string): void => {
   if (!state.homeActions.includes(action)) {
     state.homeActions.push(action);
@@ -129,11 +156,27 @@ export const ui = {
       }
     }
 
-    const message = await ctx.reply(options.text, {
+    const extra = {
       reply_markup: replyMarkup,
       parse_mode: options.parseMode,
       link_preview_options: options.linkPreviewOptions,
-    });
+    };
+
+    let message;
+    try {
+      message = await ctx.reply(options.text, extra);
+    } catch (error) {
+      if (!isReplyMessageNotFoundError(error)) {
+        throw error;
+      }
+
+      logger.debug(
+        { err: error, chatId, stepId: options.id },
+        'Reply failed, retrying step message without reply reference',
+      );
+
+      message = await ctx.telegram.sendMessage(chatId, options.text, extra);
+    }
 
     const messageId = message.message_id;
     state.steps[options.id] = { chatId, messageId, cleanup };
