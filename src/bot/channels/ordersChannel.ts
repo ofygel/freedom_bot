@@ -10,7 +10,7 @@ import {
   tryClaimOrder,
   tryReleaseOrder,
 } from '../../db/orders';
-import type { OrderKind, OrderRecord } from '../../types';
+import type { OrderKind, OrderRecord, OrderWithExecutor } from '../../types';
 import type { BotContext } from '../types';
 import { buildOrderLocationsKeyboard } from '../keyboards/orders';
 import { buildInlineKeyboard, mergeInlineKeyboards } from '../keyboards/common';
@@ -158,6 +158,54 @@ const removeOrderState = async (telegram: Telegram, orderId: number): Promise<vo
 
   orderStates.delete(orderId);
   clearOrderDismissals(orderId);
+};
+
+export const handleClientOrderCancellation = async (
+  telegram: Telegram,
+  order: OrderWithExecutor,
+): Promise<void> => {
+  const state = orderStates.get(order.id);
+
+  if (state) {
+    await removeOrderState(telegram, order.id);
+  } else {
+    clearOrderDismissals(order.id);
+    orderStates.delete(order.id);
+
+    if (typeof order.channelMessageId === 'number') {
+      try {
+        const binding = await getChannelBinding('drivers');
+        if (!binding) {
+          logger.warn({ orderId: order.id }, 'Drivers channel binding missing during cancellation');
+        } else {
+          try {
+            await telegram.deleteMessage(binding.chatId, order.channelMessageId);
+          } catch (error) {
+            logger.debug(
+              { err: error, orderId: order.id, chatId: binding.chatId, messageId: order.channelMessageId },
+              'Failed to delete drivers channel message for cancelled order',
+            );
+          }
+        }
+      } catch (error) {
+        logger.error({ err: error, orderId: order.id }, 'Failed to resolve drivers channel binding');
+      }
+    }
+  }
+
+  const executorTelegramId = order.executor?.telegramId ?? order.claimedBy;
+  if (typeof executorTelegramId === 'number') {
+    const notificationText = ['\uD83D\uDEAB Заказ отменён клиентом.', '', buildOrderMessage(order)].join('\n');
+
+    try {
+      await telegram.sendMessage(executorTelegramId, notificationText);
+    } catch (error) {
+      logger.warn(
+        { err: error, orderId: order.id, executorId: executorTelegramId },
+        'Failed to notify executor about client cancellation',
+      );
+    }
+  }
 };
 
 const clearInlineKeyboard = async (
