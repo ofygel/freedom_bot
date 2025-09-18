@@ -18,6 +18,7 @@
     "src/db/**/*.ts",
     "src/jobs/**/*.ts",
     "src/types/**/*.ts",
-    "src/utils/**/*.ts"
+    "src/utils/**/*.ts",
+    "src/lib/**/*.ts"
   ]
 }
