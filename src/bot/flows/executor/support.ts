@@ -252,6 +252,14 @@ export const registerExecutorSupport = (bot: Telegraf<BotContext>): void => {
     await handleSupportPrompt(ctx);
   });
 
+  bot.command('support', async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      return;
+    }
+
+    await handleSupportPrompt(ctx);
+  });
+
   bot.on('message', async (ctx, next) => {
     const handled = await handleSupportMessage(ctx);
     if (!handled && next) {

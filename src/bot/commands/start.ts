@@ -2,6 +2,8 @@ import { Markup, Telegraf } from 'telegraf';
 
 import type { BotContext } from '../types';
 import { phoneCollect } from '../flows/common/phoneCollect';
+import { setChatCommands } from '../services/commands';
+import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from './sets';
 
 type RoleKey = 'client' | 'courier' | 'driver';
 
@@ -36,7 +38,7 @@ const buildRoleKeyboard = () =>
     ]),
   );
 
-const presentRoleSelection = async (ctx: BotContext): Promise<void> => {
+export const presentRoleSelection = async (ctx: BotContext): Promise<void> => {
   const description = ROLE_OPTIONS.map((option) => `• ${option.label} — ${option.description}`)
     .join('\n');
 
@@ -44,6 +46,22 @@ const presentRoleSelection = async (ctx: BotContext): Promise<void> => {
     ['Выберите роль, чтобы продолжить работу с ботом:', description].join('\n\n'),
     buildRoleKeyboard(),
   );
+};
+
+const applyCommandsForRole = async (ctx: BotContext): Promise<void> => {
+  if (ctx.chat?.type !== 'private') {
+    return;
+  }
+
+  const role = ctx.auth?.user.role;
+  if (role === 'client' || role === undefined) {
+    await setChatCommands(ctx.telegram, ctx.chat.id, CLIENT_COMMANDS);
+    return;
+  }
+
+  if (role === 'courier' || role === 'driver') {
+    await setChatCommands(ctx.telegram, ctx.chat.id, EXECUTOR_COMMANDS);
+  }
 };
 
 export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
@@ -58,6 +76,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
+    await applyCommandsForRole(ctx);
     await presentRoleSelection(ctx);
   });
 
@@ -78,6 +97,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
     }
 
     await ctx.reply('Спасибо! Номер телефона получен.', Markup.removeKeyboard());
+    await applyCommandsForRole(ctx);
     await presentRoleSelection(ctx);
   });
 };
