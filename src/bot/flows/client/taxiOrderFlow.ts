@@ -25,6 +25,7 @@ import { clearInlineKeyboard } from '../../services/cleanup';
 import { ensurePrivateCallback, isPrivateChat } from '../../services/access';
 import {
   buildConfirmCancelKeyboard,
+  buildInlineKeyboard,
   buildUrlKeyboard,
   mergeInlineKeyboards,
 } from '../../keyboards/common';
@@ -32,6 +33,7 @@ import { buildOrderLocationsKeyboard } from '../../keyboards/orders';
 import type { BotContext, ClientOrderDraftState } from '../../types';
 import { ui } from '../../ui';
 import { CLIENT_MENU_ACTION } from './menu';
+import { CLIENT_TAXI_ORDER_AGAIN_ACTION } from './orderActions';
 
 export const START_TAXI_ORDER_ACTION = 'client:order:taxi:start';
 const CONFIRM_TAXI_ORDER_ACTION = 'client:order:taxi:confirm';
@@ -169,6 +171,9 @@ const applyPickupAddress = async (ctx: BotContext, draft: ClientOrderDraftState,
 const buildConfirmationKeyboard = () =>
   buildConfirmCancelKeyboard(CONFIRM_TAXI_ORDER_ACTION, CANCEL_TAXI_ORDER_ACTION);
 
+const buildOrderAgainKeyboard = () =>
+  buildInlineKeyboard([[{ label: 'Заказать ещё', action: CLIENT_TAXI_ORDER_AGAIN_ACTION }]]);
+
 const showConfirmation = async (ctx: BotContext, draft: CompletedOrderDraft): Promise<void> => {
   const summary = buildOrderSummary(draft, {
     title: '🚕 Предварительный заказ такси',
@@ -234,11 +239,13 @@ const cancelOrderDraft = async (ctx: BotContext, draft: ClientOrderDraftState): 
   await clearInlineKeyboard(ctx, draft.confirmationMessageId);
   resetClientOrderDraft(draft);
 
+  const keyboard = buildOrderAgainKeyboard();
   await ui.step(ctx, {
     id: TAXI_CANCELLED_STEP_ID,
     text: 'Оформление заказа отменено.',
     cleanup: true,
     homeAction: CLIENT_MENU_ACTION,
+    keyboard,
   });
 };
 
@@ -261,6 +268,7 @@ const notifyOrderCreated = async (
     text: lines.join('\n'),
     cleanup: true,
     homeAction: CLIENT_MENU_ACTION,
+    keyboard: buildOrderAgainKeyboard(),
   });
 };
 
@@ -446,6 +454,10 @@ export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
 
   bot.action(CANCEL_TAXI_ORDER_ACTION, async (ctx) => {
     await handleCancellationAction(ctx);
+  });
+
+  bot.action(CLIENT_TAXI_ORDER_AGAIN_ACTION, async (ctx) => {
+    await handleStart(ctx);
   });
 
   bot.command('taxi', async (ctx) => {

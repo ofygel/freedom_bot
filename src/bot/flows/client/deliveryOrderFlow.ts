@@ -28,6 +28,7 @@ import { clearInlineKeyboard } from '../../services/cleanup';
 import { ensurePrivateCallback, isPrivateChat } from '../../services/access';
 import {
   buildConfirmCancelKeyboard,
+  buildInlineKeyboard,
   buildUrlKeyboard,
   mergeInlineKeyboards,
 } from '../../keyboards/common';
@@ -35,6 +36,7 @@ import { buildOrderLocationsKeyboard } from '../../keyboards/orders';
 import type { BotContext, ClientOrderDraftState } from '../../types';
 import { ui } from '../../ui';
 import { CLIENT_MENU_ACTION } from './menu';
+import { CLIENT_DELIVERY_ORDER_AGAIN_ACTION } from './orderActions';
 
 export const START_DELIVERY_ORDER_ACTION = 'client:order:delivery:start';
 const CONFIRM_DELIVERY_ORDER_ACTION = 'client:order:delivery:confirm';
@@ -202,6 +204,9 @@ const applyPickupAddress = async (ctx: BotContext, draft: ClientOrderDraftState,
 const buildConfirmationKeyboard = () =>
   buildConfirmCancelKeyboard(CONFIRM_DELIVERY_ORDER_ACTION, CANCEL_DELIVERY_ORDER_ACTION);
 
+const buildOrderAgainKeyboard = () =>
+  buildInlineKeyboard([[{ label: 'Заказать ещё', action: CLIENT_DELIVERY_ORDER_AGAIN_ACTION }]]);
+
 const showConfirmation = async (ctx: BotContext, draft: CompletedOrderDraft): Promise<void> => {
   const comment = draft.notes?.trim();
   const summary = buildOrderSummary(draft, {
@@ -299,11 +304,13 @@ const cancelOrderDraft = async (ctx: BotContext, draft: ClientOrderDraftState): 
   await clearInlineKeyboard(ctx, draft.confirmationMessageId);
   resetClientOrderDraft(draft);
 
+  const keyboard = buildOrderAgainKeyboard();
   await ui.step(ctx, {
     id: DELIVERY_CANCELLED_STEP_ID,
     text: 'Оформление доставки отменено.',
     cleanup: true,
     homeAction: CLIENT_MENU_ACTION,
+    keyboard,
   });
 };
 
@@ -326,6 +333,7 @@ const notifyOrderCreated = async (
     text: lines.join('\n'),
     cleanup: true,
     homeAction: CLIENT_MENU_ACTION,
+    keyboard: buildOrderAgainKeyboard(),
   });
 };
 
@@ -528,6 +536,10 @@ export const registerDeliveryOrderFlow = (bot: Telegraf<BotContext>): void => {
 
   bot.action(CANCEL_DELIVERY_ORDER_ACTION, async (ctx) => {
     await handleCancellationAction(ctx);
+  });
+
+  bot.action(CLIENT_DELIVERY_ORDER_AGAIN_ACTION, async (ctx) => {
+    await handleStart(ctx);
   });
 
   bot.command('delivery', async (ctx) => {
