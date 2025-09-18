@@ -7,9 +7,11 @@ import {
   type BotContext,
   type SessionState,
 } from '../src/bot/types';
+import { CLIENT_COMMANDS } from '../src/bot/commands/sets';
 
 let registerClientMenu: typeof import('../src/bot/flows/client/menu')['registerClientMenu'];
 let usersDb: typeof import('../src/db/users');
+let commandsService: typeof import('../src/bot/services/commands');
 
 before(async () => {
   process.env.BOT_TOKEN = process.env.BOT_TOKEN ?? 'test-token';
@@ -27,6 +29,7 @@ before(async () => {
 
   ({ registerClientMenu } = await import('../src/bot/flows/client/menu'));
   usersDb = await import('../src/db/users');
+  commandsService = await import('../src/bot/services/commands');
 });
 
 const ROLE_CLIENT_ACTION = 'role:client';
@@ -85,6 +88,7 @@ const createAuthState = (
 const createMockBot = () => {
   const actions = new Map<string, (ctx: BotContext) => Promise<void>>();
   const commands = new Map<string, (ctx: BotContext) => Promise<void>>();
+  const hears = new Map<string, (ctx: BotContext) => Promise<void>>();
 
   const bot: Partial<Telegraf<BotContext>> = {
     telegram: {
@@ -101,11 +105,16 @@ const createMockBot = () => {
     return bot as Telegraf<BotContext>;
   };
 
-  bot.hears = ((() => bot as Telegraf<BotContext>) as unknown) as Telegraf<BotContext>['hears'];
+  bot.hears = (((trigger: string, handler: (ctx: BotContext) => Promise<void>) => {
+    hears.set(trigger, handler);
+    return bot as Telegraf<BotContext>;
+  }) as unknown) as Telegraf<BotContext>['hears'];
 
   return {
     bot: bot as Telegraf<BotContext>,
     getAction: (trigger: string) => actions.get(trigger),
+    getCommand: (command: string) => commands.get(command),
+    getHears: (trigger: string) => hears.get(trigger),
   };
 };
 
@@ -174,6 +183,11 @@ const createMockContext = (options: MockContextOptions = {}) => {
 
 describe('client menu role selection', () => {
   it('clears the role keyboard and shows the client menu', async () => {
+    const setChatCommandsMock = mock.method(
+      commandsService,
+      'setChatCommands',
+      async () => undefined,
+    );
     const { bot, getAction } = createMockBot();
     registerClientMenu(bot);
 
@@ -183,7 +197,11 @@ describe('client menu role selection', () => {
     const { ctx, replyCalls, editMarkupCalls, deleteMessageCalls, getAnswerCbQueryCount } =
       createMockContext();
 
-    await handler(ctx);
+    try {
+      await handler(ctx);
+    } finally {
+      setChatCommandsMock.mock.restore();
+    }
 
     assert.equal(deleteMessageCalls.length, 1);
     assert.equal(editMarkupCalls.length, 0);
@@ -201,13 +219,24 @@ describe('client menu role selection', () => {
     assert.deepEqual(labels, [
       ['🚕 Заказать такси', '📦 Доставка'],
       ['🧾 Мои заказы'],
-      ['🆘 Поддержка', '🔄 Обновить меню'],
+      ['🆘 Поддержка', '👥 Сменить роль'],
+      ['🔄 Обновить меню'],
     ]);
     assert.equal(keyboard.is_persistent, true);
+    assert.equal(setChatCommandsMock.mock.callCount(), 1);
+    const call = setChatCommandsMock.mock.calls[0];
+    assert.ok(call);
+    assert.equal(call.arguments[1], ctx.chat!.id);
+    assert.deepEqual(call.arguments[2], CLIENT_COMMANDS);
   });
 
   it('updates executor role to client and shows the persistent menu immediately', async () => {
     const ensureClientRoleMock = mock.method(usersDb, 'ensureClientRole', async () => undefined);
+    const setChatCommandsMock = mock.method(
+      commandsService,
+      'setChatCommands',
+      async () => undefined,
+    );
 
     const { bot, getAction } = createMockBot();
     registerClientMenu(bot);
@@ -236,6 +265,7 @@ describe('client menu role selection', () => {
       await handler(ctx);
     } finally {
       ensureClientRoleMock.mock.restore();
+      setChatCommandsMock.mock.restore();
     }
 
     assert.equal(ensureClientRoleMock.mock.callCount(), 1);
@@ -269,5 +299,42 @@ describe('client menu role selection', () => {
     const keyboard = (replyCalls[0].extra as { reply_markup?: ReplyKeyboardMarkup }).reply_markup;
     assert.ok(keyboard, 'Client menu keyboard should be provided');
     assert.equal(keyboard.is_persistent, true);
+    assert.equal(setChatCommandsMock.mock.callCount(), 1);
+  });
+
+  it('opens role selection when the switch role button is used', async () => {
+    const { bot, getHears } = createMockBot();
+    registerClientMenu(bot);
+
+    const handler = getHears('👥 Сменить роль');
+    assert.ok(handler, 'Switch role handler should be registered');
+
+    const { ctx, replyCalls } = createMockContext();
+
+    await handler(ctx);
+
+    assert.equal(replyCalls.length, 2);
+    const firstMarkup = replyCalls[0].extra as { reply_markup?: ReplyKeyboardMarkup };
+    assert.ok(firstMarkup?.reply_markup);
+    assert.equal((firstMarkup.reply_markup as any).remove_keyboard, true);
+    assert.match(replyCalls[1].text, /Выберите роль/);
+  });
+
+  it('opens role selection when the /role command is used', async () => {
+    const { bot, getCommand } = createMockBot();
+    registerClientMenu(bot);
+
+    const handler = getCommand('role');
+    assert.ok(handler, '/role command should be registered');
+
+    const { ctx, replyCalls } = createMockContext();
+
+    await handler(ctx);
+
+    assert.equal(replyCalls.length, 2);
+    const firstMarkup = replyCalls[0].extra as { reply_markup?: ReplyKeyboardMarkup };
+    assert.ok(firstMarkup?.reply_markup);
+    assert.equal((firstMarkup.reply_markup as any).remove_keyboard, true);
+    assert.match(replyCalls[1].text, /Выберите роль/);
   });
 });

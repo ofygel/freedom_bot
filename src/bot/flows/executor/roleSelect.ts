@@ -1,6 +1,9 @@
 import type { Telegraf } from 'telegraf';
 
 import { logger } from '../../../config';
+import { hideClientMenu } from '../../../ui/clientMenu';
+import { EXECUTOR_COMMANDS } from '../../commands/sets';
+import { setChatCommands } from '../../services/commands';
 import type { BotContext, ExecutorRole } from '../../types';
 import { ensureExecutorState, showExecutorMenu } from './menu';
 import { getExecutorRoleCopy } from './roleCopy';
@@ -16,6 +19,7 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
 
   const state = ensureExecutorState(ctx);
   state.role = role;
+  ctx.auth.user.role = role;
 
   const { genitive } = getExecutorRoleCopy(role);
   await ctx.answerCbQuery(`Вы выбрали роль ${genitive}.`);
@@ -42,6 +46,9 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
     }
   }
 
+  await setChatCommands(ctx.telegram, ctx.chat.id, EXECUTOR_COMMANDS);
+
+  await hideClientMenu(ctx, 'Переключаемся в режим исполнителя…');
   await showExecutorMenu(ctx);
 };
 

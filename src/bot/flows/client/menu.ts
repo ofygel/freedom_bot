@@ -2,33 +2,28 @@ import { Telegraf } from 'telegraf';
 
 import { logger } from '../../../config';
 import { ensureClientRole } from '../../../db/users';
-import { CLIENT_MENU, clientMenuText, isClientChat, sendClientMenu } from '../../../ui/clientMenu';
+import {
+  CLIENT_MENU,
+  clientMenuText,
+  hideClientMenu,
+  isClientChat,
+  sendClientMenu,
+} from '../../../ui/clientMenu';
+import { CLIENT_COMMANDS } from '../../commands/sets';
+import { setChatCommands } from '../../services/commands';
 import type { BotContext } from '../../types';
+import { presentRoleSelection } from '../../commands/start';
+import { promptClientSupport } from './support';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
 
-const installClientMenuCommands = async (bot: Telegraf<BotContext>): Promise<void> => {
-  try {
-    await bot.telegram.setMyCommands(
-      [
-        { command: 'start', description: 'Главное меню' },
-        { command: 'taxi', description: 'Заказать такси' },
-        { command: 'delivery', description: 'Оформить доставку' },
-        { command: 'orders', description: 'Мои заказы' },
-        { command: 'support', description: 'Поддержка' },
-      ],
-      { scope: { type: 'all_private_chats' }, language_code: 'ru' },
-    );
-  } catch (error) {
-    logger.warn({ err: error }, 'Failed to install client commands');
+const applyClientCommands = async (ctx: BotContext): Promise<void> => {
+  if (ctx.chat?.type !== 'private') {
+    return;
   }
 
-  try {
-    await bot.telegram.setChatMenuButton({ menuButton: { type: 'commands' } });
-  } catch (error) {
-    logger.warn({ err: error }, 'Failed to set chat menu button');
-  }
+  await setChatCommands(ctx.telegram, ctx.chat.id, CLIENT_COMMANDS);
 };
 
 const removeRoleSelectionMessage = async (ctx: BotContext): Promise<void> => {
@@ -118,8 +113,6 @@ const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
 };
 
 export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
-  void installClientMenuCommands(bot);
-
   bot.action(ROLE_CLIENT_ACTION, async (ctx) => {
     await applyClientRole(ctx);
 
@@ -129,6 +122,8 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     await removeRoleSelectionMessage(ctx);
+
+    await applyClientCommands(ctx);
 
     try {
       await ctx.answerCbQuery();
@@ -169,12 +164,17 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    await ctx.reply(
-      [
-        'Опишите проблему или задайте вопрос — мы ответим в этом чате.',
-        'Если захотите вернуться в меню, используйте кнопки ниже или команду /start.',
-      ].join('\n'),
-    );
+    await promptClientSupport(ctx);
+  });
+
+  bot.command('role', async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      await ctx.reply('Смена роли доступна только в личном чате с ботом.');
+      return;
+    }
+
+    await hideClientMenu(ctx, 'Меняем роль — выберите подходящий вариант ниже.');
+    await presentRoleSelection(ctx);
   });
 
   bot.hears(CLIENT_MENU.refresh, async (ctx) => {
@@ -190,11 +190,15 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    await ctx.reply(
-      [
-        'Опишите проблему или задайте вопрос — мы ответим в этом чате.',
-        'Если захотите вернуться в меню, используйте кнопки ниже или команду /start.',
-      ].join('\n'),
-    );
+    await promptClientSupport(ctx);
+  });
+
+  bot.hears(CLIENT_MENU.switchRole, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      return;
+    }
+
+    await hideClientMenu(ctx, 'Меняем роль — выберите подходящий вариант ниже.');
+    await presentRoleSelection(ctx);
   });
 };

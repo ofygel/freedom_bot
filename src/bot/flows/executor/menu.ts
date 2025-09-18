@@ -404,4 +404,13 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
     ensureExecutorState(ctx);
     await showExecutorMenu(ctx);
   });
+
+  bot.command('menu', async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      return;
+    }
+
+    ensureExecutorState(ctx);
+    await showExecutorMenu(ctx);
+  });
 };
