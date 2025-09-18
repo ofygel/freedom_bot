@@ -59,7 +59,7 @@ export const buildSupportMessage = (options: SupportMessageOptions = {}): string
   if (options.title) {
     lines.push(options.title.trim());
   } else {
-    lines.push('🆘 Поддержка Freedom Bot');
+    lines.push('🆘 Поддержка');
   }
 
   const description = normaliseLines(options.description);

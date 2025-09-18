@@ -336,12 +336,18 @@ const handleSubscriptionApproval = async (
         const message = fallbackInvite
           ? [
               '✅ Оплата подписки подтверждена.',
-              `Чтобы вступить в ${roleCopy.pluralGenitive}, используйте ссылку: ${fallbackInvite}`,
-              'Если ссылка перестанет работать, запросите новую через меню «Получить ссылку на канал».',
+              `Чтобы вступить в ${roleCopy.pluralGenitive}, воспользуйтесь кнопкой «Заказы» ниже.`,
+              'Если кнопка не работает, запросите новую ссылку через меню «Получить ссылку на канал».',
             ].join('\n')
-          : 'Оплата подтверждена, но канал Freedom Bot временно недоступен. Мы свяжемся с вами после настройки.';
+          : 'Оплата подтверждена, но канал исполнителей временно недоступен. Мы свяжемся с вами после настройки.';
 
-        await telegram.sendMessage(subscription.telegramId, message);
+        const extra = fallbackInvite
+          ? {
+              reply_markup: Markup.inlineKeyboard([[Markup.button.url('Заказы', fallbackInvite)]]).reply_markup,
+            }
+          : undefined;
+
+        await telegram.sendMessage(subscription.telegramId, message, extra);
       } catch (error) {
         logger.error(
           { err: error, paymentId: item.id, telegramId: subscription.telegramId },
@@ -404,7 +410,6 @@ const handleSubscriptionApproval = async (
   }
 
   let inviteLink: string | undefined;
-  let inviteLinkIsFresh = false;
   try {
     const expireDate = Math.floor(activation.nextBillingAt.getTime() / 1000);
     const invite = await telegram.createChatInviteLink(binding.chatId, {
@@ -413,7 +418,6 @@ const handleSubscriptionApproval = async (
       member_limit: 1,
     });
     inviteLink = invite.invite_link;
-    inviteLinkIsFresh = true;
   } catch (error) {
     logger.error(
       { err: error, paymentId: item.id, chatId: binding.chatId },
@@ -433,10 +437,8 @@ const handleSubscriptionApproval = async (
     ? formatDateTime(activation.nextBillingAt)
     : undefined;
 
-  const inviteInstructions = inviteLinkIsFresh && inviteLink
-    ? `Чтобы вступить в ${roleCopy.pluralGenitive}, нажмите кнопку «Вступить».`
-    : inviteLink
-    ? `Чтобы вступить в ${roleCopy.pluralGenitive}, используйте ссылку: ${inviteLink}`
+  const inviteInstructions = inviteLink
+    ? `Чтобы вступить в ${roleCopy.pluralGenitive}, нажмите кнопку «Заказы».`
     : 'Ссылка на канал будет отправлена дополнительно. Свяжитесь с поддержкой, если не получили её в ближайшее время.';
 
   const parts = [
@@ -446,10 +448,10 @@ const handleSubscriptionApproval = async (
     'Если ссылка перестанет работать, запросите новую через меню «Получить ссылку на канал».',
   ].filter((value): value is string => Boolean(value && value.trim().length > 0));
 
-  const extra = inviteLinkIsFresh && inviteLink
+  const extra = inviteLink
     ? {
         reply_markup: Markup.inlineKeyboard([
-          [Markup.button.url('Вступить', inviteLink)],
+          [Markup.button.url('Заказы', inviteLink)],
         ]).reply_markup,
       }
     : undefined;

@@ -5,6 +5,7 @@ import { logger } from '../../../config';
 import type { BotContext } from '../../types';
 import { START_DELIVERY_ORDER_ACTION } from './deliveryOrderFlow';
 import { START_TAXI_ORDER_ACTION } from './taxiOrderFlow';
+import { CLIENT_ORDERS_ACTION } from './orderActions';
 import { ui } from '../../ui';
 
 const ROLE_CLIENT_ACTION = 'role:client';
@@ -16,6 +17,7 @@ const buildMenuKeyboard = (): InlineKeyboardMarkup =>
   Markup.inlineKeyboard([
     [Markup.button.callback('🚕 Заказать такси', START_TAXI_ORDER_ACTION)],
     [Markup.button.callback('📦 Заказать доставку', START_DELIVERY_ORDER_ACTION)],
+    [Markup.button.callback('📋 Мои заказы', CLIENT_ORDERS_ACTION)],
     [Markup.button.callback('🔄 Обновить меню', CLIENT_MENU_ACTION)],
   ]).reply_markup;
 
@@ -26,6 +28,7 @@ const buildMenuText = (): string =>
     'Выберите, что хотите оформить:',
     '• 🚕 Такси — подача машины и поездка по указанному адресу.',
     '• 📦 Доставка — курьер заберёт и доставит вашу посылку.',
+    '• 📋 Мои заказы — проверка статуса и управление оформленными заказами.',
   ].join('\n');
 
 const removeRoleSelectionMessage = async (ctx: BotContext): Promise<void> => {

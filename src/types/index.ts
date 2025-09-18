@@ -5,4 +5,6 @@ export type {
   OrderPriceDetails,
   OrderRecord,
   OrderInsertInput,
+  OrderExecutorInfo,
+  OrderWithExecutor,
 } from './orders';

@@ -328,7 +328,7 @@ const buildMenuText = (
 ): string => {
   const copy = getExecutorRoleCopy(state.role);
   const parts = [
-    `${copy.emoji} Меню ${copy.genitive} Freedom Bot`,
+    `${copy.emoji} Меню ${copy.genitive}`,
     '',
     ...buildVerificationSection(state, access),
     '',

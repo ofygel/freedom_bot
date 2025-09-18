@@ -15,6 +15,14 @@ export interface OrderPriceDetails {
   distanceKm: number;
 }
 
+export interface OrderExecutorInfo {
+  telegramId: number;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+}
+
 export interface OrderRecord {
   id: number;
   shortId: string;
@@ -33,6 +41,10 @@ export interface OrderRecord {
   price: OrderPriceDetails;
   channelMessageId?: number;
   createdAt: Date;
+}
+
+export interface OrderWithExecutor extends OrderRecord {
+  executor?: OrderExecutorInfo;
 }
 
 export interface OrderInsertInput {

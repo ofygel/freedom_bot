@@ -317,12 +317,17 @@ export const startExecutorVerification = async (
   await showExecutorMenu(ctx, { skipAccessCheck: true });
 };
 
-const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
+const handleIncomingPhoto = async (ctx: BotContext): Promise<boolean> => {
   if (ctx.chat?.type !== 'private') {
-    return;
+    return false;
   }
 
   const state = ensureExecutorState(ctx);
+
+  if (state.subscription.status === 'awaitingReceipt' || state.subscription.status === 'pendingModeration') {
+    return false;
+  }
+
   const role = state.role;
   const verification = state.verification[role];
   const copy = getExecutorRoleCopy(role);
@@ -335,7 +340,7 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
-    return;
+    return true;
   }
 
   if (verification.status === 'submitted') {
@@ -345,7 +350,7 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
-    return;
+    return true;
   }
 
   if (verification.status !== 'collecting') {
@@ -355,12 +360,12 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
-    return;
+    return true;
   }
 
   const message = ctx.message;
   if (!message || !('photo' in message) || !Array.isArray(message.photo) || message.photo.length === 0) {
-    return;
+    return false;
   }
 
   const photoSizes = message.photo;
@@ -382,10 +387,11 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<void> => {
   if (uploaded >= required) {
     await submitForModeration(ctx, state);
     await showExecutorMenu(ctx, { skipAccessCheck: true });
-    return;
+    return true;
   }
 
   await showExecutorMenu(ctx, { skipAccessCheck: true });
+  return true;
 };
 
 const handleTextDuringCollection = async (ctx: BotContext, next: () => Promise<void>): Promise<void> => {
@@ -431,8 +437,11 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
     await startExecutorVerification(ctx);
   });
 
-  bot.on('photo', async (ctx) => {
-    await handleIncomingPhoto(ctx);
+  bot.on('photo', async (ctx, next) => {
+    const handled = await handleIncomingPhoto(ctx);
+    if (!handled) {
+      await next();
+    }
   });
 
   bot.on('text', async (ctx, next) => {

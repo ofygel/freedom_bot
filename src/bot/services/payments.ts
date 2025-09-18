@@ -22,7 +22,7 @@ const normaliseDescription = (value?: string | string[]): string[] => {
 };
 
 export const buildPaymentMessage = (details: PaymentDetails): string => {
-  const lines = ['💳 Оплата заказа Freedom Bot'];
+  const lines = ['💳 Оплата заказа'];
   lines.push(`Сумма к оплате: ${formatPriceAmount(details.amount, details.currency)}.`);
 
   if (details.recipient) {
