@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
 import type { Telegraf } from 'telegraf';
-import type { InlineKeyboardButton, InlineKeyboardMarkup } from 'typegram'; // <--- Исправлено!
+import type { KeyboardButton, ReplyKeyboardMarkup } from 'typegram';
 import {
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
   type BotContext,
@@ -29,14 +29,7 @@ before(async () => {
 
 const ROLE_CLIENT_ACTION = 'role:client';
 
-const expectedMenuText = [
-  '🎯 Меню клиента',
-  '',
-  'Выберите, что хотите оформить:',
-  '• 🚕 Такси — подача машины и поездка по указанному адресу.',
-  '• 📦 Доставка — курьер заберёт и доставит вашу посылку.',
-  '• 📋 Мои заказы — проверка статуса и управление оформленными заказами.',
-].join('\n');
+const expectedMenuText = 'Добро пожаловать! Чем можем помочь?';
 
 const createSessionState = (): SessionState => ({
   ephemeralMessages: [],
@@ -89,7 +82,12 @@ const createMockBot = () => {
   const actions = new Map<string, (ctx: BotContext) => Promise<void>>();
   const commands = new Map<string, (ctx: BotContext) => Promise<void>>();
 
-  const bot: Partial<Telegraf<BotContext>> = {};
+  const bot: Partial<Telegraf<BotContext>> = {
+    telegram: {
+      setMyCommands: async () => undefined,
+      setChatMenuButton: async () => undefined,
+    } as unknown as Telegraf<BotContext>['telegram'],
+  };
   bot.action = (trigger: string, handler: (ctx: BotContext) => Promise<void>) => {
     actions.set(trigger, handler);
     return bot as Telegraf<BotContext>;
@@ -98,6 +96,8 @@ const createMockBot = () => {
     commands.set(command, handler);
     return bot as Telegraf<BotContext>;
   };
+
+  bot.hears = ((() => bot as Telegraf<BotContext>) as unknown) as Telegraf<BotContext>['hears'];
 
   return {
     bot: bot as Telegraf<BotContext>,
@@ -150,13 +150,6 @@ const createMockContext = () => {
   };
 };
 
-const getButtonText = (button: InlineKeyboardButton): string => {
-  if ('text' in button) {
-    return button.text;
-  }
-  throw new Error('Unsupported button type');
-};
-
 describe('client menu role selection', () => {
   it('clears the role keyboard and shows the client menu', async () => {
     const { bot, getAction } = createMockBot();
@@ -177,16 +170,17 @@ describe('client menu role selection', () => {
     assert.equal(replyCalls.length, 1);
     assert.equal(replyCalls[0].text, expectedMenuText);
 
-    const keyboard = (replyCalls[0].extra as { reply_markup?: InlineKeyboardMarkup }).reply_markup;
+    const keyboard = (replyCalls[0].extra as { reply_markup?: ReplyKeyboardMarkup }).reply_markup;
     assert.ok(keyboard, 'Client menu keyboard should be provided');
 
-    // FIX: Явная типизация row!
-    const labels = keyboard.inline_keyboard.map((row: InlineKeyboardButton[]) => row.map(getButtonText));
+    const labels = keyboard.keyboard.map((row: KeyboardButton[]) =>
+      row.map((button) => (typeof button === 'string' ? button : button.text)),
+    );
     assert.deepEqual(labels, [
-      ['🚕 Заказать такси'],
-      ['📦 Заказать доставку'],
-      ['📋 Мои заказы'],
-      ['🔄 Обновить меню'],
+      ['🚕 Заказать такси', '📦 Доставка'],
+      ['🧾 Мои заказы'],
+      ['🆘 Поддержка', '🔄 Обновить меню'],
     ]);
+    assert.equal(keyboard.is_persistent, true);
   });
 });
