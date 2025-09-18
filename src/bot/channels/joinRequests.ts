@@ -3,6 +3,7 @@ import type { ChatJoinRequest } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../../config';
 import { hasActiveSubscription } from '../../db/subscriptions';
+import { EXECUTOR_SUBSCRIPTION_REQUIRED_MESSAGE } from '../flows/executor/orders';
 import type { BotContext } from '../types';
 
 export interface JoinRequestDecisionContext {
@@ -94,6 +95,16 @@ export const registerJoinRequests = (
 
     try {
       await ctx.telegram.declineChatJoinRequest(chatId, userId);
+
+      try {
+        await ctx.telegram.sendMessage(userId, EXECUTOR_SUBSCRIPTION_REQUIRED_MESSAGE);
+      } catch (error) {
+        logger.warn(
+          { err: error, chatId, userId },
+          'Failed to notify user about declined chat join request',
+        );
+      }
+
       await options.onDecline?.(context);
       logger.info(
         { chatId, userId, user: formatUserForLog(request) },
