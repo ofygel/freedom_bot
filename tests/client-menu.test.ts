@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { before, describe, it } from 'node:test';
+import { before, describe, it, mock } from 'node:test';
 import type { Telegraf } from 'telegraf';
 import type { KeyboardButton, ReplyKeyboardMarkup } from 'typegram';
 import {
@@ -9,6 +9,7 @@ import {
 } from '../src/bot/types';
 
 let registerClientMenu: typeof import('../src/bot/flows/client/menu')['registerClientMenu'];
+let usersDb: typeof import('../src/db/users');
 
 before(async () => {
   process.env.BOT_TOKEN = process.env.BOT_TOKEN ?? 'test-token';
@@ -25,6 +26,7 @@ before(async () => {
   process.env.SUB_PRICE_30 = process.env.SUB_PRICE_30 ?? '16000';
 
   ({ registerClientMenu } = await import('../src/bot/flows/client/menu'));
+  usersDb = await import('../src/db/users');
 });
 
 const ROLE_CLIENT_ACTION = 'role:client';
@@ -59,14 +61,16 @@ const createSessionState = (): SessionState => ({
   support: { status: 'idle' },
 });
 
-const createAuthState = (): BotContext['auth'] => ({
+const createAuthState = (
+  role: BotContext['auth']['user']['role'] = 'client',
+): BotContext['auth'] => ({
   user: {
     telegramId: 42,
     username: undefined,
     firstName: undefined,
     lastName: undefined,
     phone: undefined,
-    role: 'client',
+    role,
     isVerified: false,
     isBlocked: false,
   },
@@ -75,7 +79,7 @@ const createAuthState = (): BotContext['auth'] => ({
     hasActiveSubscription: false,
     isVerified: false,
   },
-  isModerator: false,
+  isModerator: role === 'moderator',
 });
 
 const createMockBot = () => {
@@ -105,19 +109,37 @@ const createMockBot = () => {
   };
 };
 
-const createMockContext = () => {
+type ContextFrom = NonNullable<BotContext['from']>;
+
+interface MockContextOptions {
+  role?: BotContext['auth']['user']['role'];
+  from?: Partial<ContextFrom>;
+  phoneNumber?: string;
+}
+
+const createMockContext = (options: MockContextOptions = {}) => {
   const session = createSessionState();
+  if (options.phoneNumber) {
+    session.phoneNumber = options.phoneNumber;
+  }
   let nextMessageId = 1;
   const replyCalls: Array<{ text: string; extra?: unknown; messageId: number }> = [];
   const editMarkupCalls: Array<unknown> = [];
   const deleteMessageCalls: Array<unknown> = [];
   let answerCbQueryCount = 0;
 
+  const from: ContextFrom = {
+    id: 42,
+    is_bot: false,
+    first_name: 'Test',
+    ...options.from,
+  } as ContextFrom;
+
   const ctx = {
     chat: { id: 99, type: 'private' as const },
-    from: { id: 42 },
+    from,
     session,
-    auth: createAuthState(),
+    auth: createAuthState(options.role),
     reply: async (text: string, extra?: unknown) => {
       const messageId = nextMessageId++;
       replyCalls.push({ text, extra, messageId });
@@ -181,6 +203,71 @@ describe('client menu role selection', () => {
       ['🧾 Мои заказы'],
       ['🆘 Поддержка', '🔄 Обновить меню'],
     ]);
+    assert.equal(keyboard.is_persistent, true);
+  });
+
+  it('updates executor role to client and shows the persistent menu immediately', async () => {
+    const ensureClientRoleMock = mock.method(usersDb, 'ensureClientRole', async () => undefined);
+
+    const { bot, getAction } = createMockBot();
+    registerClientMenu(bot);
+
+    const handler = getAction(ROLE_CLIENT_ACTION);
+    assert.ok(handler, 'Client role action should be registered');
+
+    const {
+      ctx,
+      replyCalls,
+      editMarkupCalls,
+      deleteMessageCalls,
+      getAnswerCbQueryCount,
+    } = createMockContext({
+      role: 'courier',
+      from: {
+        id: 42,
+        username: 'executor_user',
+        first_name: 'Exec',
+        last_name: 'Utor',
+      },
+      phoneNumber: '+7 (700) 000-00-01',
+    });
+
+    try {
+      await handler(ctx);
+    } finally {
+      ensureClientRoleMock.mock.restore();
+    }
+
+    assert.equal(ensureClientRoleMock.mock.callCount(), 1);
+    const [dbCall] = ensureClientRoleMock.mock.calls;
+    assert.ok(dbCall);
+    const [payload] = dbCall.arguments;
+    assert.deepEqual(payload, {
+      telegramId: 42,
+      username: 'executor_user',
+      firstName: 'Exec',
+      lastName: 'Utor',
+      phone: '+7 (700) 000-00-01',
+    });
+
+    assert.equal(ctx.auth.user.role, 'client');
+    assert.equal(ctx.session.isAuthenticated, true);
+    assert.deepEqual(ctx.session.user, {
+      id: 42,
+      username: 'executor_user',
+      firstName: 'Exec',
+      lastName: 'Utor',
+    });
+
+    assert.equal(deleteMessageCalls.length, 1);
+    assert.equal(editMarkupCalls.length, 0);
+    assert.equal(getAnswerCbQueryCount(), 1);
+
+    assert.equal(replyCalls.length, 1);
+    assert.equal(replyCalls[0].text, expectedMenuText);
+
+    const keyboard = (replyCalls[0].extra as { reply_markup?: ReplyKeyboardMarkup }).reply_markup;
+    assert.ok(keyboard, 'Client menu keyboard should be provided');
     assert.equal(keyboard.is_persistent, true);
   });
 });
