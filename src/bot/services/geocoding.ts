@@ -1,4 +1,5 @@
 import { config } from '../../config';
+import { extractPreferredUrl } from '../../lib/extractPreferredUrl';
 
 export interface GeocodingResult {
   query: string;
@@ -1021,11 +1022,16 @@ export const geocodeAddress = async (
     return null;
   }
 
+  const extractedUrl = extractPreferredUrl(trimmed);
+  const preferredTwoGisUrl = extractedUrl && isTwoGisLink(extractedUrl) ? extractedUrl : null;
+
   const normalizedQuery = normaliseQuery(trimmed);
   const searchQuery = buildCityAwareQuery(normalizedQuery);
 
   const nominatimConfig = getNominatimConfig();
   const twoGisConfig = getTwoGisConfig();
+
+  const fallbackTwoGisUrl = preferredTwoGisUrl ?? (isTwoGisLink(trimmed) ? trimmed : null);
 
   const resolveWithFallback = async (
     latitude: number,
@@ -1052,7 +1058,7 @@ export const geocodeAddress = async (
     } satisfies GeocodingResult;
   };
 
-  const parsedLink = await parse2GisLink(trimmed);
+  const parsedLink = await parse2GisLink(preferredTwoGisUrl ?? trimmed);
   if (parsedLink?.coordinates) {
     return resolveWithFallback(
       parsedLink.coordinates.latitude,
@@ -1078,8 +1084,8 @@ export const geocodeAddress = async (
     scrapedTwoGis = await scrapeTwoGisPlace(parsedLink.url);
   } else if (parsedLink && !parsedLink.coordinates) {
     scrapedTwoGis = await scrapeTwoGisPlace(parsedLink.url);
-  } else if (!parsedLink && isTwoGisLink(trimmed)) {
-    const parsedUrl = parseUrl(trimmed);
+  } else if (!parsedLink && fallbackTwoGisUrl) {
+    const parsedUrl = parseUrl(fallbackTwoGisUrl);
     if (parsedUrl) {
       scrapedTwoGis = await scrapeTwoGisPlace(parsedUrl);
     }
