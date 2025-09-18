@@ -11,8 +11,6 @@ interface MessageReference {
   chatType?: string;
 }
 
-const deletableChatTypes = new Set(['private', 'group', 'supergroup', 'channel']);
-
 const resolveIncomingMessage = (ctx: BotContext): MessageReference | null => {
   const message = ctx.message as
     | ({ message_id: number; chat?: { id?: number; type?: string }; from?: { is_bot?: boolean } })
@@ -39,7 +37,7 @@ const resolveIncomingMessage = (ctx: BotContext): MessageReference | null => {
 };
 
 const shouldDeleteIncoming = (ref: MessageReference | null): ref is MessageReference =>
-  Boolean(ref && (!ref.chatType || deletableChatTypes.has(ref.chatType)));
+  Boolean(ref && ref.chatType === 'private');
 
 export const autoDelete = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   if (ctx.chat?.id && ctx.session.ephemeralMessages.length > 0) {

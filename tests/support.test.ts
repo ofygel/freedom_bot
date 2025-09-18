@@ -1,12 +1,14 @@
 import './helpers/setup-env';
 
 import assert from 'node:assert/strict';
-import { before, beforeEach, describe, it } from 'node:test';
+import { before, beforeEach, describe, it, mock } from 'node:test';
 
 import type { Telegraf } from 'telegraf';
 
+import { autoDelete } from '../src/bot/middlewares/autoDelete';
 import type { BotContext } from '../src/bot/types';
 import { pool } from '../src/db';
+import * as tgUtils from '../src/utils/tg';
 
 import type { SupportForwardResult } from '../src/bot/services/support';
 
@@ -65,6 +67,31 @@ const createAuthState = (telegramId: number): BotContext['auth'] => ({
     isVerified: false,
   },
   isModerator: false,
+});
+
+const createSessionState = (): BotContext['session'] => ({
+  ephemeralMessages: [],
+  isAuthenticated: false,
+  awaitingPhone: false,
+  executor: {
+    role: 'courier',
+    verification: {
+      courier: { status: 'idle', requiredPhotos: 2, uploadedPhotos: [] },
+      driver: { status: 'idle', requiredPhotos: 2, uploadedPhotos: [] },
+    },
+    subscription: { status: 'idle' },
+  },
+  client: {
+    taxi: { stage: 'idle' },
+    delivery: { stage: 'idle' },
+  },
+  ui: {
+    steps: {},
+    homeActions: [],
+  },
+  support: {
+    status: 'idle',
+  },
 });
 
 type SupportModule = typeof import('../src/bot/services/support');
@@ -276,6 +303,84 @@ describe('support service', () => {
     const notifyCall = telegram.calls.find((call) => call.method === 'sendMessage');
     assert.ok(notifyCall, 'user should be notified about closure');
     assert.equal(notifyCall?.args[0], 654);
+  });
+
+  it('keeps moderator replies when autoDelete middleware runs in group chats', async () => {
+    const safeDeleteMock = mock.method(tgUtils, 'safeDeleteMessage', async () => true);
+
+    try {
+      const middleware = autoDelete();
+
+      let messageHandler:
+        | ((ctx: BotContext, next?: () => Promise<void>) => Promise<void>)
+        | undefined;
+
+      const bot = {
+        action: () => bot,
+        on(_: string, handler: (ctx: BotContext, next?: () => Promise<void>) => Promise<void>) {
+          messageHandler = handler;
+          return bot;
+        },
+      } as unknown as Telegraf<BotContext>;
+
+      registerSupportModerationBridge(bot);
+
+      assert.ok(messageHandler, 'message handler should be registered');
+
+      const threadId = 'thread-auto-delete';
+      const moderatorChatId = -100987654;
+      const promptMessageId = 500;
+
+      __testing__.threadsById.set(threadId, {
+        id: threadId,
+        userChatId: 1234,
+        userTelegramId: 4321,
+        userMessageId: 45,
+        moderatorChatId,
+        moderatorMessageId: 400,
+        status: 'open',
+      });
+
+      __testing__.registerPrompt(threadId, moderatorChatId, promptMessageId, 777);
+
+      const copyMessage = mock.fn(async () => ({ message_id: 901 }));
+      const deleteMessage = mock.fn(async () => true);
+      const reply = mock.fn(async () => ({ message_id: 902 }));
+
+      const session = createSessionState();
+
+      const authState = createAuthState(777);
+      authState.isModerator = true;
+
+      const ctx = {
+        chat: { id: moderatorChatId, type: 'supergroup' as const },
+        from: { id: 777 },
+        message: {
+          message_id: 903,
+          text: 'Ответ пользователю',
+          chat: { id: moderatorChatId, type: 'supergroup' as const },
+          reply_to_message: { message_id: promptMessageId },
+        },
+        telegram: { copyMessage, deleteMessage },
+        reply,
+        session,
+        auth: authState,
+      } as unknown as BotContext;
+
+      let handlerInvoked = false;
+      await middleware(ctx, async () => {
+        handlerInvoked = true;
+        await messageHandler!(ctx);
+      });
+
+      assert.equal(handlerInvoked, true, 'support bridge handler should process the message');
+      assert.equal(copyMessage.mock.callCount(), 1, 'moderator reply should be delivered');
+      assert.equal(reply.mock.callCount(), 1, 'moderator should receive acknowledgement');
+      assert.equal(safeDeleteMock.mock.callCount(), 0, 'autoDelete should not remove group messages');
+      assert.equal(deleteMessage.mock.callCount(), 0, 'telegram deleteMessage should not be called');
+    } finally {
+      safeDeleteMock.mock.restore();
+    }
   });
 
   it('registers handlers on a Telegraf instance', async () => {
