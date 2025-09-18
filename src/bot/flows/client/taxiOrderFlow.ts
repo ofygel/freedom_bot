@@ -32,6 +32,7 @@ import {
 import { buildOrderLocationsKeyboard } from '../../keyboards/orders';
 import type { BotContext, ClientOrderDraftState } from '../../types';
 import { ui } from '../../ui';
+import { CLIENT_MENU, isClientChat, sendClientMenu } from '../../../ui/clientMenu';
 import { CLIENT_MENU_ACTION } from './menu';
 import { CLIENT_TAXI_ORDER_AGAIN_ACTION } from './orderActions';
 
@@ -247,6 +248,7 @@ const cancelOrderDraft = async (ctx: BotContext, draft: ClientOrderDraftState): 
     homeAction: CLIENT_MENU_ACTION,
     keyboard,
   });
+  await sendClientMenu(ctx, 'Готово. Хотите оформить новый заказ?');
 };
 
 const notifyOrderCreated = async (
@@ -270,6 +272,7 @@ const notifyOrderCreated = async (
     homeAction: CLIENT_MENU_ACTION,
     keyboard: buildOrderAgainKeyboard(),
   });
+  await sendClientMenu(ctx, 'Готово. Хотите оформить новый заказ?');
 };
 
 const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Promise<void> => {
@@ -312,6 +315,7 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
       text: 'Не удалось создать заказ. Попробуйте позже.',
       cleanup: true,
     });
+    await sendClientMenu(ctx, 'Не удалось создать заказ. Выберите следующее действие.');
   } finally {
     await clearInlineKeyboard(ctx, draft.confirmationMessageId);
     resetClientOrderDraft(draft);
@@ -443,6 +447,8 @@ const handleCancellationAction = async (ctx: BotContext): Promise<void> => {
   await cancelOrderDraft(ctx, draft);
 };
 
+export const startTaxiOrder = handleStart;
+
 export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
   bot.action(START_TAXI_ORDER_ACTION, async (ctx) => {
     await handleStart(ctx);
@@ -457,6 +463,14 @@ export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
   });
 
   bot.action(CLIENT_TAXI_ORDER_AGAIN_ACTION, async (ctx) => {
+    await handleStart(ctx);
+  });
+
+  bot.hears(CLIENT_MENU.taxi, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      return;
+    }
+
     await handleStart(ctx);
   });
 

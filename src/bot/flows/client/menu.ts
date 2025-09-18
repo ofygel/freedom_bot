@@ -1,35 +1,34 @@
-import { Markup, Telegraf } from 'telegraf';
-import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
+import { Telegraf } from 'telegraf';
 
 import { logger } from '../../../config';
+import { CLIENT_MENU, clientMenuText, isClientChat, sendClientMenu } from '../../../ui/clientMenu';
 import type { BotContext } from '../../types';
-import { START_DELIVERY_ORDER_ACTION } from './deliveryOrderFlow';
-import { START_TAXI_ORDER_ACTION } from './taxiOrderFlow';
-import { CLIENT_ORDERS_ACTION } from './orderActions';
-import { ui } from '../../ui';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
-const CLIENT_MENU_STEP_ID = 'client:menu:main';
-const CLIENT_MENU_PRIVATE_WARNING_STEP_ID = 'client:menu:private-only';
 
-const buildMenuKeyboard = (): InlineKeyboardMarkup =>
-  Markup.inlineKeyboard([
-    [Markup.button.callback('🚕 Заказать такси', START_TAXI_ORDER_ACTION)],
-    [Markup.button.callback('📦 Заказать доставку', START_DELIVERY_ORDER_ACTION)],
-    [Markup.button.callback('📋 Мои заказы', CLIENT_ORDERS_ACTION)],
-    [Markup.button.callback('🔄 Обновить меню', CLIENT_MENU_ACTION)],
-  ]).reply_markup;
+const installClientMenuCommands = async (bot: Telegraf<BotContext>): Promise<void> => {
+  try {
+    await bot.telegram.setMyCommands(
+      [
+        { command: 'start', description: 'Главное меню' },
+        { command: 'taxi', description: 'Заказать такси' },
+        { command: 'delivery', description: 'Оформить доставку' },
+        { command: 'orders', description: 'Мои заказы' },
+        { command: 'support', description: 'Поддержка' },
+      ],
+      { scope: { type: 'all_private_chats' }, language_code: 'ru' },
+    );
+  } catch (error) {
+    logger.warn({ err: error }, 'Failed to install client commands');
+  }
 
-const buildMenuText = (): string =>
-  [
-    '🎯 Меню клиента',
-    '',
-    'Выберите, что хотите оформить:',
-    '• 🚕 Такси — подача машины и поездка по указанному адресу.',
-    '• 📦 Доставка — курьер заберёт и доставит вашу посылку.',
-    '• 📋 Мои заказы — проверка статуса и управление оформленными заказами.',
-  ].join('\n');
+  try {
+    await bot.telegram.setChatMenuButton({ menuButton: { type: 'commands' } });
+  } catch (error) {
+    logger.warn({ err: error }, 'Failed to set chat menu button');
+  }
+};
 
 const removeRoleSelectionMessage = async (ctx: BotContext): Promise<void> => {
   if (ctx.chat?.type !== 'private') {
@@ -53,26 +52,29 @@ const removeRoleSelectionMessage = async (ctx: BotContext): Promise<void> => {
   }
 };
 
-const showMenu = async (ctx: BotContext): Promise<void> => {
-  if (ctx.chat?.type !== 'private') {
-    await ctx.answerCbQuery('Меню доступно только в личном чате с ботом.');
+const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
+  const role = ctx.auth?.user.role;
+  if (!isClientChat(ctx, role)) {
+    if (ctx.callbackQuery) {
+      try {
+        await ctx.answerCbQuery('Меню доступно только в личном чате с ботом.');
+      } catch (error) {
+        logger.debug({ err: error }, 'Failed to answer menu callback for non-private chat');
+      }
+    } else if (typeof ctx.reply === 'function') {
+      await ctx.reply('Меню доступно только в личном чате с ботом.');
+    }
     return;
   }
 
-  const keyboard = buildMenuKeyboard();
-  const text = buildMenuText();
-
-  await ui.step(ctx, {
-    id: CLIENT_MENU_STEP_ID,
-    text,
-    keyboard,
-    cleanup: false,
-  });
+  await sendClientMenu(ctx, prompt ?? clientMenuText());
 };
 
 export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
+  void installClientMenuCommands(bot);
+
   bot.action(ROLE_CLIENT_ACTION, async (ctx) => {
-    if (ctx.chat?.type !== 'private') {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
       await showMenu(ctx);
       return;
     }
@@ -85,11 +87,11 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
       logger.debug({ err: error }, 'Failed to answer client role callback');
     }
 
-    await showMenu(ctx);
+    await showMenu(ctx, 'Добро пожаловать! Чем можем помочь?');
   });
 
   bot.action(CLIENT_MENU_ACTION, async (ctx) => {
-    if (ctx.chat?.type !== 'private') {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
       await showMenu(ctx);
       return;
     }
@@ -104,15 +106,46 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
   });
 
   bot.command('order', async (ctx) => {
-    if (ctx.chat?.type !== 'private') {
-      await ui.step(ctx, {
-        id: CLIENT_MENU_PRIVATE_WARNING_STEP_ID,
-        text: 'Меню доступно только в личном чате с ботом.',
-        cleanup: true,
-      });
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      await ctx.reply('Меню доступно только в личном чате с ботом.');
       return;
     }
 
     await showMenu(ctx);
+  });
+
+  bot.command('support', async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      await ctx.reply('Поддержка доступна только в личном чате с ботом.');
+      return;
+    }
+
+    await ctx.reply(
+      [
+        'Опишите проблему или задайте вопрос — мы ответим в этом чате.',
+        'Если захотите вернуться в меню, используйте кнопки ниже или команду /start.',
+      ].join('\n'),
+    );
+  });
+
+  bot.hears(CLIENT_MENU.refresh, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      return;
+    }
+
+    await sendClientMenu(ctx, 'Меню обновлено.');
+  });
+
+  bot.hears(CLIENT_MENU.support, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      return;
+    }
+
+    await ctx.reply(
+      [
+        'Опишите проблему или задайте вопрос — мы ответим в этом чате.',
+        'Если захотите вернуться в меню, используйте кнопки ниже или команду /start.',
+      ].join('\n'),
+    );
   });
 };

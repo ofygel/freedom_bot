@@ -16,6 +16,7 @@ import type { OrderKind, OrderRecord, OrderWithExecutor } from '../../types';
 import type { BotContext, UserRole } from '../types';
 import { buildOrderLocationsKeyboard } from '../keyboards/orders';
 import { buildInlineKeyboard, mergeInlineKeyboards } from '../keyboards/common';
+import { sendClientMenuToChat } from '../../ui/clientMenu';
 
 export type PublishOrderStatus = 'published' | 'already_published' | 'missing_channel';
 
@@ -816,6 +817,33 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
       }
 
       await ctx.answerCbQuery(answerText);
+      const clientId = result.order.clientId;
+      if (typeof clientId === 'number') {
+        const shortId = result.order.shortId ?? result.order.id.toString();
+        const notificationLines = [
+          `⚠️ Ваш заказ №${shortId} отменён исполнителем.`,
+        ];
+
+        if (!publishResult || publishResult.status !== 'missing_channel') {
+          notificationLines.push('Мы снова ищем свободного исполнителя.');
+        } else {
+          notificationLines.push('Канал исполнителей недоступен. Мы свяжемся с вами вручную.');
+        }
+
+        try {
+          await ctx.telegram.sendMessage(clientId, notificationLines.join('\n'));
+          const menuPrompt =
+            !publishResult || publishResult.status !== 'missing_channel'
+              ? 'Хотите изменить заказ или оформить новый?'
+              : 'Мы на связи. Что дальше?';
+          await sendClientMenuToChat(ctx.telegram, clientId, menuPrompt);
+        } catch (error) {
+          logger.debug(
+            { err: error, orderId, clientId },
+            'Failed to notify client about order release',
+          );
+        }
+      }
       return;
     default:
       await ctx.answerCbQuery('Не удалось отменить заказ.');
@@ -880,6 +908,22 @@ const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<
       }
 
       await ctx.answerCbQuery('Заказ завершён. Спасибо!');
+      const clientId = result.order.clientId;
+      if (typeof clientId === 'number') {
+        const shortId = result.order.shortId ?? result.order.id.toString();
+        try {
+          await ctx.telegram.sendMessage(
+            clientId,
+            `✅ Ваш заказ №${shortId} завершён. Спасибо, что пользуетесь сервисом!`,
+          );
+          await sendClientMenuToChat(ctx.telegram, clientId, 'Готово. Хотите оформить новый заказ?');
+        } catch (error) {
+          logger.debug(
+            { err: error, orderId, clientId },
+            'Failed to notify client about order completion',
+          );
+        }
+      }
       return;
     }
     default:

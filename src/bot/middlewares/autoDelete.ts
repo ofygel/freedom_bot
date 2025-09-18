@@ -1,8 +1,45 @@
 import type { MiddlewareFn } from 'telegraf';
 
 import { logger } from '../../config';
+import { safeDeleteMessage } from '../../utils/tg';
 import { ui } from '../ui';
 import type { BotContext } from '../types';
+
+interface MessageReference {
+  chatId: number;
+  messageId: number;
+  chatType?: string;
+}
+
+const deletableChatTypes = new Set(['private', 'group', 'supergroup', 'channel']);
+
+const resolveIncomingMessage = (ctx: BotContext): MessageReference | null => {
+  const message = ctx.message as
+    | ({ message_id: number; chat?: { id?: number; type?: string }; from?: { is_bot?: boolean } })
+    | undefined;
+
+  if (!message || typeof message.message_id !== 'number') {
+    return null;
+  }
+
+  const chatId = message.chat?.id;
+  if (typeof chatId !== 'number') {
+    return null;
+  }
+
+  if (message.from?.is_bot) {
+    return null;
+  }
+
+  return {
+    chatId,
+    messageId: message.message_id,
+    chatType: message.chat?.type,
+  } satisfies MessageReference;
+};
+
+const shouldDeleteIncoming = (ref: MessageReference | null): ref is MessageReference =>
+  Boolean(ref && (!ref.chatType || deletableChatTypes.has(ref.chatType)));
 
 export const autoDelete = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   if (ctx.chat?.id && ctx.session.ephemeralMessages.length > 0) {
@@ -31,5 +68,23 @@ export const autoDelete = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     await ui.clear(ctx);
   }
 
+  const incomingMessage = resolveIncomingMessage(ctx);
+
   await next();
+
+  if (!shouldDeleteIncoming(incomingMessage)) {
+    return;
+  }
+
+  const success = await safeDeleteMessage(ctx.telegram, incomingMessage.chatId, incomingMessage.messageId);
+  if (!success) {
+    logger.debug(
+      {
+        chatId: incomingMessage.chatId,
+        messageId: incomingMessage.messageId,
+        chatType: incomingMessage.chatType,
+      },
+      'Failed to delete incoming message',
+    );
+  }
 };
