@@ -654,7 +654,39 @@ const handleModeratorReplyMessage = async (
   const promptKey = buildMessageKey(chatId, replyTo.message_id);
   const prompt = pendingReplyPrompts.get(promptKey);
   if (!prompt) {
-    return false;
+    const threadId = threadsByModeratorMessage.get(promptKey);
+    if (!threadId) {
+      return false;
+    }
+
+    const state = threadsById.get(threadId);
+    if (!state) {
+      threadsByModeratorMessage.delete(promptKey);
+      await acknowledgeModeratorReply(
+        ctx,
+        message.message_id,
+        'Обращение уже закрыто.',
+      );
+      return true;
+    }
+
+    if (state.status !== 'open') {
+      threadsByModeratorMessage.delete(promptKey);
+      await acknowledgeModeratorReply(
+        ctx,
+        message.message_id,
+        'Обращение уже закрыто.',
+      );
+      return true;
+    }
+
+    const delivered = await copyModeratorReplyToUser(ctx, state);
+    const response = delivered
+      ? 'Ответ доставлен пользователю.'
+      : 'Не удалось доставить ответ пользователю.';
+
+    await acknowledgeModeratorReply(ctx, message.message_id, response);
+    return true;
   }
 
   if (prompt.moderatorId !== undefined && ctx.from?.id !== prompt.moderatorId) {

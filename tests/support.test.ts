@@ -261,6 +261,57 @@ describe('support service', () => {
     assert.equal(__testing__.pendingReplyPrompts.size, 0);
   });
 
+  it('delivers replies when responding to the forwarded message directly', async () => {
+    const telegram = createMockTelegram();
+
+    setPoolQuery(async () => ({ rows: [] }) as any);
+    __testing__.setModerationChannelResolver(async () => 777777);
+
+    const forwardCtx = {
+      chat: { id: 1111 },
+      from: { id: 2222, first_name: 'Client' },
+      message: { message_id: 3333, text: 'Помогите' },
+      telegram: telegram.api,
+      auth: createAuthState(2222),
+    } as unknown as BotContext;
+
+    const forwardResult = (await forwardSupportMessage(forwardCtx)) as SupportForwardResult;
+    assert.equal(forwardResult.status, 'forwarded');
+    const threadId = forwardResult.threadId;
+    assert.ok(threadId, 'thread id should be returned');
+
+    const state = __testing__.threadsById.get(threadId!);
+    assert.ok(state, 'thread state should be tracked for direct replies');
+
+    const acknowledgements: string[] = [];
+    const replyCtx = {
+      chat: { id: state!.moderatorChatId },
+      from: { id: 9999 },
+      message: {
+        message_id: 4444,
+        text: 'Ответ пользователю',
+        reply_to_message: { message_id: state!.moderatorMessageId },
+      },
+      telegram: telegram.api,
+      reply: async (text: string) => {
+        acknowledgements.push(text);
+        return { message_id: 5555, chat: { id: state!.moderatorChatId }, text };
+      },
+      auth: createAuthState(9999),
+    } as unknown as BotContext;
+
+    const handled = await __testing__.handleModeratorReplyMessage(replyCtx);
+    assert.equal(handled, true, 'reply should be processed');
+
+    const copyCalls = telegram.calls.filter((call) => call.method === 'copyMessage');
+    assert.equal(copyCalls.length, 2, 'reply should trigger another copyMessage call');
+    const lastCopy = copyCalls.at(-1);
+    assert.ok(lastCopy, 'reply copy should exist');
+    assert.equal(lastCopy?.args[0], state!.userChatId);
+    assert.equal(acknowledgements.length, 1);
+    assert.equal(acknowledgements[0], 'Ответ доставлен пользователю.');
+  });
+
   it('closes support threads and cleans up state', async () => {
     const threadId = 'thread-close';
     const telegram = createMockTelegram();
