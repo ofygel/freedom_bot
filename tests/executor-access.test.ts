@@ -9,6 +9,7 @@ let ensureExecutorState: typeof import('../src/bot/flows/executor/menu')['ensure
 let showExecutorMenu: typeof import('../src/bot/flows/executor/menu')['showExecutorMenu'];
 let EXECUTOR_VERIFICATION_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_VERIFICATION_ACTION'];
 let EXECUTOR_SUBSCRIPTION_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_SUBSCRIPTION_ACTION'];
+let EXECUTOR_ORDERS_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_ORDERS_ACTION'];
 let EXECUTOR_SUPPORT_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_SUPPORT_ACTION'];
 let EXECUTOR_MENU_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_ACTION'];
 let startExecutorSubscription: typeof import('../src/bot/flows/executor/subscription')['startExecutorSubscription'];
@@ -33,6 +34,7 @@ before(async () => {
     showExecutorMenu,
     EXECUTOR_VERIFICATION_ACTION,
     EXECUTOR_SUBSCRIPTION_ACTION,
+    EXECUTOR_ORDERS_ACTION,
     EXECUTOR_SUPPORT_ACTION,
     EXECUTOR_MENU_ACTION,
   } = await import('../src/bot/flows/executor/menu'));
@@ -202,7 +204,7 @@ describe('executor access control', () => {
       [
         {
           text: 'Заказы',
-          callback_data: EXECUTOR_SUBSCRIPTION_ACTION,
+          callback_data: EXECUTOR_ORDERS_ACTION,
         },
       ],
       [

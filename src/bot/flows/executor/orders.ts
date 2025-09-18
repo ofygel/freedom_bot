@@ -15,6 +15,9 @@ import { getExecutorRoleCopy } from './roleCopy';
 
 const ORDERS_LINK_STEP_ID = 'executor:orders:link';
 
+export const EXECUTOR_SUBSCRIPTION_REQUIRED_MESSAGE =
+  'Подписка на канал заказов не активна. Оформите подписку через меню, чтобы получить доступ.';
+
 const formatDateTime = (value: Date): string =>
   new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'short',
@@ -171,7 +174,7 @@ export const registerExecutorOrders = (bot: Telegraf<BotContext>): void => {
       state.subscription.pendingPaymentId = undefined;
       await ui.step(ctx, {
         id: ORDERS_LINK_STEP_ID,
-        text: 'Подписка на канал заказов не активна. Оформите подписку через меню, чтобы получить доступ.',
+        text: EXECUTOR_SUBSCRIPTION_REQUIRED_MESSAGE,
         homeAction: EXECUTOR_MENU_ACTION,
       });
       await showExecutorMenu(ctx, { skipAccessCheck: true });
