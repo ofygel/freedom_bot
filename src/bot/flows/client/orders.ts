@@ -20,9 +20,11 @@ import {
   CLIENT_CANCEL_ORDER_ACTION_PREFIX,
   CLIENT_CONFIRM_CANCEL_ORDER_ACTION_PATTERN,
   CLIENT_CONFIRM_CANCEL_ORDER_ACTION_PREFIX,
+  CLIENT_DELIVERY_ORDER_AGAIN_ACTION,
   CLIENT_ORDERS_ACTION,
   CLIENT_VIEW_ORDER_ACTION_PATTERN,
   CLIENT_VIEW_ORDER_ACTION_PREFIX,
+  CLIENT_TAXI_ORDER_AGAIN_ACTION,
 } from './orderActions';
 
 const CLIENT_ORDERS_LIST_STEP_ID = 'client:orders:list';
@@ -38,6 +40,11 @@ const ORDER_KIND_ICONS: Record<OrderWithExecutor['kind'], string> = {
 const ORDER_KIND_LABELS: Record<OrderWithExecutor['kind'], string> = {
   taxi: 'Такси',
   delivery: 'Доставка',
+};
+
+const ORDER_AGAIN_ACTION: Record<OrderWithExecutor['kind'], string> = {
+  taxi: CLIENT_TAXI_ORDER_AGAIN_ACTION,
+  delivery: CLIENT_DELIVERY_ORDER_AGAIN_ACTION,
 };
 
 const ORDER_STATUS_TEXT: Record<OrderStatus, { short: string; full: string }> = {
@@ -136,6 +143,13 @@ const buildControlKeyboard = (
       rows.push([
         { label: '❌ Отменить заказ', action: `${CLIENT_CANCEL_ORDER_ACTION_PREFIX}:${order.id}` },
       ]);
+    }
+  }
+
+  if (order.status === 'cancelled' || order.status === 'done') {
+    const againAction = ORDER_AGAIN_ACTION[order.kind];
+    if (againAction) {
+      rows.push([{ label: 'Заказать ещё', action: againAction }]);
     }
   }
 
