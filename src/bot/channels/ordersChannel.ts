@@ -9,10 +9,11 @@ import {
   lockOrderById,
   setOrderChannelMessageId,
   tryClaimOrder,
+  tryCompleteOrder,
   tryReleaseOrder,
 } from '../../db/orders';
 import type { OrderKind, OrderRecord, OrderWithExecutor } from '../../types';
-import type { BotContext } from '../types';
+import type { BotContext, UserRole } from '../types';
 import { buildOrderLocationsKeyboard } from '../keyboards/orders';
 import { buildInlineKeyboard, mergeInlineKeyboards } from '../keyboards/common';
 
@@ -26,9 +27,11 @@ export interface PublishOrderResult {
 const ACCEPT_ACTION_PREFIX = 'order:accept';
 const DECLINE_ACTION_PREFIX = 'order:decline';
 const RELEASE_ACTION_PREFIX = 'order:release';
+const COMPLETE_ACTION_PREFIX = 'order:complete';
 const ACCEPT_ACTION_PATTERN = /^order:accept:(\d+)$/;
 const DECLINE_ACTION_PATTERN = /^order:decline:(\d+)$/;
 const RELEASE_ACTION_PATTERN = /^order:release:(\d+)$/;
+const COMPLETE_ACTION_PATTERN = /^order:complete:(\d+)$/;
 
 const formatOrderType = (kind: OrderKind): string =>
   kind === 'taxi' ? 'Такси' : 'Доставка';
@@ -48,17 +51,19 @@ const formatDistance = (distanceKm: number): string => {
 const formatPrice = (amount: number, currency: string): string =>
   `${new Intl.NumberFormat('ru-RU').format(amount)} ${currency}`;
 
-export const buildOrderMessage = (order: OrderRecord): string => {
-  const lines = [
-    `🆕 Новый заказ (${formatOrderType(order.kind)})`,
-    `#${order.shortId}`,
-    '',
-    `📍 Подача: ${order.pickup.address}`,
-    `🎯 Назначение: ${order.dropoff.address}`,
-    `📏 Расстояние: ${formatDistance(order.price.distanceKm)} км`,
-    `⏱️ В пути: ≈${formatEtaMinutes(order.price.etaMinutes)} мин`,
-    `💰 Стоимость: ${formatPrice(order.price.amount, order.price.currency)}`,
-  ];
+const buildOrderBaseLines = (order: OrderRecord): string[] => [
+  `🆕 Новый заказ (${formatOrderType(order.kind)})`,
+  `#${order.shortId}`,
+  '',
+  `📍 Подача: ${order.pickup.address}`,
+  `🎯 Назначение: ${order.dropoff.address}`,
+  `📏 Расстояние: ${formatDistance(order.price.distanceKm)} км`,
+  `⏱️ В пути: ≈${formatEtaMinutes(order.price.etaMinutes)} мин`,
+  `💰 Стоимость: ${formatPrice(order.price.amount, order.price.currency)}`,
+];
+
+export const buildOrderDetailsMessage = (order: OrderRecord): string => {
+  const lines = [...buildOrderBaseLines(order)];
 
   if (order.clientPhone) {
     lines.push(`📞 Телефон: ${order.clientPhone}`);
@@ -81,18 +86,31 @@ export const buildOrderMessage = (order: OrderRecord): string => {
   return lines.join('\n');
 };
 
+export const buildOrderChannelMessage = (order: OrderRecord): string => {
+  const lines = [...buildOrderBaseLines(order)];
+
+  if (order.clientComment) {
+    lines.push('', `📝 Комментарий: ${order.clientComment}`);
+  }
+
+  return lines.join('\n');
+};
+
 interface OrderDirectMessage {
   text: string;
   keyboard: InlineKeyboardMarkup;
 }
 
 const buildOrderDirectMessage = (order: OrderRecord): OrderDirectMessage => {
-  const baseMessage = buildOrderMessage(order);
+  const baseMessage = buildOrderDetailsMessage(order);
   const locationsKeyboard = buildOrderLocationsKeyboard(order.pickup, order.dropoff);
-  const cancelKeyboard = buildInlineKeyboard([
-    [{ label: '❌ Отменить заказ', action: `${RELEASE_ACTION_PREFIX}:${order.id}` }],
+  const actionsKeyboard = buildInlineKeyboard([
+    [
+      { label: '✅ Завершить заказ', action: `${COMPLETE_ACTION_PREFIX}:${order.id}` },
+      { label: '❌ Отменить заказ', action: `${RELEASE_ACTION_PREFIX}:${order.id}` },
+    ],
   ]);
-  const keyboard = mergeInlineKeyboards(locationsKeyboard, cancelKeyboard) ?? cancelKeyboard;
+  const keyboard = mergeInlineKeyboards(locationsKeyboard, actionsKeyboard) ?? actionsKeyboard;
 
   return { text: baseMessage, keyboard } satisfies OrderDirectMessage;
 };
@@ -197,7 +215,11 @@ export const handleClientOrderCancellation = async (
 
   const executorTelegramId = order.executor?.telegramId ?? order.claimedBy;
   if (typeof executorTelegramId === 'number') {
-    const notificationText = ['\uD83D\uDEAB Заказ отменён клиентом.', '', buildOrderMessage(order)].join('\n');
+    const notificationText = [
+      '\uD83D\uDEAB Заказ отменён клиентом.',
+      '',
+      buildOrderDetailsMessage(order),
+    ].join('\n');
 
     try {
       await telegram.sendMessage(executorTelegramId, notificationText);
@@ -274,7 +296,7 @@ const ensureOrderState = (
 ): OrderChannelState => {
   let existing = orderStates.get(orderId);
   if (!existing) {
-    const baseText = order ? buildOrderMessage(order) : '';
+    const baseText = order ? buildOrderChannelMessage(order) : '';
     existing = {
       orderId,
       chatId,
@@ -287,7 +309,7 @@ const ensureOrderState = (
     existing.chatId = chatId;
     existing.messageId = messageId;
     if (order) {
-      existing.baseText = buildOrderMessage(order);
+      existing.baseText = buildOrderChannelMessage(order);
       existing.status = mapOrderStatus(order);
     }
   }
@@ -397,7 +419,7 @@ export const publishOrderToDriversChannel = async (
           throw new Error(`Order ${orderId} not found`);
         }
 
-        const messageText = buildOrderMessage(order);
+        const messageText = buildOrderChannelMessage(order);
 
         if (order.channelMessageId) {
           orderStates.set(order.id, {
@@ -447,7 +469,13 @@ type OrderActionOutcome =
   | { outcome: 'already_processed'; order: OrderRecord }
   | { outcome: 'claimed'; order: OrderRecord }
   | { outcome: 'dismissed'; order: OrderRecord }
-  | { outcome: 'already_dismissed' };
+  | { outcome: 'already_dismissed' }
+  | { outcome: 'limit_exceeded' };
+
+interface OrderActionActor {
+  id?: number;
+  role?: UserRole;
+}
 
 type OrderReleaseOutcome =
   | { outcome: 'not_found' }
@@ -455,13 +483,21 @@ type OrderReleaseOutcome =
   | { outcome: 'forbidden'; order: OrderRecord }
   | { outcome: 'released'; order: OrderRecord };
 
+type OrderCompletionOutcome =
+  | { outcome: 'not_found' }
+  | { outcome: 'not_claimed'; order: OrderRecord }
+  | { outcome: 'forbidden'; order: OrderRecord }
+  | { outcome: 'completed'; order: OrderRecord };
+
 const processOrderAction = async (
   orderId: number,
   decision: 'accept' | 'decline',
-  moderatorId?: number,
+  actor: OrderActionActor,
 ): Promise<OrderActionOutcome> => {
-  if (decision === 'decline' && typeof moderatorId === 'number') {
-    if (hasOrderBeenDismissedBy(orderId, moderatorId)) {
+  const actorId = actor.id;
+
+  if (decision === 'decline' && typeof actorId === 'number') {
+    if (hasOrderBeenDismissedBy(orderId, actorId)) {
       return { outcome: 'already_dismissed' } as const;
     }
   }
@@ -478,11 +514,36 @@ const processOrderAction = async (
           return { outcome: 'already_processed', order } as const;
         }
 
-        if (typeof moderatorId !== 'number') {
+        if (typeof actorId !== 'number') {
           throw new Error('Missing moderator identifier for order claim');
         }
 
-        const updated = await tryClaimOrder(client, orderId, moderatorId);
+        if (actor.role === 'driver') {
+          const { rows: userRows } = await client.query<{ tg_id: number }>(
+            `SELECT tg_id FROM users WHERE tg_id = $1 FOR UPDATE`,
+            [actorId],
+          );
+
+          if (userRows.length === 0) {
+            throw new Error(`Failed to load user ${actorId} while claiming order ${orderId}`);
+          }
+
+          const { rows: activeOrders } = await client.query<{ id: number }>(
+            `
+              SELECT id
+              FROM orders
+              WHERE claimed_by = $1 AND status = 'claimed'
+              LIMIT 1
+            `,
+            [actorId],
+          );
+
+          if (activeOrders.length > 0) {
+            return { outcome: 'limit_exceeded' } as const;
+          }
+        }
+
+        const updated = await tryClaimOrder(client, orderId, actorId);
         if (!updated) {
           return { outcome: 'already_processed', order } as const;
         }
@@ -503,8 +564,8 @@ const processOrderAction = async (
     clearOrderDismissals(orderId);
   } else if (result.outcome === 'already_processed' && result.order.status !== 'open') {
     clearOrderDismissals(orderId);
-  } else if (result.outcome === 'dismissed' && typeof moderatorId === 'number') {
-    markOrderDismissedBy(orderId, moderatorId);
+  } else if (result.outcome === 'dismissed' && typeof actorId === 'number') {
+    markOrderDismissedBy(orderId, actorId);
   }
 
   return result;
@@ -542,6 +603,38 @@ const processOrderRelease = async (
   return result;
 };
 
+const processOrderCompletion = async (
+  orderId: number,
+  executorId: number,
+): Promise<OrderCompletionOutcome> => {
+  const result = await withTx(
+    async (client) => {
+      const order = await lockOrderById(client, orderId);
+      if (!order) {
+        return { outcome: 'not_found' } as const;
+      }
+
+      if (order.status !== 'claimed' || typeof order.claimedBy !== 'number') {
+        return { outcome: 'not_claimed', order } as const;
+      }
+
+      if (order.claimedBy !== executorId) {
+        return { outcome: 'forbidden', order } as const;
+      }
+
+      const updated = await tryCompleteOrder(client, orderId, executorId);
+      if (!updated) {
+        throw new Error(`Failed to complete order ${orderId}`);
+      }
+
+      return { outcome: 'completed', order: updated } as const;
+    },
+    { isolationLevel: 'serializable' },
+  );
+
+  return result;
+};
+
 const handleOrderDecision = async (
   ctx: BotContext,
   orderId: number,
@@ -555,21 +648,25 @@ const handleOrderDecision = async (
 
   const chatId = message.chat.id;
   const messageId = message.message_id;
-  const moderatorId = ctx.from?.id;
+  const actorId = ctx.from?.id;
+  const actorRole = ctx.auth?.user.role;
 
-  if (decision === 'decline' && typeof moderatorId !== 'number') {
+  if (decision === 'decline' && typeof actorId !== 'number') {
     await ctx.answerCbQuery('Не удалось определить пользователя.');
     return;
   }
 
-  if (decision === 'accept' && typeof moderatorId !== 'number') {
+  if (decision === 'accept' && typeof actorId !== 'number') {
     await ctx.answerCbQuery('Не удалось определить пользователя.');
     return;
   }
 
   let result: OrderActionOutcome;
   try {
-    result = await processOrderAction(orderId, decision, moderatorId);
+    result = await processOrderAction(orderId, decision, {
+      id: actorId,
+      role: actorRole,
+    });
   } catch (error) {
     logger.error({ err: error, orderId }, 'Failed to apply order channel decision');
     await ctx.answerCbQuery('Не удалось обработать действие. Попробуйте позже.');
@@ -594,6 +691,12 @@ const handleOrderDecision = async (
       await ctx.answerCbQuery(buildAlreadyProcessedResponse(state));
       return;
     }
+    case 'limit_exceeded': {
+      await ctx.answerCbQuery('У вас уже есть активный заказ. Сначала завершите его.', {
+        show_alert: true,
+      });
+      return;
+    }
     case 'claimed': {
       state.status = 'claimed';
       state.decision = {
@@ -603,17 +706,17 @@ const handleOrderDecision = async (
       await updateOrderMessage(ctx.telegram, state);
       let answerMessage = 'Вы взяли этот заказ. Проверьте личные сообщения.';
 
-      const moderatorTelegramId = ctx.from?.id;
-      if (typeof moderatorTelegramId === 'number') {
+      const executorTelegramId = ctx.from?.id;
+      if (typeof executorTelegramId === 'number') {
         const directMessage = buildOrderDirectMessage(result.order);
         try {
-          await ctx.telegram.sendMessage(moderatorTelegramId, directMessage.text, {
+          await ctx.telegram.sendMessage(executorTelegramId, directMessage.text, {
             reply_markup: directMessage.keyboard,
           });
         } catch (error) {
           logger.warn(
-            { err: error, orderId, moderatorId: moderatorTelegramId },
-            'Failed to send order summary to moderator',
+            { err: error, orderId, executorId: executorTelegramId },
+            'Failed to send order summary to executor',
           );
           answerMessage =
             'Вы взяли этот заказ, но не удалось отправить детали в личные сообщения. Пожалуйста, убедитесь, что бот не заблокирован.';
@@ -682,7 +785,7 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
         logger.error({ err: error, orderId }, 'Failed to republish released order');
       }
 
-      const baseMessage = buildOrderMessage(result.order);
+      const baseMessage = buildOrderDetailsMessage(result.order);
       const locationKeyboard = buildOrderLocationsKeyboard(result.order.pickup, result.order.dropoff);
 
       let statusLine = '🚫 Заказ отменён и возвращён в канал.';
@@ -716,6 +819,71 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
       return;
     default:
       await ctx.answerCbQuery('Не удалось отменить заказ.');
+      return;
+  }
+};
+
+const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<void> => {
+  const message = ctx.callbackQuery?.message;
+  if (!message || !('message_id' in message) || !message.chat) {
+    await ctx.answerCbQuery('Не удалось обработать действие.');
+    return;
+  }
+
+  const executorId = ctx.from?.id;
+  if (typeof executorId !== 'number') {
+    await ctx.answerCbQuery('Не удалось определить пользователя.');
+    return;
+  }
+
+  let result: OrderCompletionOutcome;
+  try {
+    result = await processOrderCompletion(orderId, executorId);
+  } catch (error) {
+    logger.error({ err: error, orderId }, 'Failed to complete order');
+    await ctx.answerCbQuery('Не удалось завершить заказ. Попробуйте позже.');
+    return;
+  }
+
+  switch (result.outcome) {
+    case 'not_found':
+      await ctx.answerCbQuery('Заказ не найден или уже удалён.');
+      return;
+    case 'not_claimed':
+      await ctx.answerCbQuery('Заказ уже недоступен для завершения.');
+      return;
+    case 'forbidden':
+      await ctx.answerCbQuery('Вы не можете завершить этот заказ.');
+      return;
+    case 'completed': {
+      const baseMessage = buildOrderDetailsMessage(result.order);
+      const locationKeyboard = buildOrderLocationsKeyboard(result.order.pickup, result.order.dropoff);
+      const statusLine = '✅ Заказ завершён.';
+
+      try {
+        await ctx.editMessageText([baseMessage, '', statusLine].join('\n'), {
+          reply_markup: locationKeyboard,
+        });
+      } catch (error) {
+        logger.debug(
+          { err: error, orderId, chatId: message.chat.id, messageId: message.message_id },
+          'Failed to update direct message after completion',
+        );
+        try {
+          await ctx.editMessageReplyMarkup(locationKeyboard);
+        } catch (markupError) {
+          logger.debug(
+            { err: markupError, orderId, chatId: message.chat.id, messageId: message.message_id },
+            'Failed to update message keyboard after completion',
+          );
+        }
+      }
+
+      await ctx.answerCbQuery('Заказ завершён. Спасибо!');
+      return;
+    }
+    default:
+      await ctx.answerCbQuery('Не удалось завершить заказ.');
       return;
   }
 };
@@ -755,5 +923,17 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
     }
 
     await handleOrderRelease(ctx, orderId);
+  });
+
+  bot.action(COMPLETE_ACTION_PATTERN, async (ctx) => {
+    const match = ctx.match as RegExpMatchArray | undefined;
+    const idText = match?.[1];
+    const orderId = idText ? Number.parseInt(idText, 10) : NaN;
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      await ctx.answerCbQuery('Некорректный идентификатор заказа.');
+      return;
+    }
+
+    await handleOrderCompletion(ctx, orderId);
   });
 };
