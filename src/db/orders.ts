@@ -10,6 +10,7 @@ import type {
   OrderStatus,
   OrderWithExecutor,
 } from '../types';
+import { estimateEtaMinutes } from '../services/pricing';
 
 interface OrderRow {
   id: number;
@@ -70,11 +71,13 @@ const mapLocation = (query: string, address: string, lat: number, lon: number): 
 const mapPrice = (amount: number, currency: string, distance: number | string): OrderPriceDetails => {
   const parsed =
     typeof distance === 'string' ? Number.parseFloat(distance) : distance;
+  const distanceKm = Number.isNaN(parsed) ? 0 : parsed;
 
   return {
     amount,
     currency,
-    distanceKm: Number.isNaN(parsed) ? 0 : parsed,
+    distanceKm,
+    etaMinutes: estimateEtaMinutes(distanceKm),
   } satisfies OrderPriceDetails;
 };
 

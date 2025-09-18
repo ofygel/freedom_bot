@@ -10,7 +10,7 @@ import { handleClientOrderCancellation } from '../../channels/ordersChannel';
 import { buildInlineKeyboard, mergeInlineKeyboards } from '../../keyboards/common';
 import { buildOrderLocationsKeyboard } from '../../keyboards/orders';
 import { ensurePrivateCallback, isPrivateChat } from '../../services/access';
-import { formatDistance, formatPriceAmount } from '../../services/pricing';
+import { formatDistance, formatEtaMinutes, formatPriceAmount } from '../../services/pricing';
 import type { BotContext } from '../../types';
 import type { OrderStatus, OrderWithExecutor } from '../../../types';
 import { ui } from '../../ui';
@@ -170,6 +170,7 @@ const buildOrderDetailText = (
   lines.push(`📍 Подача: ${order.pickup.address}`);
   lines.push(`🎯 Назначение: ${order.dropoff.address}`);
   lines.push(`📏 Расстояние: ${formatDistance(order.price.distanceKm)} км`);
+  lines.push(`⏱️ В пути: ≈${formatEtaMinutes(order.price.etaMinutes)} мин`);
   lines.push(`💰 Стоимость: ${formatPriceAmount(order.price.amount, order.price.currency)}`);
 
   if (order.clientComment?.trim()) {

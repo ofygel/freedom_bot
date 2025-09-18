@@ -13,6 +13,7 @@ export interface OrderPriceDetails {
   amount: number;
   currency: string;
   distanceKm: number;
+  etaMinutes: number;
 }
 
 export interface OrderExecutorInfo {

@@ -50,7 +50,12 @@ Omitting any of them keeps the built-in defaults.
 ## Tariff hints
 
 The following values describe default tariff parameters used in external automations.
-They are optional but must be defined together when used.
+They are optional but must be defined together when used. When present, Freedom Bot
+also applies them to price quotes shown to customers and executors using the
+`base + per_km * distance + per_min * eta` formula. The ETA is approximated with a
+5-minute pickup buffer and an average city speed of roughly 27 km/h, then rounded
+to the nearest minute before calculating the time component. The final quote is
+rounded to the nearest tenge for consistency with legacy pricing.
 
 - `TARIFF_BASE` – Base fare applied to a new order.
 - `TARIFF_PER_KM` – Distance component calculated per kilometre.
