@@ -2,10 +2,15 @@ import assert from 'node:assert/strict';
 import { afterEach, before, beforeEach, describe, it } from 'node:test';
 
 import { EXECUTOR_VERIFICATION_PHOTO_COUNT, type BotContext, type SessionState } from '../src/bot/types';
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 import type { UiStepOptions } from '../src/bot/ui';
 
 let ensureExecutorState: typeof import('../src/bot/flows/executor/menu')['ensureExecutorState'];
 let showExecutorMenu: typeof import('../src/bot/flows/executor/menu')['showExecutorMenu'];
+let EXECUTOR_VERIFICATION_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_VERIFICATION_ACTION'];
+let EXECUTOR_SUBSCRIPTION_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_SUBSCRIPTION_ACTION'];
+let EXECUTOR_SUPPORT_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_SUPPORT_ACTION'];
+let EXECUTOR_MENU_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_ACTION'];
 let startExecutorSubscription: typeof import('../src/bot/flows/executor/subscription')['startExecutorSubscription'];
 let uiHelper: typeof import('../src/bot/ui')['ui'];
 
@@ -23,7 +28,14 @@ before(async () => {
   process.env.SUB_PRICE_15 = process.env.SUB_PRICE_15 ?? '9000';
   process.env.SUB_PRICE_30 = process.env.SUB_PRICE_30 ?? '16000';
 
-  ({ ensureExecutorState, showExecutorMenu } = await import('../src/bot/flows/executor/menu'));
+  ({
+    ensureExecutorState,
+    showExecutorMenu,
+    EXECUTOR_VERIFICATION_ACTION,
+    EXECUTOR_SUBSCRIPTION_ACTION,
+    EXECUTOR_SUPPORT_ACTION,
+    EXECUTOR_MENU_ACTION,
+  } = await import('../src/bot/flows/executor/menu'));
   ({ startExecutorSubscription } = await import('../src/bot/flows/executor/subscription'));
   ({ ui: uiHelper } = await import('../src/bot/ui'));
 });
@@ -95,6 +107,19 @@ const createContext = () => {
   return { ctx, session, auth };
 };
 
+const mapKeyboard = (
+  keyboard: InlineKeyboardMarkup | undefined,
+): { text: string; callback_data?: string }[][] =>
+  (keyboard?.inline_keyboard ?? []).map((row) =>
+    row.map((button) => ({
+      text: button.text,
+      callback_data:
+        'callback_data' in button && typeof button.callback_data === 'string'
+          ? button.callback_data
+          : undefined,
+    })),
+  );
+
 let originalStep: typeof uiHelper.step;
 let recordedSteps: UiStepOptions[];
 
@@ -127,6 +152,37 @@ describe('executor access control', () => {
     assert.ok(rejection, 'verification reminder should be shown');
   });
 
+  it('shows the default executor menu keyboard when access requirements are not met', async () => {
+    const { ctx } = createContext();
+    ensureExecutorState(ctx);
+
+    await showExecutorMenu(ctx, { skipAccessCheck: true });
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be displayed');
+
+    assert.deepEqual(mapKeyboard(menuStep.keyboard), [
+      [
+        {
+          text: '📸 Отправить документы',
+          callback_data: EXECUTOR_VERIFICATION_ACTION,
+        },
+      ],
+      [
+        {
+          text: '📨 Получить ссылку на канал',
+          callback_data: EXECUTOR_SUBSCRIPTION_ACTION,
+        },
+      ],
+      [
+        {
+          text: '🔄 Обновить меню',
+          callback_data: EXECUTOR_MENU_ACTION,
+        },
+      ],
+    ]);
+  });
+
   it('renders the executor menu when verification and subscription are active', async () => {
     const { ctx } = createContext();
     ensureExecutorState(ctx);
@@ -140,5 +196,20 @@ describe('executor access control', () => {
 
     const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
     assert.ok(menuStep, 'executor menu should be displayed');
+
+    assert.deepEqual(mapKeyboard(menuStep.keyboard), [
+      [
+        {
+          text: 'Заказы',
+          callback_data: EXECUTOR_SUBSCRIPTION_ACTION,
+        },
+      ],
+      [
+        {
+          text: 'Связаться с поддержкой',
+          callback_data: EXECUTOR_SUPPORT_ACTION,
+        },
+      ],
+    ]);
   });
 });

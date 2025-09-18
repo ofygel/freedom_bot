@@ -17,6 +17,7 @@ import { startExecutorVerification } from './verification';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
+export const EXECUTOR_SUPPORT_ACTION = 'support:contact';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
 const EXECUTOR_MENU_STEP_ID = 'executor:menu:main';
 
@@ -160,12 +161,22 @@ export const resetVerificationState = (state: ExecutorFlowState): void => {
   };
 };
 
-const buildMenuKeyboard = (): InlineKeyboardMarkup =>
-  Markup.inlineKeyboard([
+const buildMenuKeyboard = (
+  access: ExecutorAccessStatus,
+): InlineKeyboardMarkup => {
+  if (access.isVerified && access.hasActiveSubscription) {
+    return Markup.inlineKeyboard([
+      [Markup.button.callback('Заказы', EXECUTOR_SUBSCRIPTION_ACTION)],
+      [Markup.button.callback('Связаться с поддержкой', EXECUTOR_SUPPORT_ACTION)],
+    ]).reply_markup;
+  }
+
+  return Markup.inlineKeyboard([
     [Markup.button.callback('📸 Отправить документы', EXECUTOR_VERIFICATION_ACTION)],
     [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
     [Markup.button.callback('🔄 Обновить меню', EXECUTOR_MENU_ACTION)],
   ]).reply_markup;
+};
 
 const formatTimestamp = (timestamp: number): string => {
   return new Intl.DateTimeFormat('ru-RU', {
@@ -363,7 +374,7 @@ export const showExecutorMenu = async (
   }
 
   const text = buildMenuText(state, access);
-  const keyboard = buildMenuKeyboard();
+  const keyboard = buildMenuKeyboard(access);
   await ui.step(ctx, {
     id: EXECUTOR_MENU_STEP_ID,
     text,
