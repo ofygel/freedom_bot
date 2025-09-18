@@ -1,6 +1,7 @@
 import { Telegraf } from 'telegraf';
 
 import { logger } from '../../../config';
+import { ensureClientRole } from '../../../db/users';
 import { CLIENT_MENU, clientMenuText, isClientChat, sendClientMenu } from '../../../ui/clientMenu';
 import type { BotContext } from '../../types';
 
@@ -52,6 +53,52 @@ const removeRoleSelectionMessage = async (ctx: BotContext): Promise<void> => {
   }
 };
 
+const applyClientRole = async (ctx: BotContext): Promise<void> => {
+  const authUser = ctx.auth.user;
+
+  const username = ctx.from?.username ?? authUser.username;
+  const firstName = ctx.from?.first_name ?? authUser.firstName;
+  const lastName = ctx.from?.last_name ?? authUser.lastName;
+  const phone = authUser.phone ?? ctx.session.phoneNumber;
+
+  if (authUser.role !== 'client') {
+    try {
+      await ensureClientRole({
+        telegramId: authUser.telegramId,
+        username: username ?? undefined,
+        firstName: firstName ?? undefined,
+        lastName: lastName ?? undefined,
+        phone: phone ?? undefined,
+      });
+    } catch (error) {
+      logger.error(
+        { err: error, telegramId: authUser.telegramId },
+        'Failed to update client role in database',
+      );
+    }
+  }
+
+  authUser.role = 'client';
+  authUser.username = username ?? undefined;
+  authUser.firstName = firstName ?? undefined;
+  authUser.lastName = lastName ?? undefined;
+  if (!authUser.phone && phone) {
+    authUser.phone = phone;
+  }
+  ctx.auth.isModerator = false;
+
+  ctx.session.isAuthenticated = true;
+  ctx.session.user = {
+    id: authUser.telegramId,
+    username: username ?? undefined,
+    firstName: firstName ?? undefined,
+    lastName: lastName ?? undefined,
+  };
+  if (phone && !ctx.session.phoneNumber) {
+    ctx.session.phoneNumber = phone;
+  }
+};
+
 const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
   const role = ctx.auth?.user.role;
   if (!isClientChat(ctx, role)) {
@@ -74,6 +121,8 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
   void installClientMenuCommands(bot);
 
   bot.action(ROLE_CLIENT_ACTION, async (ctx) => {
+    await applyClientRole(ctx);
+
     if (!isClientChat(ctx, ctx.auth?.user.role)) {
       await showMenu(ctx);
       return;
