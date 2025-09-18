@@ -119,6 +119,14 @@ export interface UiSessionState {
   homeActions: string[];
 }
 
+export type SupportRequestStatus = 'idle' | 'awaiting_message';
+
+export interface SupportSessionState {
+  status: SupportRequestStatus;
+  lastThreadId?: string;
+  lastThreadShortId?: string;
+}
+
 export interface SessionState {
   ephemeralMessages: number[];
   isAuthenticated: boolean;
@@ -128,6 +136,7 @@ export interface SessionState {
   executor: ExecutorFlowState;
   client: ClientFlowState;
   ui: UiSessionState;
+  support: SupportSessionState;
 }
 
 export type BotContext = Context & {

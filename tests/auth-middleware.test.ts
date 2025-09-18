@@ -39,6 +39,9 @@ const createSessionState = (): BotContext['session'] => ({
     steps: {},
     homeActions: [],
   },
+  support: {
+    status: 'idle',
+  },
 });
 
 const registerChannelPostHandler = () => {

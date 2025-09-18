@@ -17,6 +17,7 @@ import {
   type ExecutorSubscriptionState,
   type ExecutorVerificationState,
   type SessionState,
+  type SupportSessionState,
   type UiSessionState,
 } from '../types';
 
@@ -56,6 +57,10 @@ const createUiState = (): UiSessionState => ({
   homeActions: [],
 });
 
+const createSupportState = (): SupportSessionState => ({
+  status: 'idle',
+});
+
 const createDefaultState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
@@ -63,6 +68,7 @@ const createDefaultState = (): SessionState => ({
   executor: createExecutorState(),
   client: createClientState(),
   ui: createUiState(),
+  support: createSupportState(),
 });
 
 const SESSION_META = Symbol('session-meta');
@@ -167,6 +173,10 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
     if (!state.ui) {
       state.ui = createUiState();
+    }
+
+    if (!state.support) {
+      state.support = createSupportState();
     }
 
     ctx.session = state;
