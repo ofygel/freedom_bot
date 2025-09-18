@@ -17,6 +17,7 @@ import { startExecutorVerification } from './verification';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
+export const EXECUTOR_ORDERS_ACTION = 'executor:orders:link';
 export const EXECUTOR_SUPPORT_ACTION = 'support:contact';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
 const EXECUTOR_MENU_STEP_ID = 'executor:menu:main';
@@ -146,6 +147,15 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
     ctx.session.executor.subscription = normaliseSubscriptionState(
       ctx.session.executor.subscription,
     );
+
+    if (ctx.auth.executor.hasActiveSubscription) {
+      const subscription = ctx.session.executor.subscription;
+      if (subscription.status !== 'idle') {
+        subscription.status = 'idle';
+        subscription.selectedPeriodId = undefined;
+        subscription.pendingPaymentId = undefined;
+      }
+    }
   }
 
   return ctx.session.executor;
@@ -166,7 +176,7 @@ const buildMenuKeyboard = (
 ): InlineKeyboardMarkup => {
   if (access.isVerified && access.hasActiveSubscription) {
     return Markup.inlineKeyboard([
-      [Markup.button.callback('Заказы', EXECUTOR_SUBSCRIPTION_ACTION)],
+      [Markup.button.callback('Заказы', EXECUTOR_ORDERS_ACTION)],
       [Markup.button.callback('Связаться с поддержкой', EXECUTOR_SUPPORT_ACTION)],
     ]).reply_markup;
   }
@@ -311,12 +321,12 @@ const buildSubscriptionSection = (
         ? ` (выдана ${formatTimestamp(subscription.lastIssuedAt)})`
         : '';
       return [
-        `Ссылка на канал уже выдана${issued}. При необходимости запросите новую с помощью кнопки ниже.`,
+        `Ссылка на канал уже выдана${issued}. При необходимости запросите новую с помощью кнопки «Заказы» ниже.`,
       ];
     }
 
     return [
-      `Подписка активна. Если нужна новая ссылка на ${channelLabel}, используйте кнопку ниже.`,
+      `Подписка активна. Если нужна новая ссылка на ${channelLabel}, используйте кнопку «Заказы» ниже.`,
     ];
   }
 
