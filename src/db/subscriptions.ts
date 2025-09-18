@@ -51,6 +51,21 @@ interface ExistingSubscriptionRow {
   metadata: Record<string, unknown> | null;
 }
 
+interface ActiveSubscriptionRow {
+  id: string | number;
+  chat_id: string | number;
+  next_billing_at: Date | string | null;
+  grace_until: Date | string | null;
+}
+
+export interface ActiveSubscriptionDetails {
+  id: number;
+  chatId: number;
+  nextBillingAt?: Date;
+  graceUntil?: Date;
+  expiresAt?: Date;
+}
+
 export interface ActivateSubscriptionParams {
   telegramId: number;
   username?: string;
@@ -98,6 +113,26 @@ const parseTimestamp = (value: Date | string | null): Date | undefined => {
   }
 
   return value instanceof Date ? value : new Date(value);
+};
+
+const mapActiveSubscriptionRow = (
+  row: ActiveSubscriptionRow,
+): ActiveSubscriptionDetails => {
+  const id = parseNumeric(row.id);
+  if (id === undefined) {
+    throw new Error(`Failed to parse subscription id: ${row.id}`);
+  }
+
+  const chatId = parseNumeric(row.chat_id);
+  if (chatId === undefined) {
+    throw new Error(`Failed to parse subscription chat id for ${row.id}`);
+  }
+
+  const nextBillingAt = parseTimestamp(row.next_billing_at);
+  const graceUntil = parseTimestamp(row.grace_until);
+  const expiresAt = graceUntil ?? nextBillingAt;
+
+  return { id, chatId, nextBillingAt, graceUntil, expiresAt } satisfies ActiveSubscriptionDetails;
 };
 
 const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
@@ -541,6 +576,35 @@ export const hasActiveSubscription = async (
   );
 
   return rows.length > 0;
+};
+
+export const findActiveSubscriptionForUser = async (
+  chatId: number,
+  telegramId: number,
+): Promise<ActiveSubscriptionDetails | null> => {
+  const { rows } = await pool.query<ActiveSubscriptionRow>(
+    `
+      SELECT id, chat_id, next_billing_at, grace_until
+      FROM subscriptions
+      WHERE chat_id = $1
+        AND user_id = $2
+        AND status = ANY($3::subscription_status[])
+        AND (
+          COALESCE(grace_until, next_billing_at) IS NULL
+          OR COALESCE(grace_until, next_billing_at) > now()
+        )
+      ORDER BY COALESCE(grace_until, next_billing_at) DESC NULLS LAST
+      LIMIT 1
+    `,
+    [chatId, telegramId, ACTIVE_SUBSCRIPTION_STATUSES],
+  );
+
+  const [row] = rows;
+  if (!row) {
+    return null;
+  }
+
+  return mapActiveSubscriptionRow(row);
 };
 
 export const markSubscriptionsExpired = async (
