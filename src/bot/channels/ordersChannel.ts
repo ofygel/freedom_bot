@@ -4,6 +4,7 @@ import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram'
 import { getChannelBinding } from './bindings';
 import { logger } from '../../config';
 import { withTx } from '../../db/client';
+import { formatEtaMinutes } from '../services/pricing';
 import {
   lockOrderById,
   setOrderChannelMessageId,
@@ -55,6 +56,7 @@ export const buildOrderMessage = (order: OrderRecord): string => {
     `📍 Подача: ${order.pickup.address}`,
     `🎯 Назначение: ${order.dropoff.address}`,
     `📏 Расстояние: ${formatDistance(order.price.distanceKm)} км`,
+    `⏱️ В пути: ≈${formatEtaMinutes(order.price.etaMinutes)} мин`,
     `💰 Стоимость: ${formatPrice(order.price.amount, order.price.currency)}`,
   ];
 

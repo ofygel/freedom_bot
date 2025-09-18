@@ -6,6 +6,7 @@ import type { Telegram } from 'telegraf';
 
 import * as bindings from '../src/bot/channels/bindings';
 import { handleClientOrderCancellation } from '../src/bot/channels/ordersChannel';
+import { estimateEtaMinutes } from '../src/services/pricing';
 import type { OrderWithExecutor } from '../src/types';
 
 describe('handleClientOrderCancellation', () => {
@@ -50,7 +51,12 @@ describe('handleClientOrderCancellation', () => {
       latitude: 43.3,
       longitude: 76.95,
     },
-    price: { amount: 1500, currency: 'KZT', distanceKm: 5.2 },
+    price: {
+      amount: 1500,
+      currency: 'KZT',
+      distanceKm: 5.2,
+      etaMinutes: estimateEtaMinutes(5.2),
+    },
     createdAt: new Date('2024-01-01T00:00:00Z'),
     ...overrides,
   });

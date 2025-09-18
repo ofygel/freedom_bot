@@ -1,6 +1,6 @@
 import type { BotContext, ClientOrderDraftState } from '../types';
 import type { OrderLocation, OrderPriceDetails } from '../../types';
-import { formatDistance, formatPriceAmount } from './pricing';
+import { formatDistance, formatEtaMinutes, formatPriceAmount } from './pricing';
 
 export type CompletedOrderDraft = ClientOrderDraftState & {
   pickup: OrderLocation;
@@ -27,8 +27,10 @@ export interface OrderSummaryOptions {
   pickupLabel?: string;
   dropoffLabel?: string;
   distanceLabel?: string;
+  etaLabel?: string;
   priceLabel?: string;
   includeDistance?: boolean;
+  includeEta?: boolean;
   includePrice?: boolean;
   instructions?: string[];
 }
@@ -47,6 +49,11 @@ export const buildOrderSummary = (
   if (options.includeDistance ?? true) {
     const distanceLabel = options.distanceLabel ?? '📏 Расстояние';
     lines.push(`${distanceLabel}: ${formatDistance(draft.price.distanceKm)} км`);
+  }
+
+  if (options.includeEta ?? true) {
+    const etaLabel = options.etaLabel ?? '⏱️ В пути';
+    lines.push(`${etaLabel}: ≈${formatEtaMinutes(draft.price.etaMinutes)} мин`);
   }
 
   if (options.includePrice ?? true) {
