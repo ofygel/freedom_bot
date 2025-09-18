@@ -102,6 +102,35 @@ describe('support service', () => {
     setPoolQuery(originalQuery);
   });
 
+  it('restores open threads from the database', async () => {
+    const rows = [
+      {
+        id: 'thread-restore',
+        user_chat_id: '1001',
+        user_tg_id: '2002',
+        user_message_id: 10,
+        moderator_chat_id: '3003',
+        moderator_message_id: 20,
+        status: 'open',
+      },
+    ];
+
+    setPoolQuery((async (text: string) => {
+      if (/FROM\s+support_threads/i.test(text)) {
+        return { rows } as any;
+      }
+
+      return { rows: [] } as any;
+    }) as typeof pool.query);
+
+    await __testing__.restoreSupportThreads();
+
+    const state = __testing__.threadsById.get('thread-restore');
+    assert.ok(state, 'thread should be tracked after restore');
+    assert.equal(state?.userChatId, 1001);
+    assert.equal(state?.moderatorMessageId, 20);
+  });
+
   it('forwards support messages and records threads', async () => {
     const telegram = createMockTelegram();
 

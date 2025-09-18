@@ -1,4 +1,5 @@
 import { Telegraf, Telegram } from 'telegraf';
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../../config';
 
@@ -16,6 +17,13 @@ import {
   type ModerationQueueItemBase,
   type PublishModerationResult,
 } from './queue';
+import {
+  loadSessionState,
+  saveSessionState,
+  withTx,
+  type SessionKey,
+  type SessionScope,
+} from '../../db';
 
 const DEFAULT_TITLE = '🛡️ Заявка на верификацию исполнителя';
 const DEFAULT_REASONS = [
@@ -69,6 +77,18 @@ export interface VerificationApplication extends ModerationQueueItemBase<Verific
   photoCount?: number;
   /** Timestamp when the application was submitted. */
   submittedAt?: Date | number | string;
+  /** Notification sent to the applicant after approval. */
+  approvalNotification?: {
+    text: string;
+    keyboard?: InlineKeyboardMarkup;
+  };
+  /** Session context used to reset the executor moderation state. */
+  sessionContext?: {
+    scope: SessionScope;
+    scopeId: string;
+    role: VerificationRole;
+    applicationId: string;
+  };
 }
 
 const buildVerificationMessage = (application: VerificationApplication): string => {
@@ -157,92 +177,243 @@ const handleVerificationRejection = async (
   }
 };
 
+const buildSessionKeys = (
+  context: VerificationApplication['sessionContext'],
+): SessionKey[] => {
+  if (!context) {
+    return [];
+  }
+
+  const keys: SessionKey[] = [{ scope: context.scope, scopeId: context.scopeId }];
+  if (context.scope === 'chat' || context.scope === 'user') {
+    const alternate: SessionScope = context.scope === 'chat' ? 'user' : 'chat';
+    keys.push({ scope: alternate, scopeId: context.scopeId });
+  }
+
+  return keys;
+};
+
+const resetVerificationSessionState = async (
+  item: VerificationApplication,
+  decidedAt: number,
+): Promise<void> => {
+  const context = item.sessionContext;
+  if (!context) {
+    return;
+  }
+
+  const keys = buildSessionKeys(context);
+  if (keys.length === 0) {
+    return;
+  }
+
+  const applicationId = context.applicationId ?? `${item.id}`;
+
+  await withTx(async (client) => {
+    for (const key of keys) {
+      let state: any;
+      try {
+        state = await loadSessionState(client, key, { forUpdate: true });
+      } catch (error) {
+        logger.error(
+          { err: error, queue: 'verify', scope: key.scope, scopeId: key.scopeId },
+          'Failed to load session state while resetting verification moderation',
+        );
+        continue;
+      }
+
+      if (!state) {
+        continue;
+      }
+
+      const verificationState = state.executor?.verification?.[context.role];
+      if (!verificationState) {
+        continue;
+      }
+
+      if (
+        verificationState.moderation?.applicationId &&
+        verificationState.moderation.applicationId !== applicationId
+      ) {
+        continue;
+      }
+
+      verificationState.status = 'idle';
+      verificationState.moderation = undefined;
+      verificationState.uploadedPhotos = [];
+      verificationState.submittedAt = decidedAt;
+
+      try {
+        await saveSessionState(client, key, state);
+      } catch (error) {
+        logger.error(
+          { err: error, queue: 'verify', scope: key.scope, scopeId: key.scopeId },
+          'Failed to persist session state after verification decision',
+        );
+      }
+    }
+  });
+};
+
+const notifyVerificationApproval = async (
+  telegram: Telegram,
+  application: VerificationApplication,
+): Promise<void> => {
+  const applicantId = application.applicant.telegramId;
+  const notification = application.approvalNotification;
+  if (!applicantId || !notification?.text) {
+    return;
+  }
+
+  const extra = notification.keyboard
+    ? { reply_markup: notification.keyboard }
+    : undefined;
+
+  try {
+    await telegram.sendMessage(applicantId, notification.text, extra);
+  } catch (error) {
+    logger.error(
+      { err: error, applicationId: application.id, applicantId },
+      'Failed to notify applicant about verification approval',
+    );
+  }
+};
+
+const attachVerificationCallbacks = (
+  application: VerificationApplication,
+): VerificationApplication => {
+  const existingOnApprove = application.onApprove;
+  const existingOnReject = application.onReject;
+
+  application.onApprove = async (context) => {
+    const { item, decidedAt, telegram } = context;
+
+    try {
+      await markVerificationApproved({
+        applicant: item.applicant,
+        role: item.role,
+      });
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          applicationId: item.id,
+          applicantId: item.applicant.telegramId,
+          role: item.role,
+        },
+        'Failed to mark verification as approved',
+      );
+    }
+
+    try {
+      await resetVerificationSessionState(item, decidedAt);
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          applicationId: item.id,
+          applicantId: item.applicant.telegramId,
+          role: item.role,
+        },
+        'Failed to reset verification session state after approval',
+      );
+    }
+
+    await notifyVerificationApproval(telegram, item);
+
+    if (existingOnApprove) {
+      try {
+        await existingOnApprove(context);
+      } catch (error) {
+        logger.error(
+          {
+            err: error,
+            applicationId: item.id,
+            applicantId: item.applicant.telegramId,
+          },
+          'Verification approval callback failed',
+        );
+      }
+    }
+  };
+
+  application.onReject = async (context) => {
+    const { item, decidedAt } = context;
+
+    try {
+      await markVerificationRejected({
+        applicant: item.applicant,
+        role: item.role,
+      });
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          applicationId: item.id,
+          applicantId: item.applicant.telegramId,
+          role: item.role,
+        },
+        'Failed to mark verification as rejected',
+      );
+    }
+
+    try {
+      await resetVerificationSessionState(item, decidedAt);
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          applicationId: item.id,
+          applicantId: item.applicant.telegramId,
+          role: item.role,
+        },
+        'Failed to reset verification session state after rejection',
+      );
+    }
+
+    await handleVerificationRejection(context);
+
+    if (existingOnReject) {
+      try {
+        await existingOnReject(context);
+      } catch (error) {
+        logger.error(
+          {
+            err: error,
+            applicationId: item.id,
+            applicantId: item.applicant.telegramId,
+          },
+          'Verification rejection callback failed',
+        );
+      }
+    }
+  };
+
+  return application;
+};
+
+const reviveVerificationApplication = (payload: unknown): VerificationApplication | null => {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const application = payload as VerificationApplication;
+  return attachVerificationCallbacks(application);
+};
+
 const queue: ModerationQueue<VerificationApplication> = createModerationQueue<VerificationApplication>({
   type: 'verify',
   channelType: 'verify',
   defaultRejectionReasons: DEFAULT_REASONS,
   renderMessage: buildVerificationMessage,
+  deserializeItem: reviveVerificationApplication,
 });
 
 export const publishVerificationApplication = async (
   telegram: Telegram,
   application: VerificationApplication,
 ): Promise<PublishModerationResult> => {
-  const existingOnApprove = application.onApprove;
-  const existingOnReject = application.onReject;
-
-  const item: VerificationApplication = {
-    ...application,
-    onApprove: async (context) => {
-      try {
-        await markVerificationApproved({
-          applicant: application.applicant,
-          role: application.role,
-        });
-      } catch (error) {
-        logger.error(
-          {
-            err: error,
-            applicationId: application.id,
-            applicantId: application.applicant.telegramId,
-            role: application.role,
-          },
-          'Failed to mark verification as approved',
-        );
-      }
-
-      if (existingOnApprove) {
-        try {
-          await existingOnApprove(context);
-        } catch (error) {
-          logger.error(
-            {
-              err: error,
-              applicationId: application.id,
-              applicantId: application.applicant.telegramId,
-            },
-            'Verification approval callback failed',
-          );
-        }
-      }
-    },
-    onReject: async (context) => {
-      try {
-        await markVerificationRejected({
-          applicant: application.applicant,
-          role: application.role,
-        });
-      } catch (error) {
-        logger.error(
-          {
-            err: error,
-            applicationId: application.id,
-            applicantId: application.applicant.telegramId,
-            role: application.role,
-          },
-          'Failed to mark verification as rejected',
-        );
-      }
-
-      if (existingOnReject) {
-        try {
-          await existingOnReject(context);
-        } catch (error) {
-          logger.error(
-            {
-              err: error,
-              applicationId: application.id,
-              applicantId: application.applicant.telegramId,
-            },
-            'Verification rejection callback failed',
-          );
-        }
-      }
-
-      await handleVerificationRejection(context);
-    },
-  };
-
+  const item = attachVerificationCallbacks({ ...application });
   return queue.publish(telegram, item);
 };
 
@@ -250,6 +421,10 @@ export const registerVerificationModerationQueue = (
   bot: Telegraf<BotContext>,
 ): void => {
   queue.register(bot);
+};
+
+export const restoreVerificationModerationQueue = async (): Promise<void> => {
+  await queue.restore();
 };
 
 export type { PublishModerationResult } from './queue';

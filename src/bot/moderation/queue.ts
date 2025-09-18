@@ -7,6 +7,12 @@ import type { ExtraEditMessageText, ExtraReplyMessage } from 'telegraf/typings/t
 import { getChannelBinding, type ChannelType } from '../channels/bindings';
 import { logger } from '../../config';
 import type { BotContext } from '../types';
+import {
+  deleteCallbackMapRecord,
+  listCallbackMapRecords,
+  loadCallbackMapRecord,
+  upsertCallbackMapRecord,
+} from '../../db';
 
 const DEFAULT_REJECTION_PLACEHOLDER = 'без указания причины';
 
@@ -39,6 +45,8 @@ const normaliseReason = (reason?: string): string => {
 };
 
 const createToken = (): string => crypto.randomBytes(8).toString('hex');
+
+const MODERATION_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const pickFormatOptions = (
   options?: ExtraReplyMessage,
@@ -159,6 +167,17 @@ interface PendingModerationItem<T> {
   };
 }
 
+interface StoredModerationEntry<TSerialized> {
+  token: string;
+  item: TSerialized;
+  status: PendingModerationItem<any>['status'];
+  message: PendingModerationItem<any>['message'];
+  rejectionReasons: string[];
+  decision?: PendingModerationItem<any>['decision'];
+}
+
+const cloneSerializable = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
 export type ModerationDecision = 'approved' | 'rejected';
 
 export interface ModeratorInfo {
@@ -224,18 +243,37 @@ export interface ModerationQueueConfig<T extends ModerationQueueItemBase<T>> {
    * Function that renders a human-readable message for the moderation item.
    */
   renderMessage: (item: T) => string | string[];
+  /**
+   * Optional custom serialiser for moderation items.
+   * When omitted, items are serialised using JSON.stringify/parse.
+   */
+  serializeItem?: (item: T) => unknown;
+  /**
+   * Optional custom deserialiser invoked when restoring persisted items.
+   */
+  deserializeItem?: (payload: unknown) => T | null;
 }
 
 export interface ModerationQueue<T extends ModerationQueueItemBase<T>> {
   publish: (telegram: Telegram, item: T) => Promise<PublishModerationResult>;
   register: (bot: Telegraf<BotContext>) => void;
+  restore: () => Promise<void>;
 }
 
-export const createModerationQueue = <T extends ModerationQueueItemBase<T>>( 
+export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
   config: ModerationQueueConfig<T>,
 ): ModerationQueue<T> => {
   const acceptAction = `mod:${config.type}:accept`;
   const rejectAction = `mod:${config.type}:reject`;
+  const actionKey = `moderation:${config.type}`;
+  const serializeItem = config.serializeItem ?? ((item: T) => cloneSerializable(item));
+  const deserializeItem = config.deserializeItem ?? ((payload: unknown) => {
+    if (payload === null || payload === undefined) {
+      return null;
+    }
+
+    return payload as T;
+  });
   const state = new Map<string, PendingModerationItem<T>>();
   const pendingRejectionPrompts = new Map<string, { token: string; moderatorId?: number }>();
   const promptsByToken = new Map<string, Set<string>>();
@@ -291,6 +329,139 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     promptsByToken.delete(token);
   };
 
+  const toStoredEntry = (
+    entry: PendingModerationItem<T>,
+  ): StoredModerationEntry<unknown> => ({
+    token: entry.token,
+    item: serializeItem(entry.item),
+    status: entry.status,
+    message: entry.message,
+    rejectionReasons: entry.rejectionReasons,
+    decision: entry.decision,
+  });
+
+  const persistEntry = async (entry: PendingModerationItem<T>): Promise<void> => {
+    const payload = toStoredEntry(entry);
+    const expiresAt = new Date(Date.now() + MODERATION_TOKEN_TTL_MS);
+
+    try {
+      await upsertCallbackMapRecord<StoredModerationEntry<unknown>>({
+        token: entry.token,
+        action: actionKey,
+        chatId: entry.message.chatId,
+        messageId: entry.message.messageId,
+        payload,
+        expiresAt,
+      });
+    } catch (error) {
+      logger.error(
+        { err: error, queue: config.type, token: entry.token },
+        'Failed to persist moderation entry',
+      );
+    }
+  };
+
+  const removePersistedEntry = async (token: string): Promise<void> => {
+    try {
+      await deleteCallbackMapRecord(token);
+    } catch (error) {
+      logger.error(
+        { err: error, queue: config.type, token },
+        'Failed to remove moderation entry from store',
+      );
+    }
+  };
+
+  const hydrateStoredEntry = (
+    token: string,
+    stored: StoredModerationEntry<unknown>,
+  ): PendingModerationItem<T> | null => {
+    const item = deserializeItem(stored.item);
+    if (!item) {
+      return null;
+    }
+
+    const rejectionReasons = Array.isArray(stored.rejectionReasons)
+      ? stored.rejectionReasons
+      : [];
+
+    const entry: PendingModerationItem<T> = {
+      token,
+      item,
+      status: stored.status ?? 'pending',
+      message: stored.message,
+      rejectionReasons,
+      decision: stored.decision,
+    } satisfies PendingModerationItem<T>;
+
+    return entry;
+  };
+
+  const loadEntryFromStore = async (
+    token: string,
+  ): Promise<PendingModerationItem<T> | undefined> => {
+    try {
+      const record = await loadCallbackMapRecord<StoredModerationEntry<unknown>>(token);
+      if (!record || record.action !== actionKey || !record.payload) {
+        return undefined;
+      }
+
+      const entry = hydrateStoredEntry(record.token, record.payload);
+      if (!entry) {
+        logger.warn(
+          { queue: config.type, token },
+          'Failed to restore moderation entry payload',
+        );
+        return undefined;
+      }
+
+      state.set(record.token, entry);
+      return entry;
+    } catch (error) {
+      logger.error(
+        { err: error, queue: config.type, token },
+        'Failed to load moderation entry from store',
+      );
+      return undefined;
+    }
+  };
+
+  const getEntry = async (token: string): Promise<PendingModerationItem<T> | undefined> => {
+    const existing = state.get(token);
+    if (existing) {
+      return existing;
+    }
+
+    return loadEntryFromStore(token);
+  };
+
+  const restore = async (): Promise<void> => {
+    try {
+      const records = await listCallbackMapRecords<StoredModerationEntry<unknown>>(actionKey);
+      for (const record of records) {
+        if (!record.payload) {
+          continue;
+        }
+
+        const entry = hydrateStoredEntry(record.token, record.payload);
+        if (!entry) {
+          logger.warn(
+            { queue: config.type, token: record.token },
+            'Failed to restore moderation entry during bootstrap',
+          );
+          continue;
+        }
+
+        state.set(record.token, entry);
+      }
+    } catch (error) {
+      logger.error(
+        { err: error, queue: config.type },
+        'Failed to restore moderation queue state',
+      );
+    }
+  };
+
   const publish = async (telegram: Telegram, item: T): Promise<PublishModerationResult> => {
     const binding = await getChannelBinding(config.channelType);
     if (!binding) {
@@ -314,7 +485,7 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
       reply_markup: keyboard.reply_markup,
     });
 
-    state.set(token, {
+    const entry: PendingModerationItem<T> = {
       token,
       item,
       status: 'pending',
@@ -325,7 +496,10 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
         formatOptions: pickFormatOptions(item.messageOptions),
       },
       rejectionReasons,
-    });
+    } satisfies PendingModerationItem<T>;
+
+    state.set(token, entry);
+    await persistEntry(entry);
 
     return {
       status: 'published',
@@ -412,6 +586,7 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     }
 
     clearPendingPromptsForToken(entry.token);
+    await removePersistedEntry(entry.token);
 
     return decision === 'approved'
       ? 'Заявка одобрена.'
@@ -424,7 +599,7 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     decision: ModerationDecision,
     reason?: string,
   ): Promise<void> => {
-    const entry = state.get(token);
+    const entry = await getEntry(token);
     if (!entry) {
       await ctx.answerCbQuery('Не удалось найти заявку. Вероятно, она уже обработана.');
       return;
@@ -453,7 +628,7 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     token: string,
     reasonIndex: number,
   ): Promise<void> => {
-    const entry = state.get(token);
+    const entry = await getEntry(token);
     if (!entry) {
       await ctx.answerCbQuery('Не удалось найти заявку. Вероятно, она уже обработана.');
       return;
@@ -550,7 +725,7 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
         return;
       }
 
-      const entry = state.get(prompt.token);
+      const entry = await getEntry(prompt.token);
       if (!entry) {
         clearPendingPromptsForToken(prompt.token);
         await ctx.reply('Заявка уже обработана.', {
@@ -621,5 +796,6 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
   return {
     publish,
     register,
+    restore,
   } satisfies ModerationQueue<T>;
 };

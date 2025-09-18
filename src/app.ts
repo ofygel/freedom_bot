@@ -14,9 +14,18 @@ import { registerExecutorSubscription } from './bot/flows/executor/subscription'
 import { registerExecutorVerification } from './bot/flows/executor/verification';
 import { registerJoinRequests } from './bot/channels/joinRequests';
 import { registerOrdersChannel } from './bot/channels/ordersChannel';
-import { registerPaymentModerationQueue } from './bot/moderation/paymentQueue';
-import { registerVerificationModerationQueue } from './bot/moderation/verifyQueue';
-import { registerSupportModerationBridge } from './bot/services/support';
+import {
+  registerPaymentModerationQueue,
+  restorePaymentModerationQueue,
+} from './bot/moderation/paymentQueue';
+import {
+  registerVerificationModerationQueue,
+  restoreVerificationModerationQueue,
+} from './bot/moderation/verifyQueue';
+import {
+  registerSupportModerationBridge,
+  restoreSupportThreads,
+} from './bot/services/support';
 import { auth } from './bot/middlewares/auth';
 import { autoDelete } from './bot/middlewares/autoDelete';
 import { errorBoundary } from './bot/middlewares/errorBoundary';
@@ -115,3 +124,19 @@ export const setupGracefulShutdown = (bot: Telegraf<BotContext>): void => {
 };
 
 setupGracefulShutdown(app);
+
+export const initialiseAppState = async (): Promise<void> => {
+  const tasks: Promise<void>[] = [
+    restoreVerificationModerationQueue().catch((error) => {
+      logger.error({ err: error }, 'Failed to restore verification moderation queue');
+    }),
+    restorePaymentModerationQueue().catch((error) => {
+      logger.error({ err: error }, 'Failed to restore payment moderation queue');
+    }),
+    restoreSupportThreads().catch((error) => {
+      logger.error({ err: error }, 'Failed to restore support threads');
+    }),
+  ];
+
+  await Promise.all(tasks);
+};
