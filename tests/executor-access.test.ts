@@ -65,6 +65,7 @@ const createSessionState = (): SessionState => ({
     delivery: { stage: 'idle' },
   },
   ui: { steps: {}, homeActions: [] },
+  support: { status: 'idle' },
 });
 
 const createAuthState = (telegramId = 700): BotContext['auth'] => ({

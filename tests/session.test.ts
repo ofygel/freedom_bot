@@ -112,6 +112,9 @@ describe('session middleware', () => {
       ctx.session.executor.subscription.status = 'awaitingReceipt';
       ctx.session.ui.steps['demo'] = { chatId: ctx.chat!.id!, messageId: 1, cleanup: true };
       ctx.session.ui.homeActions.push('home:demo');
+      ctx.session.support.status = 'awaiting_message';
+      ctx.session.support.lastThreadId = 'thread-demo';
+      ctx.session.support.lastThreadShortId = 'demo1234';
     });
 
     assert.equal(ctx.session.isAuthenticated, true);
@@ -134,6 +137,9 @@ describe('session middleware', () => {
     assert.equal(ctx2.session.executor.subscription.status, 'idle');
     assert.deepEqual(ctx2.session.ui.steps, {});
     assert.deepEqual(ctx2.session.ui.homeActions, []);
+    assert.equal(ctx2.session.support.status, 'idle');
+    assert.equal(ctx2.session.support.lastThreadId, undefined);
+    assert.equal(ctx2.session.support.lastThreadShortId, undefined);
     assert.notStrictEqual(ctx2.session, ctx.session);
 
     await clearSession(ctx2);
