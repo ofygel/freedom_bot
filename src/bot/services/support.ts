@@ -133,6 +133,19 @@ interface SupportThreadPrompt {
   moderatorId?: number;
 }
 
+const parseNumeric = (value: string | number | null | undefined): number | undefined => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
+
 const REPLY_ACTION_PREFIX = 'support:reply';
 const CLOSE_ACTION_PREFIX = 'support:close';
 const REPLY_ACTION_PATTERN = /^support:reply:([\da-f-]+)$/;
@@ -142,6 +155,31 @@ const threadsById = new Map<string, SupportThreadState>();
 const threadsByModeratorMessage = new Map<string, string>();
 const pendingReplyPrompts = new Map<string, SupportThreadPrompt>();
 const promptsByThread = new Map<string, Set<string>>();
+
+const mapThreadRowToState = (row: SupportThreadRow): SupportThreadState | null => {
+  const userChatId = parseNumeric(row.user_chat_id);
+  const moderatorChatId = parseNumeric(row.moderator_chat_id);
+  const userTelegramId = parseNumeric(row.user_tg_id);
+
+  if (
+    userChatId === undefined ||
+    moderatorChatId === undefined ||
+    typeof row.user_message_id !== 'number' ||
+    typeof row.moderator_message_id !== 'number'
+  ) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    userChatId,
+    userTelegramId,
+    userMessageId: row.user_message_id,
+    moderatorChatId,
+    moderatorMessageId: row.moderator_message_id,
+    status: row.status,
+  } satisfies SupportThreadState;
+};
 
 type ModerationChannelResolver = () => Promise<number | null>;
 
@@ -224,6 +262,37 @@ const deleteThreadState = (threadId: string): void => {
   const key = buildMessageKey(state.moderatorChatId, state.moderatorMessageId);
   threadsByModeratorMessage.delete(key);
   clearPromptsForThread(threadId);
+};
+
+export const restoreSupportThreads = async (): Promise<void> => {
+  try {
+    const { rows } = await pool.query<SupportThreadRow>(
+      `
+        SELECT
+          id,
+          user_chat_id,
+          user_tg_id,
+          user_message_id,
+          moderator_chat_id,
+          moderator_message_id,
+          status
+        FROM support_threads
+        WHERE status = 'open'
+      `,
+    );
+
+    for (const row of rows) {
+      const state = mapThreadRowToState(row);
+      if (!state) {
+        logger.warn({ threadId: row.id }, 'Skipped restoring malformed support thread');
+        continue;
+      }
+
+      trackThreadState(state);
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to restore support threads from database');
+  }
 };
 
 const insertSupportThreadRecord = async (
@@ -675,6 +744,7 @@ export const __testing__ = {
   registerPrompt,
   deleteThreadState,
   resetSupportState,
+  restoreSupportThreads,
   setModerationChannelResolver: (resolver: ModerationChannelResolver | null) => {
     resolveModerationChannel = resolver ?? defaultResolveModerationChannel;
   },

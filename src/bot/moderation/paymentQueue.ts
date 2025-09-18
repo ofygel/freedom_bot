@@ -492,11 +492,32 @@ const handleSubscriptionRejection = async (
   }
 };
 
+const attachPaymentModerationHandlers = (
+  payment: PaymentReviewItem,
+): PaymentReviewItem => {
+  if (payment.subscription) {
+    payment.onApprove = handleSubscriptionApproval;
+    payment.onReject = handleSubscriptionRejection;
+  }
+
+  return payment;
+};
+
+const revivePaymentReviewItem = (payload: unknown): PaymentReviewItem | null => {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const payment = payload as PaymentReviewItem;
+  return attachPaymentModerationHandlers(payment);
+};
+
 const queue: ModerationQueue<PaymentReviewItem> = createModerationQueue<PaymentReviewItem>({
   type: 'payment',
   channelType: 'verify',
   defaultRejectionReasons: DEFAULT_REASONS,
   renderMessage: buildPaymentMessage,
+  deserializeItem: revivePaymentReviewItem,
 });
 
 export const publishPaymentReview = async (
@@ -508,9 +529,9 @@ export const submitSubscriptionPaymentReview = async (
   telegram: Telegram,
   request: SubscriptionPaymentRequest,
 ): Promise<PublishModerationResult> => {
-  const payment = createSubscriptionPaymentReviewItem(request);
-  payment.onApprove = handleSubscriptionApproval;
-  payment.onReject = handleSubscriptionRejection;
+  const payment = attachPaymentModerationHandlers(
+    createSubscriptionPaymentReviewItem(request),
+  );
 
   const result = await queue.publish(telegram, payment);
 
@@ -536,6 +557,10 @@ export const submitSubscriptionPaymentReview = async (
 
 export const registerPaymentModerationQueue = (bot: Telegraf<BotContext>): void => {
   queue.register(bot);
+};
+
+export const restorePaymentModerationQueue = async (): Promise<void> => {
+  await queue.restore();
 };
 
 export type { PublishModerationResult } from './queue';

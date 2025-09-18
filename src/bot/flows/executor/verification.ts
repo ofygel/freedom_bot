@@ -104,38 +104,15 @@ const submitForModeration = async (
     },
     photoCount: verification.uploadedPhotos.length,
     submittedAt,
-    onApprove: async ({ telegram, decidedAt }) => {
-      if (verification.moderation?.applicationId === applicationId) {
-        verification.status = 'idle';
-        verification.moderation = undefined;
-        verification.uploadedPhotos = [];
-        verification.submittedAt = decidedAt;
-      }
-
-      const approvalText = buildVerificationApprovedText(copy);
-      const keyboard = buildSubscriptionShortcutKeyboard();
-
-      try {
-        await telegram.sendMessage(applicantId, approvalText, { reply_markup: keyboard });
-      } catch (error) {
-        logger.error(
-          {
-            err: error,
-            chatId: applicantId,
-            applicationId,
-            role,
-          },
-          'Failed to notify applicant about verification approval',
-        );
-      }
+    approvalNotification: {
+      text: buildVerificationApprovedText(copy),
+      keyboard: buildSubscriptionShortcutKeyboard(),
     },
-    onReject: async ({ decidedAt }) => {
-      if (verification.moderation?.applicationId === applicationId) {
-        verification.status = 'idle';
-        verification.moderation = undefined;
-        verification.uploadedPhotos = [];
-        verification.submittedAt = decidedAt;
-      }
+    sessionContext: {
+      scope: 'chat',
+      scopeId: applicantId.toString(10),
+      role,
+      applicationId,
     },
   };
 

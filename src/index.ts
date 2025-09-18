@@ -1,4 +1,4 @@
-import { app, isShutdownInProgress, setupGracefulShutdown } from './app';
+import { app, initialiseAppState, isShutdownInProgress, setupGracefulShutdown } from './app';
 import { logger } from './config';
 import { registerJobs } from './jobs';
 
@@ -50,6 +50,7 @@ const isGracefulShutdownError = (error: unknown): boolean => {
 
 const start = async (): Promise<void> => {
   try {
+    await initialiseAppState();
     await app.launch();
     registerJobs(app);
     logger.info('Bot started using long polling');
