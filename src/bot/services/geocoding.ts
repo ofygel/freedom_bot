@@ -150,9 +150,11 @@ const parseUrl = (value: string): URL | null => {
   }
 };
 
-interface Parsed2GisLink extends Coordinates {
+interface Parsed2GisLink {
   url: URL;
   label?: string;
+  coordinates?: Coordinates;
+  itemId?: string;
 }
 
 const extract2GisLabel = (url: URL): string | undefined => {
@@ -187,6 +189,36 @@ const extract2GisLabel = (url: URL): string | undefined => {
     }
 
     return segment;
+  }
+
+  return undefined;
+};
+
+const extract2GisItemId = (url: URL): string | undefined => {
+  const segments = url.pathname
+    .split('/')
+    .map((segment) => decodeComponent(segment).trim())
+    .filter((segment) => segment.length > 0);
+
+  const knownPrefixes = new Set(['firm', 'geo']);
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const prefix = segments[index].toLowerCase();
+    if (!knownPrefixes.has(prefix)) {
+      continue;
+    }
+
+    const candidate = segments[index + 1];
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  const idParam = url.searchParams.get('id');
+  if (idParam) {
+    const trimmed = decodeComponent(idParam).trim();
+    if (trimmed) {
+      return trimmed;
+    }
   }
 
   return undefined;
@@ -263,12 +295,12 @@ const collectCandidatePairs = (url: URL): string[] => {
   return Array.from(candidates);
 };
 
-const resolveCoordinatesFrom2GisUrl = (url: URL): Parsed2GisLink | null => {
+const resolveCoordinatesFrom2GisUrl = (url: URL): Coordinates | null => {
   const candidates = collectCandidatePairs(url);
   for (const candidate of candidates) {
     const coordinates = parseCoordinatePair(candidate);
     if (coordinates) {
-      return { ...coordinates, url, label: extract2GisLabel(url) } satisfies Parsed2GisLink;
+      return coordinates;
     }
   }
 
@@ -316,16 +348,40 @@ const parse2GisLink = async (value: string): Promise<Parsed2GisLink | null> => {
     return null;
   }
 
-  const direct = resolveCoordinatesFrom2GisUrl(url);
-  if (direct) {
-    return direct;
+  const label = extract2GisLabel(url);
+  const coordinates = resolveCoordinatesFrom2GisUrl(url);
+  const itemId = extract2GisItemId(url);
+  if (coordinates || itemId) {
+    const result: Parsed2GisLink = { url };
+    if (label) {
+      result.label = label;
+    }
+    if (coordinates) {
+      result.coordinates = coordinates;
+    }
+    if (itemId) {
+      result.itemId = itemId;
+    }
+    return result;
   }
 
   const expanded = await expand2GisShortLink(url);
   if (expanded) {
-    const expandedResult = resolveCoordinatesFrom2GisUrl(expanded);
-    if (expandedResult) {
-      return expandedResult;
+    const expandedCoordinates = resolveCoordinatesFrom2GisUrl(expanded);
+    const expandedItemId = extract2GisItemId(expanded);
+    const expandedLabel = extract2GisLabel(expanded) ?? label;
+    if (expandedCoordinates || expandedItemId) {
+      const result: Parsed2GisLink = { url: expanded };
+      if (expandedLabel) {
+        result.label = expandedLabel;
+      }
+      if (expandedCoordinates) {
+        result.coordinates = expandedCoordinates;
+      }
+      if (expandedItemId) {
+        result.itemId = expandedItemId;
+      }
+      return result;
     }
   }
 
@@ -353,6 +409,10 @@ interface TwoGisResponse {
   result?: {
     items?: TwoGisItem[];
   };
+}
+
+interface TwoGisLookupResult extends Coordinates {
+  address?: string;
 }
 
 interface TwoGisConfig {
@@ -631,6 +691,72 @@ const geocodeWithTwoGis = async (
   return null;
 };
 
+const lookupTwoGisItemById = async (
+  itemId: string,
+  config: TwoGisConfig,
+): Promise<TwoGisLookupResult | null> => {
+  const trimmedId = itemId.trim();
+  if (!trimmedId) {
+    return null;
+  }
+
+  let url: URL;
+  try {
+    url = new URL('byid', config.baseUrl);
+  } catch {
+    return null;
+  }
+
+  url.searchParams.set('id', trimmedId);
+  url.searchParams.set('fields', 'items.point,items.full_name,items.address_name,items.name');
+  url.searchParams.set('key', config.apiKey);
+
+  if (config.locale) {
+    url.searchParams.set('locale', config.locale);
+  }
+
+  if (config.regionId) {
+    url.searchParams.set('region_id', config.regionId);
+  }
+
+  try {
+    const response = await fetchJson<TwoGisResponse>(url, {
+      headers: { Accept: 'application/json' },
+      timeoutMs: config.timeoutMs,
+    });
+
+    const items = response.result?.items ?? [];
+    for (const item of items) {
+      const point = item.point;
+      if (!point) {
+        continue;
+      }
+
+      const latitude =
+        typeof point.lat === 'string' ? Number.parseFloat(point.lat) : point.lat ?? Number.NaN;
+      const longitude =
+        typeof point.lon === 'string' ? Number.parseFloat(point.lon) : point.lon ?? Number.NaN;
+
+      if (!isValidCoordinate(latitude, longitude)) {
+        continue;
+      }
+
+      const rawAddress = item.full_name ?? item.address_name ?? item.name;
+      const address = rawAddress?.trim();
+
+      return {
+        latitude,
+        longitude,
+        address: address && address.length > 0 ? address : undefined,
+      } satisfies TwoGisLookupResult;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
 const geocodeWithNominatim = async (
   searchQuery: string,
   normalizedQuery: string,
@@ -758,28 +884,54 @@ export const geocodeAddress = async (
   const searchQuery = buildCityAwareQuery(normalizedQuery);
 
   const nominatimConfig = getNominatimConfig();
-  const parsedLink = await parse2GisLink(trimmed);
-  if (parsedLink) {
-    const resolved = await resolveCoordinates(parsedLink.latitude, parsedLink.longitude, {
+  const twoGisConfig = getTwoGisConfig();
+
+  const resolveWithFallback = async (
+    latitude: number,
+    longitude: number,
+    label?: string,
+  ): Promise<GeocodingResult> => {
+    const trimmedLabel = label?.trim();
+    const fallbackLabel = trimmedLabel && trimmedLabel.length > 0 ? trimmedLabel : normalizedQuery;
+
+    const resolved = await resolveCoordinates(latitude, longitude, {
       query: normalizedQuery,
-      label: parsedLink.label,
+      label: fallbackLabel,
     });
 
     if (resolved) {
       return resolved;
     }
 
-    const fallbackLabel = parsedLink.label?.trim() || normalizedQuery;
     return {
       query: normalizedQuery,
       address: fallbackLabel,
-      latitude: parsedLink.latitude,
-      longitude: parsedLink.longitude,
+      latitude,
+      longitude,
     } satisfies GeocodingResult;
+  };
+
+  const parsedLink = await parse2GisLink(trimmed);
+  if (parsedLink?.coordinates) {
+    return resolveWithFallback(
+      parsedLink.coordinates.latitude,
+      parsedLink.coordinates.longitude,
+      parsedLink.label,
+    );
+  }
+
+  if (parsedLink?.itemId && twoGisConfig) {
+    const lookupResult = await lookupTwoGisItemById(parsedLink.itemId, twoGisConfig);
+    if (lookupResult) {
+      return resolveWithFallback(
+        lookupResult.latitude,
+        lookupResult.longitude,
+        lookupResult.address ?? parsedLink.label,
+      );
+    }
   }
 
   const providers: Array<() => Promise<GeocodingResult | null>> = [];
-  const twoGisConfig = getTwoGisConfig();
   if (twoGisConfig) {
     providers.push(() => geocodeWithTwoGis(searchQuery, normalizedQuery, twoGisConfig));
   }

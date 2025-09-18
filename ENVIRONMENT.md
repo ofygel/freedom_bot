@@ -33,7 +33,8 @@ are missing or blank.
 ## Location and geocoding
 
 - `CITY_DEFAULT` – Optional default city appended to short address queries.
-- `TWOGIS_API_KEY` – Enables the optional 2ГИС geocoding integration when present.
+- `TWOGIS_API_KEY` – Enables the optional 2ГИС geocoding integration, including
+  `/geo/...` and `/firm/...` links when present.
 - `NOMINATIM_BASE` – Optional base URL for self‑hosted Nominatim instances. When
   provided, the bot derives `/search` and `/reverse` endpoints from this value.
 
