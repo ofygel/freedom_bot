@@ -5,7 +5,7 @@ import { setUserCitySelected } from '../../../services/users';
 import type { BotContext } from '../../types';
 import { resetClientOrderDraft } from '../../services/orders';
 
-const CITY_ACTION_PATTERN = /^city:([a-z]+)$/i;
+export const CITY_ACTION_PATTERN = /^city:([a-z]+)$/i;
 
 const buildCityKeyboard = () =>
   Markup.inlineKeyboard(

@@ -15,10 +15,11 @@ import { setChatCommands } from '../../services/commands';
 import type { BotContext } from '../../types';
 import { presentRoleSelection } from '../../commands/start';
 import { promptClientSupport } from './support';
-import { askCity, getCityFromContext } from '../common/citySelect';
+import { askCity, getCityFromContext, CITY_ACTION_PATTERN } from '../common/citySelect';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
+const CLIENT_MENU_CITY_ACTION = 'clientMenu' as const;
 
 const applyClientCommands = async (ctx: BotContext): Promise<void> => {
   if (ctx.chat?.type !== 'private') {
@@ -111,12 +112,16 @@ const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
     return;
   }
 
+  const uiState = ctx.session.ui;
+
   const city = getCityFromContext(ctx);
   if (!city) {
+    uiState.pendingCityAction = CLIENT_MENU_CITY_ACTION;
     await askCity(ctx, 'Укажите город, чтобы продолжить.');
     return;
   }
 
+  uiState.pendingCityAction = undefined;
   const cityLabel = CITY_LABEL[city];
   await sendClientMenu(ctx, prompt ?? clientMenuText(cityLabel));
 };
@@ -156,6 +161,20 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     await showMenu(ctx);
+  });
+
+  bot.action(CITY_ACTION_PATTERN, async (ctx, next) => {
+    if (ctx.session.ui?.pendingCityAction === CLIENT_MENU_CITY_ACTION) {
+      ctx.session.ui.pendingCityAction = undefined;
+
+      if (isClientChat(ctx, ctx.auth?.user.role)) {
+        await showMenu(ctx);
+      }
+    }
+
+    if (typeof next === 'function') {
+      await next();
+    }
   });
 
   bot.command('order', async (ctx) => {

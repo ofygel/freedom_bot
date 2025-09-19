@@ -55,6 +55,7 @@ const createClientState = (): ClientFlowState => ({
 const createUiState = (): UiSessionState => ({
   steps: {},
   homeActions: [],
+  pendingCityAction: undefined,
 });
 
 const createSupportState = (): SupportSessionState => ({
