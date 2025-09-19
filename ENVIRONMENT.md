@@ -13,6 +13,10 @@ are missing or blank.
 - `KASPI_CARD` – Kaspi Gold card number shown in the subscription instructions.
 - `KASPI_NAME` – Account holder name displayed alongside the Kaspi details.
 - `KASPI_PHONE` – Contact phone number provided with the Kaspi payment details.
+- `WEBHOOK_DOMAIN` – Publicly reachable base URL used to register the Telegram webhook
+  endpoint (for example, `https://bot.example.com`).
+- `WEBHOOK_SECRET` – Secret token appended to the webhook path to prevent unsolicited
+  requests. Use a sufficiently long random string.
 
 ## Database options
 
@@ -61,4 +65,9 @@ rounded to the nearest tenge for consistency with legacy pricing.
 - `TARIFF_BASE` – Base fare applied to a new order.
 - `TARIFF_PER_KM` – Distance component calculated per kilometre.
 - `TARIFF_PER_MIN` – Time component calculated per minute.
+
+## Webhook server
+
+- `PORT` – TCP port the internal HTTP server listens on. Defaults to `3000` when
+  the variable is not provided.
 

@@ -1,6 +1,15 @@
-import { app, initialiseAppState, isShutdownInProgress, setupGracefulShutdown } from './app';
-import { logger } from './config';
-import { registerJobs } from './jobs';
+import express from 'express';
+import type { Server } from 'http';
+
+import {
+  app,
+  initialiseAppState,
+  isShutdownInProgress,
+  registerCleanupTask,
+  setupGracefulShutdown,
+} from './app';
+import { config, logger } from './config';
+import { registerJobs, stopJobs } from './jobs';
 
 const gracefulShutdownErrorPatterns = [
   /bot is not running/i,
@@ -48,40 +57,109 @@ const isGracefulShutdownError = (error: unknown): boolean => {
   return matchesGracefulShutdownMessage(error.message);
 };
 
-const isPollingConflictError = (error: unknown): boolean => {
-  if (!error) {
-    return false;
+const removeTrailingSlashes = (value: string): string => value.replace(/\/+$/, '');
+
+const buildWebhookConfig = (domain: string, secret: string) => {
+  const trimmedDomain = removeTrailingSlashes(domain);
+  const path = `/bot/${secret}`;
+  return {
+    path,
+    url: `${trimmedDomain}${path}`,
+  };
+};
+
+const parsePort = (value: string | undefined): number => {
+  if (!value) {
+    return 3000;
   }
 
-  if (typeof error === 'string') {
-    return error.includes('409') && error.includes('getUpdates');
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error('PORT must be a positive integer');
   }
 
-  if (typeof error === 'object') {
-    const candidate = error as { message?: unknown };
-    if (typeof candidate.message === 'string') {
-      const message = candidate.message;
-      return message.includes('409') && message.toLowerCase().includes('getupdates');
-    }
-  }
+  return parsed;
+};
 
-  return false;
+const closeServer = (server: Server): Promise<void> =>
+  new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+
+const startServer = async (webhookPath: string, port: number): Promise<Server> => {
+  const serverApp = express();
+
+  serverApp.use(express.json());
+
+  serverApp.post(webhookPath, (req, res) => {
+    void app.handleUpdate(req.body);
+    res.sendStatus(200);
+  });
+
+  serverApp.get('/health', (_req, res) => {
+    res.status(200).send('ok');
+  });
+
+  return await new Promise<Server>((resolve, reject) => {
+    const httpServer = serverApp.listen(port, '0.0.0.0', () => {
+      resolve(httpServer);
+    });
+
+    httpServer.on('error', (error) => {
+      httpServer.close();
+      reject(error);
+    });
+  });
 };
 
 const start = async (): Promise<void> => {
+  let server: Server | null = null;
   try {
     await initialiseAppState();
-    await app.launch();
+    const { url, path } = buildWebhookConfig(config.webhook.domain, config.webhook.secret);
+    const port = parsePort(process.env.PORT);
+
+    server = await startServer(path, port);
+    const httpServer = server;
+    logger.info({ port }, 'Webhook server listening for updates');
+
+    try {
+      await app.telegram.setWebhook(url);
+    } catch (webhookError) {
+      await closeServer(httpServer).catch((error) => {
+        logger.error({ err: error }, 'Failed to close webhook server after registration error');
+      });
+      server = null;
+      throw webhookError;
+    }
+
+    registerCleanupTask(() => closeServer(httpServer));
+
     registerJobs(app);
-    logger.info('Bot started using long polling');
+    registerCleanupTask(() => {
+      stopJobs();
+    });
+
+    logger.info({ url }, 'Webhook registered');
+    logger.info({ port, path }, 'Bot started using webhook');
   } catch (error) {
+    if (server) {
+      await closeServer(server).catch((closeError) => {
+        logger.error({ err: closeError }, 'Failed to close webhook server during startup failure');
+      });
+    }
+
     if (isShutdownInProgress()) {
       logger.info({ err: error }, 'Bot stopped gracefully');
     } else if (isGracefulShutdownError(error)) {
       logger.info({ err: error }, 'Bot stopped gracefully');
-    } else if (isPollingConflictError(error)) {
-      logger.error({ err: error }, 'Another instance is already polling. Exiting.');
-      process.exit(1);
     } else {
       logger.fatal({ err: error }, 'Failed to start bot or jobs');
       process.exitCode = 1;

@@ -3,7 +3,15 @@ import type { LevelWithSilent } from 'pino';
 
 loadEnv();
 
-const REQUIRED_ENV_VARS = ['BOT_TOKEN', 'DATABASE_URL', 'KASPI_CARD', 'KASPI_NAME', 'KASPI_PHONE'] as const;
+const REQUIRED_ENV_VARS = [
+  'BOT_TOKEN',
+  'DATABASE_URL',
+  'KASPI_CARD',
+  'KASPI_NAME',
+  'KASPI_PHONE',
+  'WEBHOOK_DOMAIN',
+  'WEBHOOK_SECRET',
+] as const;
 
 type RequiredEnvVar = (typeof REQUIRED_ENV_VARS)[number];
 
@@ -203,6 +211,10 @@ export interface AppConfig {
   bot: {
     token: string;
   };
+  webhook: {
+    domain: string;
+    secret: string;
+  };
   database: {
     url: string;
     ssl: boolean;
@@ -237,6 +249,10 @@ export const loadConfig = (): AppConfig => ({
   bot: {
     token: process.env.BOT_TOKEN as string,
   },
+  webhook: {
+    domain: getRequiredString('WEBHOOK_DOMAIN'),
+    secret: getRequiredString('WEBHOOK_SECRET'),
+  },
   database: {
     url: process.env.DATABASE_URL as string,
     ssl: parseBoolean(process.env.DATABASE_SSL),
@@ -263,6 +279,7 @@ export const loadConfig = (): AppConfig => ({
 export const config: AppConfig = loadConfig();
 
 Object.freeze(config.bot);
+Object.freeze(config.webhook);
 Object.freeze(config.database);
 Object.freeze(config.city);
 if (config.tariff) {
