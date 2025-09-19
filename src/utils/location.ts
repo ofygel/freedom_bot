@@ -1,11 +1,15 @@
+import { dgBase } from './2gis';
+import type { AppCity } from '../domain/cities';
+
 interface Build2GisLinkOptions {
   zoom?: number;
   hostname?: string;
   query?: string;
+  city?: AppCity;
 }
 
 const DEFAULT_ZOOM = 18;
-const DEFAULT_2GIS_HOST = 'https://2gis.kz/almaty/';
+const DEFAULT_2GIS_HOST = `${dgBase('almaty')}/`;
 
 const clampZoom = (zoom: number): number => {
   if (!Number.isFinite(zoom)) {
@@ -31,12 +35,24 @@ const formatCoordinate = (value: number): string => {
   return value.toFixed(6);
 };
 
+const resolveBaseHost = (options: Build2GisLinkOptions): string => {
+  if (options.hostname) {
+    return options.hostname;
+  }
+
+  if (options.city) {
+    return `${dgBase(options.city)}/`;
+  }
+
+  return DEFAULT_2GIS_HOST;
+};
+
 export const build2GisLink = (
   latitude: number,
   longitude: number,
   options: Build2GisLinkOptions = {},
 ): string => {
-  const base = options.hostname ?? DEFAULT_2GIS_HOST;
+  const base = resolveBaseHost(options);
   const url = new URL(base);
 
   const zoom = clampZoom(options.zoom ?? DEFAULT_ZOOM);

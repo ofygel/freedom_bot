@@ -14,6 +14,8 @@ import { startExecutorSubscription } from './subscription';
 import { getExecutorRoleCopy } from './roleCopy';
 import { findSubscriptionPeriodOption } from './subscriptionPlans';
 import { startExecutorVerification } from './verification';
+import { CITY_LABEL } from '../../../domain/cities';
+import { ensureCitySelected } from '../common/citySelect';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
@@ -347,10 +349,12 @@ const buildSubscriptionSection = (
 const buildMenuText = (
   state: ExecutorFlowState,
   access: ExecutorAccessStatus,
+  cityLabel: string,
 ): string => {
   const copy = getExecutorRoleCopy(state.role);
   const parts = [
     `${copy.emoji} Меню ${copy.genitive}`,
+    `🏙️ Город: ${cityLabel}`,
     '',
     ...buildVerificationSection(state, access),
     '',
@@ -365,6 +369,11 @@ export const showExecutorMenu = async (
   options: ShowExecutorMenuOptions = {},
 ): Promise<void> => {
   if (!ctx.chat) {
+    return;
+  }
+
+  const city = await ensureCitySelected(ctx, 'Выберите город, чтобы получить доступ к заказам.');
+  if (!city) {
     return;
   }
 
@@ -383,7 +392,7 @@ export const showExecutorMenu = async (
     }
   }
 
-  const text = buildMenuText(state, access);
+  const text = buildMenuText(state, access, CITY_LABEL[city]);
   const keyboard = buildMenuKeyboard(access);
   await ui.step(ctx, {
     id: EXECUTOR_MENU_STEP_ID,

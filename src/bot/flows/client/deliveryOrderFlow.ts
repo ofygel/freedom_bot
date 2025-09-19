@@ -38,6 +38,9 @@ import { ui } from '../../ui';
 import { CLIENT_MENU, isClientChat, sendClientMenu } from '../../../ui/clientMenu';
 import { CLIENT_MENU_ACTION } from './menu';
 import { CLIENT_DELIVERY_ORDER_AGAIN_ACTION } from './orderActions';
+import { ensureCitySelected } from '../common/citySelect';
+import type { AppCity } from '../../../domain/cities';
+import { dgBase } from '../../../utils/2gis';
 
 export const START_DELIVERY_ORDER_ACTION = 'client:order:delivery:start';
 const CONFIRM_DELIVERY_ORDER_ACTION = 'client:order:delivery:confirm';
@@ -80,10 +83,8 @@ const ADDRESS_INPUT_HINTS = [
 const buildAddressPrompt = (lines: string[]): string =>
   [...lines, ...ADDRESS_INPUT_HINTS].join('\n');
 
-const TWO_GIS_SHORTCUT_URL = 'https://2gis.kz/almaty';
-
-const buildTwoGisShortcutKeyboard = (): InlineKeyboardMarkup =>
-  buildUrlKeyboard('🗺 Открыть 2ГИС', TWO_GIS_SHORTCUT_URL);
+const buildTwoGisShortcutKeyboard = (city: AppCity): InlineKeyboardMarkup =>
+  buildUrlKeyboard('🗺 Открыть 2ГИС', dgBase(city));
 
 const remindManualAddressAccuracy = async (ctx: BotContext): Promise<void> => {
   await ui.step(ctx, {
@@ -109,15 +110,19 @@ const remindDeliveryCommentRequirement = async (ctx: BotContext): Promise<void> 
   });
 };
 
-const requestPickupAddress = async (ctx: BotContext): Promise<void> => {
+const requestPickupAddress = async (ctx: BotContext, city: AppCity): Promise<void> => {
   await updateDeliveryStep(
     ctx,
     buildAddressPrompt(['Укажите точку забора посылки одним из способов:']),
-    buildTwoGisShortcutKeyboard(),
+    buildTwoGisShortcutKeyboard(city),
   );
 };
 
-const requestDropoffAddress = async (ctx: BotContext, pickup: CompletedOrderDraft['pickup']): Promise<void> => {
+const requestDropoffAddress = async (
+  ctx: BotContext,
+  city: AppCity,
+  pickup: CompletedOrderDraft['pickup'],
+): Promise<void> => {
   await updateDeliveryStep(
     ctx,
     buildAddressPrompt([
@@ -125,7 +130,7 @@ const requestDropoffAddress = async (ctx: BotContext, pickup: CompletedOrderDraf
       '',
       'Теперь отправьте адрес доставки одним из способов:',
     ]),
-    buildTwoGisShortcutKeyboard(),
+    buildTwoGisShortcutKeyboard(city),
   );
 };
 
@@ -167,7 +172,14 @@ const applyPickupDetails = async (
   draft.pickup = pickup;
   draft.stage = 'collectingDropoff';
 
-  await requestDropoffAddress(ctx, pickup);
+  const city = ctx.session.city;
+  if (!city) {
+    logger.warn('Delivery order pickup collected without selected city');
+    draft.stage = 'idle';
+    return;
+  }
+
+  await requestDropoffAddress(ctx, city, pickup);
 };
 
 const applyDropoffDetails = async (
@@ -221,7 +233,13 @@ const showConfirmation = async (ctx: BotContext, draft: CompletedOrderDraft): Pr
       : undefined,
   });
 
-  const locationsKeyboard = buildOrderLocationsKeyboard(draft.pickup, draft.dropoff);
+  const city = ctx.session.city;
+  if (!city) {
+    logger.warn('Delivery order confirmation attempted without selected city');
+    return;
+  }
+
+  const locationsKeyboard = buildOrderLocationsKeyboard(city, draft.pickup, draft.dropoff);
   const confirmationKeyboard = buildConfirmationKeyboard();
   const keyboard = mergeInlineKeyboards(locationsKeyboard, confirmationKeyboard);
   const result = await updateDeliveryStep(ctx, summary, keyboard);
@@ -366,9 +384,22 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
 
   draft.stage = 'creatingOrder';
 
+  const city = ctx.session.city;
+  if (!city) {
+    logger.error('Attempted to confirm delivery order without selected city');
+    draft.stage = 'idle';
+    await ui.step(ctx, {
+      id: DELIVERY_CONFIRM_ERROR_STEP_ID,
+      text: 'Не выбран город. Выберите город через меню и начните оформление заново.',
+      cleanup: true,
+    });
+    return;
+  }
+
   try {
     const order = await createOrder({
       kind: 'delivery',
+      city,
       clientId: ctx.auth.user.telegramId,
       clientPhone: ctx.session.phoneNumber,
       customerName: buildCustomerName(ctx),
@@ -503,12 +534,20 @@ const handleStart = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
+  const city = await ensureCitySelected(ctx, 'Выберите город, чтобы оформить доставку.');
+  if (!city) {
+    if (ctx.callbackQuery) {
+      await ctx.answerCbQuery('Сначала выберите город.');
+    }
+    return;
+  }
+
   const draft = getDraft(ctx);
   resetClientOrderDraft(draft);
   draft.stage = 'collectingPickup';
   resetClientOrderDraft(ctx.session.client.taxi);
 
-  await requestPickupAddress(ctx);
+  await requestPickupAddress(ctx, city);
 };
 
 const handleConfirmationAction = async (ctx: BotContext): Promise<void> => {
@@ -561,12 +600,17 @@ export const registerDeliveryOrderFlow = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
+    const city = await ensureCitySelected(ctx, 'Выберите город, чтобы оформить доставку.');
+    if (!city) {
+      return;
+    }
+
     const draft = getDraft(ctx);
     resetClientOrderDraft(draft);
     draft.stage = 'collectingPickup';
     resetClientOrderDraft(ctx.session.client.taxi);
 
-    await requestPickupAddress(ctx);
+    await requestPickupAddress(ctx, city);
   });
 
   bot.on('location', async (ctx, next) => {

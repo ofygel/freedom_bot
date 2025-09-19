@@ -27,6 +27,7 @@ import {
   CLIENT_VIEW_ORDER_ACTION_PREFIX,
   CLIENT_TAXI_ORDER_AGAIN_ACTION,
 } from './orderActions';
+import { CITY_LABEL } from '../../../domain/cities';
 
 const CLIENT_ORDERS_LIST_STEP_ID = 'client:orders:list';
 const CLIENT_ORDER_DETAIL_STEP_ID = 'client:orders:detail';
@@ -163,7 +164,7 @@ const buildOrderDetailKeyboard = (
   order: OrderWithExecutor,
   options: OrderDetailOptions,
 ): InlineKeyboardMarkup | undefined => {
-  const locationsKeyboard = buildOrderLocationsKeyboard(order.pickup, order.dropoff);
+  const locationsKeyboard = buildOrderLocationsKeyboard(order.city, order.pickup, order.dropoff);
   const contactKeyboard = buildContactKeyboard(order);
   const controlsKeyboard = buildControlKeyboard(order, options);
 
@@ -180,6 +181,7 @@ const buildOrderDetailText = (
   const lines: string[] = [];
 
   lines.push(`${headerIcon} ${kindLabel} №${order.shortId}`);
+  lines.push(`🏙️ Город: ${CITY_LABEL[order.city]}.`);
   lines.push(`Статус: ${status.full}.`);
   lines.push('');
   lines.push(`📍 Подача: ${order.pickup.address}`);

@@ -7,6 +7,7 @@ import {
   type BotContext,
   type SessionState,
 } from '../src/bot/types';
+import type { AppCity } from '../src/domain/cities';
 import { CLIENT_COMMANDS } from '../src/bot/commands/sets';
 
 let registerClientMenu: typeof import('../src/bot/flows/client/menu')['registerClientMenu'];
@@ -35,11 +36,13 @@ before(async () => {
 const ROLE_CLIENT_ACTION = 'role:client';
 
 const expectedMenuText = 'Добро пожаловать! Чем можем помочь?';
+const DEFAULT_CITY: AppCity = 'almaty';
 
 const createSessionState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   awaitingPhone: false,
+  city: DEFAULT_CITY,
   executor: {
     role: 'courier',
     verification: {
@@ -76,6 +79,7 @@ const createAuthState = (
     role,
     isVerified: false,
     isBlocked: false,
+    citySelected: DEFAULT_CITY,
   },
   executor: {
     verifiedRoles: { courier: false, driver: false },
@@ -219,7 +223,8 @@ describe('client menu role selection', () => {
     assert.deepEqual(labels, [
       ['🚕 Заказать такси', '📦 Доставка'],
       ['🧾 Мои заказы'],
-      ['🆘 Поддержка', '👥 Сменить роль'],
+      ['🆘 Поддержка', '🏙️ Сменить город'],
+      ['👥 Сменить роль'],
       ['🔄 Обновить меню'],
     ]);
     assert.equal(keyboard.is_persistent, true);

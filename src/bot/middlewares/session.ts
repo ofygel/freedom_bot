@@ -65,6 +65,7 @@ const createDefaultState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   awaitingPhone: false,
+  city: undefined,
   executor: createExecutorState(),
   client: createClientState(),
   ui: createUiState(),
@@ -170,6 +171,10 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
     const existing = await loadSessionState(client, key, { forUpdate: true });
     const state = existing ?? createDefaultState();
+
+    if (!('city' in state)) {
+      state.city = undefined;
+    }
 
     if (!state.ui) {
       state.ui = createUiState();

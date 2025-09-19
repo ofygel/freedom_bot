@@ -5,10 +5,10 @@ import { config } from '../config';
 
 const createSslOptions = (): PoolConfig['ssl'] => {
   if (!config.database.ssl) {
-    return false;
+    return undefined;
   }
 
-  return { rejectUnauthorized: true } satisfies NonNullable<PoolConfig['ssl']>;
+  return { rejectUnauthorized: false } satisfies NonNullable<PoolConfig['ssl']>;
 };
 
 const pool = new Pool({

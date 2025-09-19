@@ -55,12 +55,12 @@ const applyCommandsForRole = async (ctx: BotContext): Promise<void> => {
 
   const role = ctx.auth?.user.role;
   if (role === 'client' || role === undefined) {
-    await setChatCommands(ctx.telegram, ctx.chat.id, CLIENT_COMMANDS);
+    await setChatCommands(ctx.telegram, ctx.chat.id, CLIENT_COMMANDS, { showMenuButton: true });
     return;
   }
 
   if (role === 'courier' || role === 'driver') {
-    await setChatCommands(ctx.telegram, ctx.chat.id, EXECUTOR_COMMANDS);
+    await setChatCommands(ctx.telegram, ctx.chat.id, EXECUTOR_COMMANDS, { showMenuButton: true });
   }
 };
 

@@ -1,6 +1,7 @@
 import type { Context } from 'telegraf';
 
 import type { OrderLocation, OrderPriceDetails } from '../types';
+import type { AppCity } from '../domain/cities';
 
 export const EXECUTOR_VERIFICATION_PHOTO_COUNT = 2;
 
@@ -26,6 +27,7 @@ export interface AuthUser {
   role: UserRole;
   isVerified: boolean;
   isBlocked: boolean;
+  citySelected?: AppCity;
 }
 
 export interface AuthExecutorState {
@@ -133,6 +135,7 @@ export interface SessionState {
   awaitingPhone: boolean;
   phoneNumber?: string;
   user?: SessionUser;
+  city?: AppCity;
   executor: ExecutorFlowState;
   client: ClientFlowState;
   ui: UiSessionState;

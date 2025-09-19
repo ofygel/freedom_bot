@@ -35,10 +35,13 @@ before(async () => {
 
 const ROLE_DRIVER_ACTION = 'role:driver';
 
+const DEFAULT_CITY = 'almaty' as const;
+
 const createSessionState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   awaitingPhone: false,
+  city: DEFAULT_CITY,
   executor: {
     role: 'courier',
     verification: {
@@ -73,6 +76,7 @@ const createAuthState = (): BotContext['auth'] => ({
     role: 'courier',
     isVerified: false,
     isBlocked: false,
+    citySelected: DEFAULT_CITY,
   },
   executor: {
     verifiedRoles: { courier: false, driver: false },
