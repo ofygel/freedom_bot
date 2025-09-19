@@ -15,6 +15,7 @@ const ensureUiState = (ctx: BotContext): UiSessionState => {
     ctx.session.ui = {
       steps: {},
       homeActions: [],
+      pendingCityAction: undefined,
     } satisfies UiSessionState;
   }
 
