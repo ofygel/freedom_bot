@@ -1,7 +1,11 @@
-import { pool } from '../db';
+import { hasUsersCitySelectedColumn, pool } from '../db';
 import type { AppCity } from '../domain/cities';
 
 export const setUserCitySelected = async (telegramId: number, city: AppCity): Promise<void> => {
+  if (!(await hasUsersCitySelectedColumn())) {
+    return;
+  }
+
   await pool.query(
     `
       INSERT INTO users (tg_id, city_selected, updated_at)
@@ -15,6 +19,10 @@ export const setUserCitySelected = async (telegramId: number, city: AppCity): Pr
 };
 
 export const getUserCitySelected = async (telegramId: number): Promise<AppCity | null> => {
+  if (!(await hasUsersCitySelectedColumn())) {
+    return null;
+  }
+
   const { rows } = await pool.query<{ city_selected: AppCity | null }>(
     `SELECT city_selected FROM users WHERE tg_id = $1`,
     [telegramId],

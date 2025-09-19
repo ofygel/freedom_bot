@@ -1,7 +1,7 @@
 import type { MiddlewareFn } from 'telegraf';
 
 import { logger } from '../../config';
-import { pool } from '../../db';
+import { hasUsersCitySelectedColumn, pool } from '../../db';
 import { isAppCity } from '../../domain/cities';
 import {
   EXECUTOR_ROLES,
@@ -26,7 +26,7 @@ interface AuthQueryRow {
   courier_verified: boolean | null;
   driver_verified: boolean | null;
   has_active_subscription: boolean | null;
-  city_selected: string | null;
+  city_selected?: string | null;
 }
 
 const parseNumericId = (value: string | number): number => {
@@ -79,35 +79,7 @@ const buildExecutorState = (row: AuthQueryRow): AuthExecutorState => {
   } satisfies AuthExecutorState;
 };
 
-const mapAuthRow = (row: AuthQueryRow): AuthState => {
-  const telegramId = parseNumericId(row.tg_id);
-  const executor = buildExecutorState(row);
-  const role = normaliseRole(row.role);
-
-  return {
-    user: {
-      telegramId,
-      username: normaliseString(row.username),
-      firstName: normaliseString(row.first_name),
-      lastName: normaliseString(row.last_name),
-      phone: normaliseString(row.phone),
-      role,
-      isVerified: Boolean(row.is_verified),
-      isBlocked: Boolean(row.is_blocked),
-      citySelected: isAppCity(row.city_selected)
-        ? row.city_selected
-        : undefined,
-    },
-    executor,
-    isModerator: role === 'moderator',
-  } satisfies AuthState;
-};
-
-const loadAuthState = async (
-  from: NonNullable<BotContext['from']>,
-): Promise<AuthState> => {
-  const { rows } = await pool.query<AuthQueryRow>(
-    `
+const buildAuthQuery = (includeCitySelected: boolean): string => `
       WITH upsert AS (
         INSERT INTO users (tg_id, username, first_name, last_name, updated_at)
         VALUES ($1, $2, $3, $4, now())
@@ -117,7 +89,9 @@ const loadAuthState = async (
           first_name = COALESCE(EXCLUDED.first_name, users.first_name),
           last_name = COALESCE(EXCLUDED.last_name, users.last_name),
           updated_at = now()
-        RETURNING tg_id, username, first_name, last_name, phone, role, is_verified, is_blocked, city_selected
+        RETURNING tg_id, username, first_name, last_name, phone, role, is_verified, is_blocked${
+          includeCitySelected ? ', city_selected' : ''
+        }
       )
       SELECT
         u.tg_id,
@@ -127,8 +101,7 @@ const loadAuthState = async (
         u.phone,
         u.role,
         u.is_verified,
-        u.is_blocked,
-        u.city_selected,
+        u.is_blocked${includeCitySelected ? ',\n        u.city_selected' : ''},
         COALESCE(cv.is_verified, false) AS courier_verified,
         COALESCE(dv.is_verified, false) AS driver_verified,
         COALESCE(sub.has_active_subscription, false) AS has_active_subscription
@@ -168,14 +141,44 @@ const loadAuthState = async (
             )
         ) AS has_active_subscription
       ) sub ON true
-    `,
-    [
-      from.id,
-      from.username ?? null,
-      from.first_name ?? null,
-      from.last_name ?? null,
-    ],
-  );
+    `;
+
+const mapAuthRow = (row: AuthQueryRow): AuthState => {
+  const telegramId = parseNumericId(row.tg_id);
+  const executor = buildExecutorState(row);
+  const role = normaliseRole(row.role);
+
+  return {
+    user: {
+      telegramId,
+      username: normaliseString(row.username),
+      firstName: normaliseString(row.first_name),
+      lastName: normaliseString(row.last_name),
+      phone: normaliseString(row.phone),
+      role,
+      isVerified: Boolean(row.is_verified),
+      isBlocked: Boolean(row.is_blocked),
+      citySelected: isAppCity(row.city_selected)
+        ? row.city_selected
+        : undefined,
+    },
+    executor,
+    isModerator: role === 'moderator',
+  } satisfies AuthState;
+};
+
+const loadAuthState = async (
+  from: NonNullable<BotContext['from']>,
+): Promise<AuthState> => {
+  const includeCitySelected = await hasUsersCitySelectedColumn();
+  const authQuery = buildAuthQuery(includeCitySelected);
+
+  const { rows } = await pool.query<AuthQueryRow>(authQuery, [
+    from.id,
+    from.username ?? null,
+    from.first_name ?? null,
+    from.last_name ?? null,
+  ]);
 
   const [row] = rows;
   if (!row) {
