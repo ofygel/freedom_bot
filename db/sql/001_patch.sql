@@ -55,7 +55,12 @@ BEGIN
 END
 $$;
 
-CREATE TYPE IF NOT EXISTS user_role AS ENUM ('client', 'courier', 'driver', 'moderator');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+    CREATE TYPE user_role AS ENUM ('client', 'courier', 'driver', 'moderator');
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -144,7 +149,12 @@ BEGIN
 END
 $$;
 
-CREATE TYPE IF NOT EXISTS order_kind AS ENUM ('taxi', 'delivery');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_kind') THEN
+    CREATE TYPE order_kind AS ENUM ('taxi', 'delivery');
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -240,7 +250,12 @@ BEGIN
 END
 $$;
 
-CREATE TYPE IF NOT EXISTS order_status AS ENUM ('open', 'claimed', 'cancelled', 'done');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
+    CREATE TYPE order_status AS ENUM ('open', 'claimed', 'cancelled', 'done');
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -329,7 +344,12 @@ BEGIN
 END
 $$;
 
-CREATE TYPE IF NOT EXISTS verification_role AS ENUM ('courier', 'driver');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_role') THEN
+    CREATE TYPE verification_role AS ENUM ('courier', 'driver');
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -425,7 +445,12 @@ BEGIN
 END
 $$;
 
-CREATE TYPE IF NOT EXISTS verification_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_status') THEN
+    CREATE TYPE verification_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -526,7 +551,12 @@ BEGIN
 END
 $$;
 
-CREATE TYPE IF NOT EXISTS subscription_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status') THEN
+    CREATE TYPE subscription_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -627,7 +657,12 @@ BEGIN
 END
 $$;
 
-CREATE TYPE IF NOT EXISTS payment_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'payment_status') THEN
+    CREATE TYPE payment_status AS ENUM ('pending', 'active', 'rejected', 'expired');
+  END IF;
+END $$;
 
 DO $$
 BEGIN
@@ -739,11 +774,10 @@ BEGIN
             ) THEN
                 EXECUTE 'CREATE SEQUENCE users_id_seq';
             END IF;
-            EXECUTE 'ALTER SEQUENCE users_id_seq OWNED BY users.id';
             EXECUTE 'ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval(''users_id_seq'')';
             seq_name := 'users_id_seq';
         ELSE
-            EXECUTE format('ALTER SEQUENCE %s OWNED BY users.id', seq_name);
+            
             EXECUTE format('ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval(''%s'')', seq_name);
         END IF;
 
@@ -752,7 +786,7 @@ BEGIN
         WHERE id IS NULL;
 
         EXECUTE format(
-            'SELECT setval(''%s'', COALESCE(MAX(id), 0), true) FROM users',
+            'SELECT setval(''%s'', GREATEST(COALESCE(MAX(id), 1), 1), true) FROM users',
             seq_name
         );
 
@@ -929,11 +963,11 @@ BEGIN
             ) THEN
                 EXECUTE 'CREATE SEQUENCE channels_id_seq';
             END IF;
-            EXECUTE 'ALTER SEQUENCE channels_id_seq OWNED BY channels.id';
+            
             EXECUTE 'ALTER TABLE channels ALTER COLUMN id SET DEFAULT nextval(''channels_id_seq'')';
             seq_name := 'channels_id_seq';
         ELSE
-            EXECUTE format('ALTER SEQUENCE %s OWNED BY channels.id', seq_name);
+            
             EXECUTE format('ALTER TABLE channels ALTER COLUMN id SET DEFAULT nextval(''%s'')', seq_name);
         END IF;
 
@@ -2375,9 +2409,8 @@ CREATE INDEX IF NOT EXISTS idx_callback_map_expires_at ON callback_map(expires_a
 CREATE INDEX IF NOT EXISTS idx_support_threads_status ON support_threads(status);
 CREATE INDEX IF NOT EXISTS idx_support_threads_moderator_message ON support_threads(moderator_chat_id, moderator_message_id);
 
--- ---------------------------------------------------------------------------
--- Seed the singleton channels row.
--- ---------------------------------------------------------------------------
-INSERT INTO channels (id)
-VALUES (1)
-ON CONFLICT (id) DO NOTHING;
+-- Сначала разрешаем вставку вручную:
+ALTER TABLE channels ALTER COLUMN id DROP IDENTITY IF EXISTS;
+
+-- Затем добавляем нужную строку:
+INSERT INTO channels (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
