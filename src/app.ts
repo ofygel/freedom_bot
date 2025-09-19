@@ -72,6 +72,14 @@ registerJoinRequests(app);
 let gracefulShutdownConfigured = false;
 let cleanupStarted = false;
 
+type CleanupTask = () => Promise<void> | void;
+
+const cleanupTasks: CleanupTask[] = [];
+
+export const registerCleanupTask = (task: CleanupTask): void => {
+  cleanupTasks.push(task);
+};
+
 export const isShutdownInProgress = (): boolean => cleanupStarted;
 
 const botAlreadyStoppedPatterns = [
@@ -114,6 +122,16 @@ export const setupGracefulShutdown = (bot: Telegraf<BotContext>): void => {
               throw error;
             }
           }
+
+          for (const task of cleanupTasks) {
+            await Promise.resolve()
+              .then(() => task())
+              .catch((error) => {
+                logger.error({ err: error }, 'Cleanup task failed');
+                throw error;
+              });
+          }
+
           await pool.end();
           logger.info('Shutdown cleanup completed, exiting process');
           process.exit(0);

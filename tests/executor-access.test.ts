@@ -1,3 +1,5 @@
+import './helpers/setup-env';
+
 import assert from 'node:assert/strict';
 import { afterEach, before, beforeEach, describe, it } from 'node:test';
 
