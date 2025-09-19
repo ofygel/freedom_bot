@@ -2,6 +2,7 @@ import type { MiddlewareFn } from 'telegraf';
 
 import { logger } from '../../config';
 import { pool } from '../../db';
+import { isAppCity } from '../../domain/cities';
 import {
   EXECUTOR_ROLES,
   type AuthExecutorState,
@@ -25,6 +26,7 @@ interface AuthQueryRow {
   courier_verified: boolean | null;
   driver_verified: boolean | null;
   has_active_subscription: boolean | null;
+  city_selected: string | null;
 }
 
 const parseNumericId = (value: string | number): number => {
@@ -92,6 +94,9 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
       role,
       isVerified: Boolean(row.is_verified),
       isBlocked: Boolean(row.is_blocked),
+      citySelected: isAppCity(row.city_selected)
+        ? row.city_selected
+        : undefined,
     },
     executor,
     isModerator: role === 'moderator',
@@ -123,6 +128,7 @@ const loadAuthState = async (
         u.role,
         u.is_verified,
         u.is_blocked,
+        u.city_selected,
         COALESCE(cv.is_verified, false) AS courier_verified,
         COALESCE(dv.is_verified, false) AS driver_verified,
         COALESCE(sub.has_active_subscription, false) AS has_active_subscription
@@ -190,6 +196,9 @@ const applyAuthState = (ctx: BotContext, authState: AuthState): void => {
   };
   if (authState.user.phone && !ctx.session.phoneNumber) {
     ctx.session.phoneNumber = authState.user.phone;
+  }
+  if (authState.user.citySelected && !ctx.session.city) {
+    ctx.session.city = authState.user.citySelected;
   }
 };
 

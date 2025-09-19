@@ -5,6 +5,7 @@ import { getChannelBinding } from './bindings';
 import { logger } from '../../config';
 import { withTx } from '../../db/client';
 import { formatEtaMinutes } from '../services/pricing';
+import { CITY_LABEL } from '../../domain/cities';
 import {
   lockOrderById,
   setOrderChannelMessageId,
@@ -14,6 +15,7 @@ import {
 } from '../../db/orders';
 import type { OrderKind, OrderRecord, OrderWithExecutor } from '../../types';
 import type { BotContext, UserRole } from '../types';
+import type { AppCity } from '../../domain/cities';
 import { buildOrderLocationsKeyboard } from '../keyboards/orders';
 import { buildInlineKeyboard, mergeInlineKeyboards } from '../keyboards/common';
 import { sendClientMenuToChat } from '../../ui/clientMenu';
@@ -55,6 +57,7 @@ const formatPrice = (amount: number, currency: string): string =>
 const buildOrderBaseLines = (order: OrderRecord): string[] => [
   `🆕 Новый заказ (${formatOrderType(order.kind)})`,
   `#${order.shortId}`,
+  `🏙️ ${CITY_LABEL[order.city]}`,
   '',
   `📍 Подача: ${order.pickup.address}`,
   `🎯 Назначение: ${order.dropoff.address}`,
@@ -104,7 +107,7 @@ interface OrderDirectMessage {
 
 const buildOrderDirectMessage = (order: OrderRecord): OrderDirectMessage => {
   const baseMessage = buildOrderDetailsMessage(order);
-  const locationsKeyboard = buildOrderLocationsKeyboard(order.pickup, order.dropoff);
+  const locationsKeyboard = buildOrderLocationsKeyboard(order.city, order.pickup, order.dropoff);
   const actionsKeyboard = buildInlineKeyboard([
     [
       { label: '✅ Завершить заказ', action: `${COMPLETE_ACTION_PREFIX}:${order.id}` },
@@ -393,7 +396,7 @@ const buildAlreadyProcessedResponse = (state: OrderChannelState): string => {
 };
 
 const buildActionKeyboard = (order: OrderRecord): InlineKeyboardMarkup => {
-  const locationsKeyboard = buildOrderLocationsKeyboard(order.pickup, order.dropoff);
+  const locationsKeyboard = buildOrderLocationsKeyboard(order.city, order.pickup, order.dropoff);
   const decisionsKeyboard = buildInlineKeyboard([
     [{ label: '✅ Беру заказ', action: `${ACCEPT_ACTION_PREFIX}:${order.id}` }],
     [{ label: '❌ Недоступен', action: `${DECLINE_ACTION_PREFIX}:${order.id}` }],
@@ -471,11 +474,13 @@ type OrderActionOutcome =
   | { outcome: 'claimed'; order: OrderRecord }
   | { outcome: 'dismissed'; order: OrderRecord }
   | { outcome: 'already_dismissed' }
-  | { outcome: 'limit_exceeded' };
+  | { outcome: 'limit_exceeded' }
+  | { outcome: 'city_mismatch'; order: OrderRecord };
 
 interface OrderActionActor {
   id?: number;
   role?: UserRole;
+  city?: AppCity;
 }
 
 type OrderReleaseOutcome =
@@ -544,7 +549,16 @@ const processOrderAction = async (
           }
         }
 
-        const updated = await tryClaimOrder(client, orderId, actorId);
+        const actorCity = actor.city;
+        if (!actorCity) {
+          throw new Error('Missing executor city for order claim');
+        }
+
+        if (order.city !== actorCity) {
+          return { outcome: 'city_mismatch', order } as const;
+        }
+
+        const updated = await tryClaimOrder(client, orderId, actorId, actorCity);
         if (!updated) {
           return { outcome: 'already_processed', order } as const;
         }
@@ -651,6 +665,7 @@ const handleOrderDecision = async (
   const messageId = message.message_id;
   const actorId = ctx.from?.id;
   const actorRole = ctx.auth?.user.role;
+  let actorCity: AppCity | undefined;
 
   if (decision === 'decline' && typeof actorId !== 'number') {
     await ctx.answerCbQuery('Не удалось определить пользователя.');
@@ -662,11 +677,22 @@ const handleOrderDecision = async (
     return;
   }
 
+  if (decision === 'accept') {
+    actorCity = ctx.auth?.user.citySelected;
+    if (!actorCity) {
+      await ctx.answerCbQuery('Сначала выберите город командой /city в личном чате с ботом.', {
+        show_alert: true,
+      });
+      return;
+    }
+  }
+
   let result: OrderActionOutcome;
   try {
     result = await processOrderAction(orderId, decision, {
       id: actorId,
       role: actorRole,
+      city: actorCity,
     });
   } catch (error) {
     logger.error({ err: error, orderId }, 'Failed to apply order channel decision');
@@ -696,6 +722,11 @@ const handleOrderDecision = async (
       await ctx.answerCbQuery('У вас уже есть активный заказ. Сначала завершите его.', {
         show_alert: true,
       });
+      return;
+    }
+    case 'city_mismatch': {
+      await ensureMessageReflectsState(ctx.telegram, state);
+      await ctx.answerCbQuery('⚠️ Заказ не из вашего города.', { show_alert: true });
       return;
     }
     case 'claimed': {
@@ -787,7 +818,11 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
       }
 
       const baseMessage = buildOrderDetailsMessage(result.order);
-      const locationKeyboard = buildOrderLocationsKeyboard(result.order.pickup, result.order.dropoff);
+      const locationKeyboard = buildOrderLocationsKeyboard(
+        result.order.city,
+        result.order.pickup,
+        result.order.dropoff,
+      );
 
       let statusLine = '🚫 Заказ отменён и возвращён в канал.';
       let answerText = 'Заказ отменён и опубликован в канале.';
@@ -885,7 +920,11 @@ const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<
       return;
     case 'completed': {
       const baseMessage = buildOrderDetailsMessage(result.order);
-      const locationKeyboard = buildOrderLocationsKeyboard(result.order.pickup, result.order.dropoff);
+      const locationKeyboard = buildOrderLocationsKeyboard(
+        result.order.city,
+        result.order.pickup,
+        result.order.dropoff,
+      );
       const statusLine = '✅ Заказ завершён.';
 
       try {

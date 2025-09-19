@@ -46,7 +46,7 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
     }
   }
 
-  await setChatCommands(ctx.telegram, ctx.chat.id, EXECUTOR_COMMANDS);
+  await setChatCommands(ctx.telegram, ctx.chat.id, EXECUTOR_COMMANDS, { showMenuButton: true });
 
   await hideClientMenu(ctx, 'Переключаемся в режим исполнителя…');
   await showExecutorMenu(ctx);

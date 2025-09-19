@@ -1,3 +1,5 @@
+import type { AppCity } from '../domain/cities';
+
 export type OrderKind = 'taxi' | 'delivery';
 
 export type OrderStatus = 'open' | 'claimed' | 'cancelled' | 'done';
@@ -29,6 +31,7 @@ export interface OrderRecord {
   shortId: string;
   kind: OrderKind;
   status: OrderStatus;
+  city: AppCity;
   clientId?: number;
   clientPhone?: string;
   customerName?: string;
@@ -50,6 +53,7 @@ export interface OrderWithExecutor extends OrderRecord {
 
 export interface OrderInsertInput {
   kind: OrderKind;
+  city: AppCity;
   clientId?: number;
   clientPhone?: string;
   customerName?: string;

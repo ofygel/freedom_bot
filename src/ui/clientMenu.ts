@@ -9,6 +9,7 @@ export const CLIENT_MENU = {
   delivery: '📦 Доставка',
   orders: '🧾 Мои заказы',
   support: '🆘 Поддержка',
+  city: '🏙️ Сменить город',
   switchRole: '👥 Сменить роль',
   refresh: '🔄 Обновить меню',
 } as const;
@@ -17,7 +18,8 @@ const buildKeyboard = () =>
   Markup.keyboard([
     [CLIENT_MENU.taxi, CLIENT_MENU.delivery],
     [CLIENT_MENU.orders],
-    [CLIENT_MENU.support, CLIENT_MENU.switchRole],
+    [CLIENT_MENU.support, CLIENT_MENU.city],
+    [CLIENT_MENU.switchRole],
     [CLIENT_MENU.refresh],
   ])
     .resize()
@@ -70,14 +72,18 @@ export const hideClientMenu = async (
 export const isClientChat = (ctx: BotContext, role?: UserRole): boolean =>
   ctx.chat?.type === 'private' && (role === 'client' || role === undefined);
 
-export const clientMenuText = () =>
+export const clientMenuText = (city?: string) =>
   [
     '🎯 Меню клиента',
-    '',
+    city ? `Текущий город: ${city}.` : undefined,
+    city ? '' : undefined,
     'Выберите, что хотите оформить:',
     '• 🚕 Такси — подача машины и поездка по указанному адресу.',
     '• 📦 Доставка — курьер заберёт и доставит вашу посылку.',
     '• 🧾 Мои заказы — проверка статуса и управление оформленными заказами.',
     '• 🆘 Поддержка — напишите нам, если нужна помощь.',
+    '• 🏙️ Сменить город — обновите географию заказов.',
     '• 👥 Сменить роль — переключитесь на режим исполнителя или клиента.',
-  ].join('\n');
+  ]
+    .filter((line): line is string => typeof line === 'string')
+    .join('\n');

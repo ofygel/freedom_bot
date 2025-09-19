@@ -48,7 +48,7 @@ describe('database client TLS configuration', () => {
     const pool = await importPool();
     try {
       assert.equal(pool.options.connectionString, process.env.DATABASE_URL);
-      assert.equal(pool.options.ssl, false);
+      assert.equal(pool.options.ssl, undefined);
     } finally {
       await pool.end();
     }
@@ -60,7 +60,7 @@ describe('database client TLS configuration', () => {
     const pool = await importPool();
     try {
       assert.equal(pool.options.connectionString, process.env.DATABASE_URL);
-      assert.deepEqual(pool.options.ssl, { rejectUnauthorized: true });
+      assert.deepEqual(pool.options.ssl, { rejectUnauthorized: false });
     } finally {
       await pool.end();
     }

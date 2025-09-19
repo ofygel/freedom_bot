@@ -9,11 +9,13 @@ import {
   isClientChat,
   sendClientMenu,
 } from '../../../ui/clientMenu';
+import { CITY_LABEL } from '../../../domain/cities';
 import { CLIENT_COMMANDS } from '../../commands/sets';
 import { setChatCommands } from '../../services/commands';
 import type { BotContext } from '../../types';
 import { presentRoleSelection } from '../../commands/start';
 import { promptClientSupport } from './support';
+import { askCity, getCityFromContext } from '../common/citySelect';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
@@ -23,7 +25,7 @@ const applyClientCommands = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
-  await setChatCommands(ctx.telegram, ctx.chat.id, CLIENT_COMMANDS);
+  await setChatCommands(ctx.telegram, ctx.chat.id, CLIENT_COMMANDS, { showMenuButton: true });
 };
 
 const removeRoleSelectionMessage = async (ctx: BotContext): Promise<void> => {
@@ -109,7 +111,14 @@ const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
     return;
   }
 
-  await sendClientMenu(ctx, prompt ?? clientMenuText());
+  const city = getCityFromContext(ctx);
+  if (!city) {
+    await askCity(ctx, 'Укажите город, чтобы продолжить.');
+    return;
+  }
+
+  const cityLabel = CITY_LABEL[city];
+  await sendClientMenu(ctx, prompt ?? clientMenuText(cityLabel));
 };
 
 export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
@@ -191,6 +200,14 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     await promptClientSupport(ctx);
+  });
+
+  bot.hears(CLIENT_MENU.city, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      return;
+    }
+
+    await askCity(ctx, 'Выберите город:');
   });
 
   bot.hears(CLIENT_MENU.switchRole, async (ctx) => {

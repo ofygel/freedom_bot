@@ -35,6 +35,9 @@ import { ui } from '../../ui';
 import { CLIENT_MENU, isClientChat, sendClientMenu } from '../../../ui/clientMenu';
 import { CLIENT_MENU_ACTION } from './menu';
 import { CLIENT_TAXI_ORDER_AGAIN_ACTION } from './orderActions';
+import { ensureCitySelected } from '../common/citySelect';
+import type { AppCity } from '../../../domain/cities';
+import { dgBase } from '../../../utils/2gis';
 
 export const START_TAXI_ORDER_ACTION = 'client:order:taxi:start';
 const CONFIRM_TAXI_ORDER_ACTION = 'client:order:taxi:confirm';
@@ -75,10 +78,8 @@ const ADDRESS_INPUT_HINTS = [
 const buildAddressPrompt = (lines: string[]): string =>
   [...lines, ...ADDRESS_INPUT_HINTS].join('\n');
 
-const TWO_GIS_SHORTCUT_URL = 'https://2gis.kz/almaty';
-
-const buildTwoGisShortcutKeyboard = (): InlineKeyboardMarkup =>
-  buildUrlKeyboard('🗺 Открыть 2ГИС', TWO_GIS_SHORTCUT_URL);
+const buildTwoGisShortcutKeyboard = (city: AppCity): InlineKeyboardMarkup =>
+  buildUrlKeyboard('🗺 Открыть 2ГИС', dgBase(city));
 
 const remindManualAddressAccuracy = async (ctx: BotContext): Promise<void> => {
   await ui.step(ctx, {
@@ -96,15 +97,19 @@ const remindConfirmationActions = async (ctx: BotContext): Promise<void> => {
   });
 };
 
-const requestPickupAddress = async (ctx: BotContext): Promise<void> => {
+const requestPickupAddress = async (ctx: BotContext, city: AppCity): Promise<void> => {
   await updateTaxiStep(
     ctx,
     buildAddressPrompt(['Отправьте точку подачи такси одним из способов:']),
-    buildTwoGisShortcutKeyboard(),
+    buildTwoGisShortcutKeyboard(city),
   );
 };
 
-const requestDropoffAddress = async (ctx: BotContext, pickup: CompletedOrderDraft['pickup']): Promise<void> => {
+const requestDropoffAddress = async (
+  ctx: BotContext,
+  city: AppCity,
+  pickup: CompletedOrderDraft['pickup'],
+): Promise<void> => {
   await updateTaxiStep(
     ctx,
     buildAddressPrompt([
@@ -112,7 +117,7 @@ const requestDropoffAddress = async (ctx: BotContext, pickup: CompletedOrderDraf
       '',
       'Теперь отправьте пункт назначения одним из способов:',
     ]),
-    buildTwoGisShortcutKeyboard(),
+    buildTwoGisShortcutKeyboard(city),
   );
 };
 
@@ -132,7 +137,14 @@ const applyPickupDetails = async (
   draft.pickup = pickup;
   draft.stage = 'collectingDropoff';
 
-  await requestDropoffAddress(ctx, pickup);
+  const city = ctx.session.city;
+  if (!city) {
+    logger.warn('Taxi order pickup collected without selected city');
+    draft.stage = 'idle';
+    return;
+  }
+
+  await requestDropoffAddress(ctx, city, pickup);
 };
 
 const applyDropoffDetails = async (
@@ -151,8 +163,15 @@ const applyDropoffDetails = async (
   draft.price = estimateTaxiPrice(draft.pickup, dropoff);
   draft.stage = 'awaitingConfirmation';
 
+  const city = ctx.session.city;
+  if (!city) {
+    logger.warn('Taxi order draft missing city when confirming dropoff');
+    draft.stage = 'idle';
+    return;
+  }
+
   if (isOrderDraftComplete(draft)) {
-    await showConfirmation(ctx, draft);
+    await showConfirmation(ctx, draft, city);
   }
 };
 
@@ -175,7 +194,11 @@ const buildConfirmationKeyboard = () =>
 const buildOrderAgainKeyboard = () =>
   buildInlineKeyboard([[{ label: 'Заказать ещё', action: CLIENT_TAXI_ORDER_AGAIN_ACTION }]]);
 
-const showConfirmation = async (ctx: BotContext, draft: CompletedOrderDraft): Promise<void> => {
+const showConfirmation = async (
+  ctx: BotContext,
+  draft: CompletedOrderDraft,
+  city: AppCity,
+): Promise<void> => {
   const summary = buildOrderSummary(draft, {
     title: '🚕 Предварительный заказ такси',
     pickupLabel: '📍 Подача',
@@ -184,7 +207,7 @@ const showConfirmation = async (ctx: BotContext, draft: CompletedOrderDraft): Pr
     priceLabel: '💰 Оценка стоимости',
   });
 
-  const locationsKeyboard = buildOrderLocationsKeyboard(draft.pickup, draft.dropoff);
+  const locationsKeyboard = buildOrderLocationsKeyboard(city, draft.pickup, draft.dropoff);
   const confirmationKeyboard = buildConfirmationKeyboard();
   const keyboard = mergeInlineKeyboards(locationsKeyboard, confirmationKeyboard);
   const result = await updateTaxiStep(ctx, summary, keyboard);
@@ -293,9 +316,22 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
 
   draft.stage = 'creatingOrder';
 
+  const city = ctx.session.city;
+  if (!city) {
+    logger.error('Attempted to confirm taxi order without selected city');
+    draft.stage = 'idle';
+    await ui.step(ctx, {
+      id: TAXI_CONFIRM_ERROR_STEP_ID,
+      text: 'Не выбран город. Выберите город через меню и начните оформление заново.',
+      cleanup: true,
+    });
+    return;
+  }
+
   try {
     const order = await createOrder({
       kind: 'taxi',
+      city,
       clientId: ctx.auth.user.telegramId,
       clientPhone: ctx.session.phoneNumber,
       customerName: buildCustomerName(ctx),
@@ -421,12 +457,20 @@ const handleStart = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
+  const city = await ensureCitySelected(ctx, 'Выберите город, чтобы оформить заказ.');
+  if (!city) {
+    if (ctx.callbackQuery) {
+      await ctx.answerCbQuery('Сначала выберите город.');
+    }
+    return;
+  }
+
   const draft = getDraft(ctx);
   resetClientOrderDraft(draft);
   draft.stage = 'collectingPickup';
   resetClientOrderDraft(ctx.session.client.delivery);
 
-  await requestPickupAddress(ctx);
+  await requestPickupAddress(ctx, city);
 };
 
 const handleConfirmationAction = async (ctx: BotContext): Promise<void> => {
@@ -479,12 +523,17 @@ export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
+    const city = await ensureCitySelected(ctx, 'Выберите город, чтобы оформить заказ.');
+    if (!city) {
+      return;
+    }
+
     const draft = getDraft(ctx);
     resetClientOrderDraft(draft);
     draft.stage = 'collectingPickup';
     resetClientOrderDraft(ctx.session.client.delivery);
 
-    await requestPickupAddress(ctx);
+    await requestPickupAddress(ctx, city);
   });
 
   bot.on('location', async (ctx, next) => {

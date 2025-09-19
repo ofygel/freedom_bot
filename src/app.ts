@@ -2,6 +2,7 @@ import { Telegraf } from 'telegraf';
 
 import { registerBindCommand } from './bot/commands/bind';
 import { registerStartCommand } from './bot/commands/start';
+import { registerCityCommand } from './bot/commands/city';
 import { registerDeliveryOrderFlow } from './bot/flows/client/deliveryOrderFlow';
 import { registerClientMenu } from './bot/flows/client/menu';
 import { registerClientSupport } from './bot/flows/client/support';
@@ -49,6 +50,7 @@ app.use(auth());
 
 registerStartCommand(app);
 registerBindCommand(app);
+registerCityCommand(app);
 registerClientMenu(app);
 registerClientOrdersFlow(app);
 registerTaxiOrderFlow(app);

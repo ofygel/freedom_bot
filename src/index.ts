@@ -48,6 +48,26 @@ const isGracefulShutdownError = (error: unknown): boolean => {
   return matchesGracefulShutdownMessage(error.message);
 };
 
+const isPollingConflictError = (error: unknown): boolean => {
+  if (!error) {
+    return false;
+  }
+
+  if (typeof error === 'string') {
+    return error.includes('409') && error.includes('getUpdates');
+  }
+
+  if (typeof error === 'object') {
+    const candidate = error as { message?: unknown };
+    if (typeof candidate.message === 'string') {
+      const message = candidate.message;
+      return message.includes('409') && message.toLowerCase().includes('getupdates');
+    }
+  }
+
+  return false;
+};
+
 const start = async (): Promise<void> => {
   try {
     await initialiseAppState();
@@ -59,6 +79,9 @@ const start = async (): Promise<void> => {
       logger.info({ err: error }, 'Bot stopped gracefully');
     } else if (isGracefulShutdownError(error)) {
       logger.info({ err: error }, 'Bot stopped gracefully');
+    } else if (isPollingConflictError(error)) {
+      logger.error({ err: error }, 'Another instance is already polling. Exiting.');
+      process.exit(1);
     } else {
       logger.fatal({ err: error }, 'Failed to start bot or jobs');
       process.exitCode = 1;

@@ -10,6 +10,8 @@ import type {
   OrderStatus,
   OrderWithExecutor,
 } from '../types';
+import { isAppCity } from '../domain/cities';
+import type { AppCity } from '../domain/cities';
 import { estimateEtaMinutes } from '../services/pricing';
 
 interface OrderRow {
@@ -17,6 +19,7 @@ interface OrderRow {
   short_id: string;
   kind: OrderKind;
   status: string;
+  city: string | null;
   client_id: string | number | null;
   client_phone: string | null;
   customer_name: string | null;
@@ -81,35 +84,40 @@ const mapPrice = (amount: number, currency: string, distance: number | string): 
   } satisfies OrderPriceDetails;
 };
 
-const mapOrderRow = (row: OrderRow): OrderRecord => ({
-  id: row.id,
-  shortId: row.short_id,
-  kind: row.kind,
-  status: row.status as OrderRecord['status'],
-  clientId: parseNumeric(row.client_id),
-  clientPhone: row.client_phone ?? undefined,
-  customerName: row.customer_name ?? undefined,
-  customerUsername: row.customer_username ?? undefined,
-  clientComment: row.client_comment ?? undefined,
-  claimedBy: parseNumeric(row.claimed_by),
-  claimedAt:
-    row.claimed_at instanceof Date
-      ? row.claimed_at
-      : row.claimed_at
-      ? new Date(row.claimed_at)
-      : undefined,
-  completedAt:
-    row.completed_at instanceof Date
-      ? row.completed_at
-      : row.completed_at
-      ? new Date(row.completed_at)
-      : undefined,
-  pickup: mapLocation(row.pickup_query, row.pickup_address, row.pickup_lat, row.pickup_lon),
-  dropoff: mapLocation(row.dropoff_query, row.dropoff_address, row.dropoff_lat, row.dropoff_lon),
-  price: mapPrice(row.price_amount, row.price_currency, row.distance_km),
-  channelMessageId: parseNumeric(row.channel_message_id),
-  createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
-});
+const mapOrderRow = (row: OrderRow): OrderRecord => {
+  const city: AppCity = isAppCity(row.city) ? row.city : 'almaty';
+
+  return {
+    id: row.id,
+    shortId: row.short_id,
+    kind: row.kind,
+    status: row.status as OrderRecord['status'],
+    city,
+    clientId: parseNumeric(row.client_id),
+    clientPhone: row.client_phone ?? undefined,
+    customerName: row.customer_name ?? undefined,
+    customerUsername: row.customer_username ?? undefined,
+    clientComment: row.client_comment ?? undefined,
+    claimedBy: parseNumeric(row.claimed_by),
+    claimedAt:
+      row.claimed_at instanceof Date
+        ? row.claimed_at
+        : row.claimed_at
+        ? new Date(row.claimed_at)
+        : undefined,
+    completedAt:
+      row.completed_at instanceof Date
+        ? row.completed_at
+        : row.completed_at
+        ? new Date(row.completed_at)
+        : undefined,
+    pickup: mapLocation(row.pickup_query, row.pickup_address, row.pickup_lat, row.pickup_lon),
+    dropoff: mapLocation(row.dropoff_query, row.dropoff_address, row.dropoff_lat, row.dropoff_lon),
+    price: mapPrice(row.price_amount, row.price_currency, row.distance_km),
+    channelMessageId: parseNumeric(row.channel_message_id),
+    createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
+  } satisfies OrderRecord;
+};
 
 const mapOrderWithExecutorRow = (row: OrderWithExecutorRow): OrderWithExecutor => {
   const order = mapOrderRow(row);
@@ -151,6 +159,7 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         dropoff_address,
         dropoff_lat,
         dropoff_lon,
+        city,
         price_amount,
         price_currency,
         distance_km,
@@ -178,6 +187,7 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         $15,
         $16,
         $17,
+        $18,
         NULL,
         NULL,
         NULL
@@ -199,6 +209,7 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
       input.dropoff.address,
       input.dropoff.latitude,
       input.dropoff.longitude,
+      input.city,
       input.price.amount,
       input.price.currency,
       input.price.distanceKm,
@@ -251,6 +262,7 @@ export const tryClaimOrder = async (
   client: PoolClient,
   id: number,
   claimedBy: number,
+  city: AppCity,
 ): Promise<OrderRecord | null> => {
   const { rows } = await client.query<OrderRow>(
     `
@@ -258,10 +270,10 @@ export const tryClaimOrder = async (
       SET status = 'claimed',
           claimed_by = $2,
           claimed_at = now()
-      WHERE id = $1 AND status = 'open'
+      WHERE id = $1 AND status = 'open' AND city = $3
       RETURNING *
     `,
-    [id, claimedBy],
+    [id, claimedBy, city],
   );
 
   const [row] = rows;

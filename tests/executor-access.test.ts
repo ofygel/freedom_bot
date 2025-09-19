@@ -42,10 +42,13 @@ before(async () => {
   ({ ui: uiHelper } = await import('../src/bot/ui'));
 });
 
+const DEFAULT_CITY = 'almaty' as const;
+
 const createSessionState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   awaitingPhone: false,
+  city: DEFAULT_CITY,
   executor: {
     role: 'courier',
     verification: {
@@ -80,6 +83,7 @@ const createAuthState = (telegramId = 700): BotContext['auth'] => ({
     role: 'courier',
     isVerified: false,
     isBlocked: false,
+    citySelected: DEFAULT_CITY,
   },
   executor: {
     verifiedRoles: { courier: false, driver: false },

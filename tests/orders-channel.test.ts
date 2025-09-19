@@ -38,6 +38,7 @@ describe('handleClientOrderCancellation', () => {
     shortId: 'A1B2',
     kind: 'taxi',
     status: 'cancelled',
+    city: 'almaty',
     clientId: 555,
     pickup: {
       query: 'start',
