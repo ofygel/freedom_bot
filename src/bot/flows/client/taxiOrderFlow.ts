@@ -124,7 +124,7 @@ const requestDropoffAddress = async (
 const handleGeocodingFailure = async (ctx: BotContext): Promise<void> => {
   await ui.step(ctx, {
     id: TAXI_GEOCODE_ERROR_STEP_ID,
-    text: 'Не удалось распознать адрес. Пожалуйста, уточните формулировку и попробуйте снова.',
+    text: 'Не удалось распознать адрес. Укажите лучше на карте или через 2ГИС.',
     cleanup: true,
   });
 };
@@ -176,7 +176,7 @@ const applyDropoffDetails = async (
 };
 
 const applyPickupAddress = async (ctx: BotContext, draft: ClientOrderDraftState, text: string) => {
-  const pickup = await geocodeOrderLocation(text);
+  const pickup = await geocodeOrderLocation(text, { city: ctx.session.city });
   if (!pickup) {
     await handleGeocodingFailure(ctx);
     return;
@@ -219,7 +219,7 @@ const applyDropoffAddress = async (
   draft: ClientOrderDraftState,
   text: string,
 ): Promise<void> => {
-  const dropoff = await geocodeOrderLocation(text);
+  const dropoff = await geocodeOrderLocation(text, { city: ctx.session.city });
   if (!dropoff) {
     await handleGeocodingFailure(ctx);
     return;

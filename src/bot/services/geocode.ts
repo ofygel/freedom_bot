@@ -7,6 +7,7 @@ import {
   type GeocodingResult,
 } from './geocoding';
 import type { OrderLocation } from '../../types';
+import { CITY_LABEL, type AppCity } from '../../domain/cities';
 
 export const toOrderLocation = (result: GeocodingResult): OrderLocation => ({
   query: result.query,
@@ -15,10 +16,16 @@ export const toOrderLocation = (result: GeocodingResult): OrderLocation => ({
   longitude: result.longitude,
 });
 
+export interface GeocodeOrderLocationOptions {
+  city?: AppCity;
+}
+
 export const geocodeOrderLocation = async (
   query: string,
+  options: GeocodeOrderLocationOptions = {},
 ): Promise<OrderLocation | null> => {
-  const result = await geocodeAddress(query);
+  const cityName = options.city ? CITY_LABEL[options.city] : undefined;
+  const result = await geocodeAddress(query, { cityName });
   return result ? toOrderLocation(result) : null;
 };
 
