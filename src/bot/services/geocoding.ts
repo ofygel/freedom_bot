@@ -11,9 +11,13 @@ export interface GeocodingResult {
 const MIN_QUERY_LENGTH = 3;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-const DEFAULT_CITY = config.city.default ?? null;
+const DEFAULT_CITY = config.city.default?.trim() ?? null;
 
 const DEFAULT_CITY_LOWER = DEFAULT_CITY?.toLowerCase() ?? null;
+
+export interface GeocodeAddressOptions {
+  cityName?: string;
+}
 
 interface Coordinates {
   latitude: number;
@@ -27,15 +31,26 @@ const normaliseQuery = (query: string): string =>
     .replace(/,+/gu, ',')
     .replace(/\s*,\s*/gu, ', ');
 
-const buildCityAwareQuery = (query: string): string => {
+const buildCityAwareQuery = (query: string, cityName?: string | null): string => {
   const normalised = normaliseQuery(query);
 
-  if (!DEFAULT_CITY_LOWER || normalised.length === 0) {
+  if (normalised.length === 0) {
     return normalised;
   }
 
   const lower = normalised.toLowerCase();
-  if (lower.includes(DEFAULT_CITY_LOWER)) {
+
+  const trimmedCity = cityName?.trim();
+  if (trimmedCity) {
+    const explicitCityLower = trimmedCity.toLowerCase();
+    if (lower.includes(explicitCityLower)) {
+      return normalised;
+    }
+
+    return normaliseQuery(`${trimmedCity}, ${normalised}`);
+  }
+
+  if (!DEFAULT_CITY || !DEFAULT_CITY_LOWER || lower.includes(DEFAULT_CITY_LOWER)) {
     return normalised;
   }
 
@@ -1012,6 +1027,7 @@ export const resolveCoordinates = async (
 
 export const geocodeAddress = async (
   query: string,
+  options: GeocodeAddressOptions = {},
 ): Promise<GeocodingResult | null> => {
   if (!query) {
     return null;
@@ -1026,7 +1042,8 @@ export const geocodeAddress = async (
   const preferredTwoGisUrl = extractedUrl && isTwoGisLink(extractedUrl) ? extractedUrl : null;
 
   const normalizedQuery = normaliseQuery(trimmed);
-  const searchQuery = buildCityAwareQuery(normalizedQuery);
+  const cityName = options.cityName?.trim();
+  const searchQuery = buildCityAwareQuery(normalizedQuery, cityName);
 
   const nominatimConfig = getNominatimConfig();
   const twoGisConfig = getTwoGisConfig();
@@ -1102,7 +1119,7 @@ export const geocodeAddress = async (
   if (scrapedTwoGis?.label) {
     const trimmedLabel = scrapedTwoGis.label.trim();
     if (trimmedLabel.length > 0) {
-      const labelSearchQuery = buildCityAwareQuery(trimmedLabel);
+      const labelSearchQuery = buildCityAwareQuery(trimmedLabel, cityName);
       const fallbackResult = await geocodeWithNominatim(labelSearchQuery, normalizedQuery, nominatimConfig);
       if (fallbackResult) {
         return fallbackResult;

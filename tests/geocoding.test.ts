@@ -19,7 +19,7 @@ const setEnv = (key: string, value: string) => {
 let originalFetch: typeof globalThis.fetch;
 
 describe('geocoding 2ГИС firm links', () => {
-  const installSuccessfulFetchMock = (seenUrls: string[]): void => {
+  const installSuccessfulFetchMock = (seenUrls: string[], onRequest?: (url: URL) => void): void => {
     globalThis.fetch = async (input: unknown): Promise<Response> => {
       const url =
         typeof input === 'string'
@@ -29,6 +29,7 @@ describe('geocoding 2ГИС firm links', () => {
           : new URL((input as Request).url);
 
       seenUrls.push(url.toString());
+      onRequest?.(url);
 
       if (url.pathname.includes('/items/byid')) {
         const body = JSON.stringify({
@@ -37,6 +38,24 @@ describe('geocoding 2ГИС firm links', () => {
               {
                 point: { lat: '43.238949', lon: '76.889709' },
                 full_name: 'Test Place, Алматы',
+              },
+            ],
+          },
+        });
+
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+
+      if (url.pathname.includes('/items/geocode')) {
+        const body = JSON.stringify({
+          result: {
+            items: [
+              {
+                point: { lat: '49.804688', lon: '73.109382' },
+                full_name: 'Караганда, проспект Абая 10',
               },
             ],
           },
@@ -129,5 +148,22 @@ describe('geocoding 2ГИС firm links', () => {
   it('resolves firm links with trailing punctuation', async () => {
     const query = `${firmUrl},`;
     await expectTwoGisResolution(query, `${firmUrl}, `);
+  });
+
+  it('includes selected city when resolving manual addresses', async () => {
+    const seenUrls: string[] = [];
+    installSuccessfulFetchMock(seenUrls, (url) => {
+      if (url.pathname.includes('/items/geocode')) {
+        assert.equal(url.searchParams.get('q'), 'Караганда, Проспект Абая 10');
+      }
+    });
+
+    const result = await geocodeAddress('Проспект Абая 10', { cityName: 'Караганда' });
+
+    assert.ok(result, 'expected geocodeAddress to resolve manual address in selected city');
+    assert.equal(result?.query, 'Проспект Абая 10');
+    assert.equal(result?.latitude, 49.804688);
+    assert.equal(result?.longitude, 73.109382);
+    assert.equal(result?.address, 'Караганда, проспект Абая 10');
   });
 });
