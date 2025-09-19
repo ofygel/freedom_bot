@@ -117,7 +117,7 @@ const loadAuthState = async (
           first_name = COALESCE(EXCLUDED.first_name, users.first_name),
           last_name = COALESCE(EXCLUDED.last_name, users.last_name),
           updated_at = now()
-        RETURNING tg_id, username, first_name, last_name, phone, role, is_verified, is_blocked
+        RETURNING tg_id, username, first_name, last_name, phone, role, is_verified, is_blocked, city_selected
       )
       SELECT
         u.tg_id,
