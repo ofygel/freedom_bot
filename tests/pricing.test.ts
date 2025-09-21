@@ -137,7 +137,7 @@ describe('pricing service', () => {
     }
   });
 
-  it('prefers general tariff when provided', async () => {
+  it('uses the general tariff for taxi quotes when provided', async () => {
     const originalEnv = { ...process.env };
     const baseEnv = {
       BOT_TOKEN: originalEnv.BOT_TOKEN ?? 'test-token',
@@ -196,10 +196,13 @@ describe('pricing service', () => {
       const deliveryQuote = service.estimateDeliveryPrice(from, to);
       assert.equal(deliveryQuote.distanceKm, distance);
       assert.equal(deliveryQuote.etaMinutes, eta);
-      assert.equal(deliveryQuote.amount, computeGeneralAmount(distance, eta, generalTariff));
-      assert.notStrictEqual(
+      assert.equal(
         deliveryQuote.amount,
         computeServiceAmount(distance, configWithTariff.pricing.delivery),
+      );
+      assert.notStrictEqual(
+        deliveryQuote.amount,
+        computeGeneralAmount(distance, eta, generalTariff),
       );
     } finally {
       process.env = originalEnv;
