@@ -119,7 +119,7 @@ export interface UiTrackedStepState {
 export interface UiSessionState {
   steps: Record<string, UiTrackedStepState | undefined>;
   homeActions: string[];
-  pendingCityAction?: 'clientMenu';
+  pendingCityAction?: 'clientMenu' | 'executorMenu';
 }
 
 export type SupportRequestStatus = 'idle' | 'awaiting_message';
