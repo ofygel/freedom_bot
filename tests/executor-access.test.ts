@@ -71,7 +71,7 @@ const createSessionState = (): SessionState => ({
     taxi: { stage: 'idle' },
     delivery: { stage: 'idle' },
   },
-  ui: { steps: {}, homeActions: [] },
+  ui: { steps: {}, homeActions: [], pendingCityAction: undefined },
   support: { status: 'idle' },
 });
 
@@ -146,6 +146,37 @@ afterEach(() => {
 });
 
 describe('executor access control', () => {
+  it('prompts to select a city before showing the executor menu', async () => {
+    const { ctx } = createContext();
+    ctx.session.city = undefined;
+    ctx.auth.user.citySelected = undefined;
+
+    const replies: string[] = [];
+    (ctx as { reply: BotContext['reply'] }).reply = (async (text: string) => {
+      replies.push(text);
+      return {
+        message_id: replies.length,
+        chat: { id: ctx.chat!.id },
+        text,
+      };
+    }) as BotContext['reply'];
+
+    await showExecutorMenu(ctx);
+
+    assert.equal(ctx.session.ui.pendingCityAction, 'executorMenu');
+    assert.deepEqual(replies, ['Выберите город, чтобы получить доступ к заказам.']);
+    assert.equal(recordedSteps.length, 0);
+
+    ctx.auth.user.citySelected = DEFAULT_CITY;
+    ctx.session.city = DEFAULT_CITY;
+
+    await showExecutorMenu(ctx);
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be displayed after selecting a city');
+    assert.equal(ctx.session.ui.pendingCityAction, undefined);
+  });
+
   it('blocks subscription start when verification is missing', async () => {
     const { ctx } = createContext();
     ensureExecutorState(ctx);

@@ -15,7 +15,7 @@ import { getExecutorRoleCopy } from './roleCopy';
 import { findSubscriptionPeriodOption } from './subscriptionPlans';
 import { startExecutorVerification } from './verification';
 import { CITY_LABEL } from '../../../domain/cities';
-import { ensureCitySelected } from '../common/citySelect';
+import { CITY_ACTION_PATTERN, ensureCitySelected } from '../common/citySelect';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
@@ -23,6 +23,7 @@ export const EXECUTOR_ORDERS_ACTION = 'executor:orders:link';
 export const EXECUTOR_SUPPORT_ACTION = 'support:contact';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
 const EXECUTOR_MENU_STEP_ID = 'executor:menu:main';
+const EXECUTOR_MENU_CITY_ACTION = 'executorMenu';
 
 const ensurePositiveRequirement = (_value?: number): number => EXECUTOR_VERIFICATION_PHOTO_COUNT;
 
@@ -372,10 +373,15 @@ export const showExecutorMenu = async (
     return;
   }
 
+  const uiState = ctx.session.ui;
+  uiState.pendingCityAction = EXECUTOR_MENU_CITY_ACTION;
+
   const city = await ensureCitySelected(ctx, 'Выберите город, чтобы получить доступ к заказам.');
   if (!city) {
     return;
   }
+
+  uiState.pendingCityAction = undefined;
 
   const state = ensureExecutorState(ctx);
   const access = determineExecutorAccessStatus(ctx, state);
@@ -403,6 +409,20 @@ export const showExecutorMenu = async (
 };
 
 export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
+  bot.action(CITY_ACTION_PATTERN, async (ctx, next) => {
+    if (ctx.session.ui?.pendingCityAction === EXECUTOR_MENU_CITY_ACTION) {
+      ctx.session.ui.pendingCityAction = undefined;
+
+      if (ctx.chat?.type === 'private') {
+        await showExecutorMenu(ctx);
+      }
+    }
+
+    if (typeof next === 'function') {
+      await next();
+    }
+  });
+
   bot.action(EXECUTOR_MENU_ACTION, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
       await ctx.answerCbQuery('Доступно только в личных сообщениях.');
