@@ -660,19 +660,26 @@ const handleCloseAction = async (
   await ctx.answerCbQuery('Обращение закрыто.');
 };
 
+const getContextMessage = (ctx: BotContext): Message | undefined =>
+  (ctx.message as Message | undefined) ??
+  (ctx.channelPost as Message | undefined);
+
 const copyModeratorReplyToUser = async (
   ctx: BotContext,
   state: SupportThreadState,
 ): Promise<boolean> => {
-  const message = ctx.message as Message | undefined;
+  const message = getContextMessage(ctx);
   if (!message) {
     return false;
   }
 
+  const sourceChatId =
+    ctx.chat?.id ?? (message.chat?.id as number | undefined) ?? state.moderatorChatId;
+
   try {
     await ctx.telegram.copyMessage(
       state.userChatId,
-      ctx.chat?.id ?? state.moderatorChatId,
+      sourceChatId,
       message.message_id,
     );
     return true;
@@ -714,8 +721,8 @@ const acknowledgeModeratorReply = async (
 const handleModeratorReplyMessage = async (
   ctx: BotContext,
 ): Promise<boolean> => {
-  const message = ctx.message as Message | undefined;
-  const chatId = ctx.chat?.id;
+  const message = getContextMessage(ctx);
+  const chatId = ctx.chat?.id ?? (message?.chat?.id as number | undefined);
 
   if (!message || chatId === undefined) {
     return false;
@@ -852,12 +859,18 @@ export const registerSupportModerationBridge = (
     await handleCloseAction(ctx, threadId);
   });
 
-  bot.on('message', async (ctx: BotContext, next?: () => Promise<void>) => {
+  const processModeratorReply = async (
+    ctx: BotContext,
+    next?: () => Promise<void>,
+  ) => {
     const handled = await handleModeratorReplyMessage(ctx);
     if (!handled && next) {
       await next();
     }
-  });
+  };
+
+  bot.on('message', processModeratorReply);
+  bot.on('channel_post', processModeratorReply);
 };
 
 const resetSupportState = (): void => {
