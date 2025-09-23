@@ -130,6 +130,8 @@ interface SupportThreadRow {
 
 interface SupportThreadPrompt {
   threadId: string;
+  chatId: number;
+  messageId: number;
   moderatorId?: number;
 }
 
@@ -155,6 +157,26 @@ const threadsById = new Map<string, SupportThreadState>();
 const threadsByModeratorMessage = new Map<string, string>();
 const pendingReplyPrompts = new Map<string, SupportThreadPrompt>();
 const promptsByThread = new Map<string, Set<string>>();
+const promptsByModerator = new Map<string, string>();
+
+const extractTelegramErrorDescription = (error: unknown): string | undefined => {
+  const telegramError = error as {
+    description?: string;
+    message?: string;
+    response?: { description?: string };
+  };
+
+  return (
+    telegramError?.response?.description ??
+    telegramError?.description ??
+    telegramError?.message
+  );
+};
+
+const isInlineKeyboardExpectedError = (error: unknown): boolean => {
+  const description = extractTelegramErrorDescription(error);
+  return Boolean(description && /inline keyboard expected/i.test(description));
+};
 
 const mapThreadRowToState = (row: SupportThreadRow): SupportThreadState | null => {
   const userChatId = parseNumeric(row.user_chat_id);
@@ -196,6 +218,9 @@ const createThreadId = (): string => crypto.randomBytes(8).toString('hex');
 const buildMessageKey = (chatId: number, messageId: number): string =>
   `${chatId.toString(10)}:${messageId.toString(10)}`;
 
+const buildModeratorPromptKey = (chatId: number, moderatorId: number): string =>
+  `${chatId.toString(10)}:${moderatorId.toString(10)}`;
+
 const registerPrompt = (
   threadId: string,
   chatId: number,
@@ -203,7 +228,12 @@ const registerPrompt = (
   moderatorId?: number,
 ): void => {
   const key = buildMessageKey(chatId, messageId);
-  pendingReplyPrompts.set(key, { threadId, moderatorId });
+  pendingReplyPrompts.set(key, { threadId, chatId, messageId, moderatorId });
+
+  if (moderatorId !== undefined) {
+    const moderatorKey = buildModeratorPromptKey(chatId, moderatorId);
+    promptsByModerator.set(moderatorKey, key);
+  }
 
   let entries = promptsByThread.get(threadId);
   if (!entries) {
@@ -221,6 +251,14 @@ const clearPrompt = (key: string): void => {
   }
 
   pendingReplyPrompts.delete(key);
+
+  if (prompt.moderatorId !== undefined) {
+    const moderatorKey = buildModeratorPromptKey(prompt.chatId, prompt.moderatorId);
+    const storedKey = promptsByModerator.get(moderatorKey);
+    if (storedKey === key) {
+      promptsByModerator.delete(moderatorKey);
+    }
+  }
 
   const entries = promptsByThread.get(prompt.threadId);
   if (!entries) {
@@ -240,6 +278,15 @@ const clearPromptsForThread = (threadId: string): void => {
   }
 
   for (const key of entries) {
+    const prompt = pendingReplyPrompts.get(key);
+    if (prompt?.moderatorId !== undefined) {
+      const moderatorKey = buildModeratorPromptKey(prompt.chatId, prompt.moderatorId);
+      const storedKey = promptsByModerator.get(moderatorKey);
+      if (storedKey === key) {
+        promptsByModerator.delete(moderatorKey);
+      }
+    }
+
     pendingReplyPrompts.delete(key);
   }
 
@@ -517,12 +564,37 @@ const handleReplyAction = async (
     return;
   }
 
+  const promptText =
+    'Отправьте ответ пользователю сообщением. Это сообщение будет доставлено в личные сообщения.';
+  const fallbackHint =
+    '\n\nОтветьте на это сообщение, чтобы отправить ответ пользователю.';
+  const moderatorId = ctx.from?.id;
+
   try {
-    const promptText =
-      'Отправьте ответ пользователю сообщением. Это сообщение будет доставлено в личные сообщения.';
     const forceReply: ForceReply = { force_reply: true, selective: true };
     const prompt = await ctx.reply(promptText, { reply_markup: forceReply });
-    registerPrompt(threadId, prompt.chat.id, prompt.message_id, ctx.from?.id);
+    registerPrompt(threadId, prompt.chat.id, prompt.message_id, moderatorId);
+    await ctx.answerCbQuery('Отправьте ответ пользователю сообщением.');
+    return;
+  } catch (error) {
+    if (!isInlineKeyboardExpectedError(error)) {
+      logger.error(
+        { err: error, threadId },
+        'Failed to prompt moderator for support reply',
+      );
+      await ctx.answerCbQuery('Не удалось запросить ответ. Попробуйте ещё раз.');
+      return;
+    }
+
+    logger.warn(
+      { err: error, threadId },
+      'Force reply prompt failed, falling back to plain prompt',
+    );
+  }
+
+  try {
+    const prompt = await ctx.reply(`${promptText}${fallbackHint}`);
+    registerPrompt(threadId, prompt.chat.id, prompt.message_id, moderatorId);
     await ctx.answerCbQuery('Отправьте ответ пользователю сообщением.');
   } catch (error) {
     logger.error(
@@ -643,17 +715,41 @@ const handleModeratorReplyMessage = async (
   ctx: BotContext,
 ): Promise<boolean> => {
   const message = ctx.message as Message | undefined;
-  const replyTo = (message as Partial<{ reply_to_message: Message }>)
-    ?.reply_to_message;
   const chatId = ctx.chat?.id;
 
-  if (!message || !replyTo || chatId === undefined) {
+  if (!message || chatId === undefined) {
     return false;
   }
 
-  const promptKey = buildMessageKey(chatId, replyTo.message_id);
-  const prompt = pendingReplyPrompts.get(promptKey);
+  const replyTo = (message as Partial<{ reply_to_message: Message }>)
+    ?.reply_to_message;
+  const moderatorId = ctx.from?.id;
+
+  let promptKey =
+    replyTo !== undefined
+      ? buildMessageKey(chatId, replyTo.message_id)
+      : undefined;
+  let prompt = promptKey ? pendingReplyPrompts.get(promptKey) : undefined;
+
+  if (!prompt && moderatorId !== undefined) {
+    const moderatorKey = buildModeratorPromptKey(chatId, moderatorId);
+    const storedKey = promptsByModerator.get(moderatorKey);
+    if (storedKey) {
+      const storedPrompt = pendingReplyPrompts.get(storedKey);
+      if (storedPrompt) {
+        prompt = storedPrompt;
+        promptKey = storedKey;
+      } else {
+        promptsByModerator.delete(moderatorKey);
+      }
+    }
+  }
+
   if (!prompt) {
+    if (!promptKey) {
+      return false;
+    }
+
     const threadId = threadsByModeratorMessage.get(promptKey);
     if (!threadId) {
       return false;
@@ -689,13 +785,15 @@ const handleModeratorReplyMessage = async (
     return true;
   }
 
-  if (prompt.moderatorId !== undefined && ctx.from?.id !== prompt.moderatorId) {
+  if (prompt.moderatorId !== undefined && moderatorId !== prompt.moderatorId) {
     return false;
   }
 
   const state = threadsById.get(prompt.threadId);
   if (!state) {
-    clearPrompt(promptKey);
+    if (promptKey) {
+      clearPrompt(promptKey);
+    }
     await acknowledgeModeratorReply(
       ctx,
       message.message_id,
@@ -705,7 +803,9 @@ const handleModeratorReplyMessage = async (
   }
 
   if (state.status !== 'open') {
-    clearPrompt(promptKey);
+    if (promptKey) {
+      clearPrompt(promptKey);
+    }
     await acknowledgeModeratorReply(
       ctx,
       message.message_id,
@@ -715,7 +815,9 @@ const handleModeratorReplyMessage = async (
   }
 
   const delivered = await copyModeratorReplyToUser(ctx, state);
-  clearPrompt(promptKey);
+  if (promptKey) {
+    clearPrompt(promptKey);
+  }
 
   const response = delivered
     ? 'Ответ доставлен пользователю.'
@@ -763,6 +865,7 @@ const resetSupportState = (): void => {
   threadsByModeratorMessage.clear();
   pendingReplyPrompts.clear();
   promptsByThread.clear();
+  promptsByModerator.clear();
   resolveModerationChannel = defaultResolveModerationChannel;
 };
 
