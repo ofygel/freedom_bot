@@ -5,8 +5,12 @@ import type {
   ForceReply,
   InlineKeyboardMarkup,
   Message,
+  MessageEntity,
 } from 'telegraf/typings/core/types/typegram';
-import type { ExtraCopyMessage } from 'telegraf/typings/telegram-types';
+import type {
+  ExtraCopyMessage,
+  ExtraReplyMessage,
+} from 'telegraf/typings/telegram-types';
 
 import { logger } from '../../config';
 import { pool } from '../../db';
@@ -776,6 +780,110 @@ const getContextMessage = (ctx: BotContext): Message | undefined =>
   (ctx.message as Message | undefined) ??
   (ctx.channelPost as Message | undefined);
 
+const applyCaptionExtras = (
+  source: Partial<{ caption?: string; caption_entities?: MessageEntity[] }>,
+  target: Record<string, unknown>,
+): void => {
+  if (typeof source.caption === 'string' && source.caption.length > 0) {
+    target.caption = source.caption;
+  }
+
+  if (Array.isArray(source.caption_entities) && source.caption_entities.length > 0) {
+    target.caption_entities = source.caption_entities;
+  }
+};
+
+const applyTextEntities = (
+  source: Partial<{ entities?: MessageEntity[] }>,
+  target: Record<string, unknown>,
+): void => {
+  if (Array.isArray(source.entities) && source.entities.length > 0) {
+    target.entities = source.entities;
+  }
+};
+
+const resendModeratorReply = async (
+  ctx: BotContext,
+  state: SupportThreadState,
+  message: Message,
+): Promise<boolean> => {
+  const chatId = state.userChatId;
+
+  try {
+    if ('text' in message && typeof message.text === 'string') {
+      const extra: ExtraReplyMessage = {};
+      applyTextEntities(message, extra as Record<string, unknown>);
+
+      await ctx.telegram.sendMessage(chatId, message.text, extra);
+      return true;
+    }
+
+    const captionSource = message as Partial<{
+      caption?: string;
+      caption_entities?: MessageEntity[];
+    }>;
+    const captionExtra: Record<string, unknown> = {};
+    applyCaptionExtras(captionSource, captionExtra);
+
+    if ('photo' in message && Array.isArray(message.photo) && message.photo.length > 0) {
+      const [photo] = message.photo.slice(-1);
+      if (photo?.file_id) {
+        await ctx.telegram.sendPhoto(chatId, photo.file_id, captionExtra);
+        return true;
+      }
+    }
+
+    if ('document' in message && message.document?.file_id) {
+      await ctx.telegram.sendDocument(chatId, message.document.file_id, captionExtra);
+      return true;
+    }
+
+    if ('video' in message && message.video?.file_id) {
+      await ctx.telegram.sendVideo(chatId, message.video.file_id, captionExtra);
+      return true;
+    }
+
+    if ('audio' in message && message.audio?.file_id) {
+      await ctx.telegram.sendAudio(chatId, message.audio.file_id, captionExtra);
+      return true;
+    }
+
+    if ('voice' in message && message.voice?.file_id) {
+      await ctx.telegram.sendVoice(chatId, message.voice.file_id, captionExtra);
+      return true;
+    }
+
+    if ('animation' in message && message.animation?.file_id) {
+      await ctx.telegram.sendAnimation(chatId, message.animation.file_id, captionExtra);
+      return true;
+    }
+
+    if ('video_note' in message && message.video_note?.file_id) {
+      await ctx.telegram.sendVideoNote(chatId, message.video_note.file_id);
+      return true;
+    }
+
+    if ('sticker' in message && message.sticker?.file_id) {
+      await ctx.telegram.sendSticker(chatId, message.sticker.file_id);
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        threadId: state.id,
+        userChatId: state.userChatId,
+        moderatorChatId: state.moderatorChatId,
+        messageId: message.message_id,
+      },
+      'Failed to resend moderator reply to support user',
+    );
+    return false;
+  }
+};
+
 const copyModeratorReplyToUser = async (
   ctx: BotContext,
   state: SupportThreadState,
@@ -796,6 +904,21 @@ const copyModeratorReplyToUser = async (
     );
     return true;
   } catch (error) {
+    const resent = await resendModeratorReply(ctx, state, message);
+    if (resent) {
+      logger.warn(
+        {
+          err: error,
+          threadId: state.id,
+          userChatId: state.userChatId,
+          moderatorChatId: state.moderatorChatId,
+          messageId: message.message_id,
+        },
+        'Failed to copy moderator reply, resent manually',
+      );
+      return true;
+    }
+
     logger.error(
       {
         err: error,

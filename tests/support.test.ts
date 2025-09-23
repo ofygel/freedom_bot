@@ -19,13 +19,16 @@ interface TelegramCall {
 
 const createMockTelegram = () => {
   const calls: TelegramCall[] = [];
+  let nextMessageId = 401;
 
   return {
     calls,
     api: {
-      async sendMessage(chatId: number, text: string) {
-        calls.push({ method: 'sendMessage', args: [chatId, text] });
-        return { message_id: 401, chat: { id: chatId }, text };
+      async sendMessage(chatId: number, text: string, extra?: unknown) {
+        calls.push({ method: 'sendMessage', args: [chatId, text, extra] });
+        const messageId = nextMessageId;
+        nextMessageId += 1;
+        return { message_id: messageId, chat: { id: chatId }, text };
       },
       async copyMessage(
         chatId: number,
@@ -34,11 +37,61 @@ const createMockTelegram = () => {
         extra?: unknown,
       ) {
         calls.push({ method: 'copyMessage', args: [chatId, fromChatId, messageId, extra] });
-        return { message_id: 402, chat: { id: chatId } };
+        const nextId = nextMessageId;
+        nextMessageId += 1;
+        return { message_id: nextId, chat: { id: chatId } };
       },
       async editMessageReplyMarkup(...args: any[]) {
         calls.push({ method: 'editMessageReplyMarkup', args });
         return true;
+      },
+      async sendPhoto(chatId: number, photo: string, extra?: unknown) {
+        calls.push({ method: 'sendPhoto', args: [chatId, photo, extra] });
+        const messageId = nextMessageId;
+        nextMessageId += 1;
+        return { message_id: messageId, chat: { id: chatId } };
+      },
+      async sendDocument(chatId: number, document: string, extra?: unknown) {
+        calls.push({ method: 'sendDocument', args: [chatId, document, extra] });
+        const messageId = nextMessageId;
+        nextMessageId += 1;
+        return { message_id: messageId, chat: { id: chatId } };
+      },
+      async sendVideo(chatId: number, video: string, extra?: unknown) {
+        calls.push({ method: 'sendVideo', args: [chatId, video, extra] });
+        const messageId = nextMessageId;
+        nextMessageId += 1;
+        return { message_id: messageId, chat: { id: chatId } };
+      },
+      async sendAudio(chatId: number, audio: string, extra?: unknown) {
+        calls.push({ method: 'sendAudio', args: [chatId, audio, extra] });
+        const messageId = nextMessageId;
+        nextMessageId += 1;
+        return { message_id: messageId, chat: { id: chatId } };
+      },
+      async sendVoice(chatId: number, voice: string, extra?: unknown) {
+        calls.push({ method: 'sendVoice', args: [chatId, voice, extra] });
+        const messageId = nextMessageId;
+        nextMessageId += 1;
+        return { message_id: messageId, chat: { id: chatId } };
+      },
+      async sendAnimation(chatId: number, animation: string, extra?: unknown) {
+        calls.push({ method: 'sendAnimation', args: [chatId, animation, extra] });
+        const messageId = nextMessageId;
+        nextMessageId += 1;
+        return { message_id: messageId, chat: { id: chatId } };
+      },
+      async sendVideoNote(chatId: number, videoNote: string, extra?: unknown) {
+        calls.push({ method: 'sendVideoNote', args: [chatId, videoNote, extra] });
+        const messageId = nextMessageId;
+        nextMessageId += 1;
+        return { message_id: messageId, chat: { id: chatId } };
+      },
+      async sendSticker(chatId: number, sticker: string, extra?: unknown) {
+        calls.push({ method: 'sendSticker', args: [chatId, sticker, extra] });
+        const messageId = nextMessageId;
+        nextMessageId += 1;
+        return { message_id: messageId, chat: { id: chatId } };
       },
     } as any,
   };
@@ -549,6 +602,67 @@ describe('support service', () => {
     assert.equal(lastCopy?.args[0], state!.userChatId);
     assert.equal(acknowledgements.length, 1);
     assert.equal(acknowledgements[0], 'Ответ доставлен пользователю.');
+  });
+
+  it('resends moderator replies when copyMessage is unavailable', async () => {
+    const threadId = 'thread-manual-resend';
+    const telegram = createMockTelegram();
+
+    __testing__.threadsById.set(threadId, {
+      id: threadId,
+      userChatId: 321,
+      userMessageId: 5,
+      userTelegramId: 654,
+      moderatorChatId: 99,
+      moderatorMessageId: 77,
+      status: 'open',
+    });
+
+    const promptMessageId = 700;
+    __testing__.registerPrompt(threadId, 99, promptMessageId);
+
+    const copyError = new Error('Bad Request: message can\'t be forwarded');
+    (copyError as any).response = { description: 'Bad Request: message can\'t be forwarded' };
+
+    telegram.api.copyMessage = async (...args: any[]) => {
+      telegram.calls.push({ method: 'copyMessage', args });
+      throw copyError;
+    };
+
+    const acknowledgements: string[] = [];
+
+    const messageEntities = [{ type: 'bold', offset: 0, length: 5 }];
+
+    const replyCtx = {
+      chat: { id: 99 },
+      from: { id: 555 },
+      message: {
+        message_id: 880,
+        text: 'Ответ пользователю',
+        entities: messageEntities,
+        reply_to_message: { message_id: promptMessageId },
+      },
+      telegram: telegram.api,
+      reply: async (text: string) => {
+        acknowledgements.push(text);
+        return { message_id: 881, chat: { id: 99 }, text };
+      },
+      auth: createAuthState(555),
+    } as unknown as BotContext;
+
+    const handled = await __testing__.handleModeratorReplyMessage(replyCtx);
+    assert.equal(handled, true, 'fallback should deliver the reply');
+
+    const sendCall = telegram.calls.find((call) => call.method === 'sendMessage');
+    assert.ok(sendCall, 'sendMessage should be used when copyMessage fails');
+    assert.equal(sendCall?.args[0], 321);
+    assert.equal(sendCall?.args[1], 'Ответ пользователю');
+    assert.deepEqual(sendCall?.args[2]?.entities, messageEntities);
+
+    const copyCalls = telegram.calls.filter((call) => call.method === 'copyMessage');
+    assert.equal(copyCalls.length, 1, 'copyMessage should still be attempted once');
+    assert.deepEqual(acknowledgements, ['Ответ доставлен пользователю.']);
+    assert.equal(__testing__.pendingReplyPrompts.size, 0);
   });
 
   it('closes support threads and cleans up state', async () => {
