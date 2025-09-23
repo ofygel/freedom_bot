@@ -261,6 +261,76 @@ describe('support service', () => {
     assert.equal(__testing__.pendingReplyPrompts.size, 0);
   });
 
+  it('falls back to plain prompts when force reply is unavailable', async () => {
+    const threadId = 'thread-fallback';
+    const telegram = createMockTelegram();
+
+    __testing__.threadsById.set(threadId, {
+      id: threadId,
+      userChatId: 321,
+      userMessageId: 5,
+      userTelegramId: 654,
+      moderatorChatId: 99,
+      moderatorMessageId: 77,
+      status: 'open',
+    });
+
+    let replyCalls = 0;
+    const sentMessages: { text: string; extra?: unknown }[] = [];
+    const reply = mock.fn(async (text: string, extra?: unknown) => {
+      replyCalls += 1;
+      if (replyCalls === 1) {
+        const error = new Error('Bad Request: inline keyboard expected');
+        (error as any).response = { description: 'Bad Request: inline keyboard expected' };
+        throw error;
+      }
+
+      sentMessages.push({ text, extra });
+      return { chat: { id: 99 }, message_id: 700, text };
+    });
+
+    const ctx = {
+      chat: { id: 99 },
+      from: { id: 555 },
+      reply,
+      answerCbQuery: async () => {},
+      telegram: telegram.api,
+      auth: createAuthState(555),
+    } as unknown as BotContext;
+
+    await __testing__.handleReplyAction(ctx, threadId);
+
+    assert.equal(reply.mock.callCount(), 2);
+    assert.equal(sentMessages.length, 1);
+    assert.equal(
+      sentMessages[0]?.text,
+      'Отправьте ответ пользователю сообщением. Это сообщение будет доставлено в личные сообщения.\n\nОтветьте на это сообщение, чтобы отправить ответ пользователю.',
+    );
+    assert.equal(sentMessages[0]?.extra, undefined);
+
+    const promptKey = `${ctx.chat!.id}:700`;
+    assert.ok(__testing__.pendingReplyPrompts.has(promptKey));
+
+    const replyCtx = {
+      chat: { id: 99 },
+      from: { id: 555 },
+      message: {
+        message_id: 800,
+        text: 'Ответ пользователю',
+      },
+      telegram: telegram.api,
+      reply: async () => {},
+      auth: createAuthState(555),
+    } as unknown as BotContext;
+
+    const handled = await __testing__.handleModeratorReplyMessage(replyCtx);
+    assert.equal(handled, true);
+
+    const delivered = telegram.calls.find((call) => call.method === 'copyMessage');
+    assert.ok(delivered, 'reply should be copied to the user');
+    assert.equal(__testing__.pendingReplyPrompts.size, 0);
+  });
+
   it('delivers replies when responding to the forwarded message directly', async () => {
     const telegram = createMockTelegram();
 
