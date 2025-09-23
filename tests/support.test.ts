@@ -331,6 +331,52 @@ describe('support service', () => {
     assert.equal(__testing__.pendingReplyPrompts.size, 0);
   });
 
+  it('delivers moderator replies sent as channel posts', async () => {
+    const threadId = 'thread-channel-post';
+    const moderatorChatId = -100123456;
+    const promptMessageId = 700;
+    const telegram = createMockTelegram();
+
+    __testing__.threadsById.set(threadId, {
+      id: threadId,
+      userChatId: 321,
+      userMessageId: 5,
+      userTelegramId: 654,
+      moderatorChatId,
+      moderatorMessageId: 77,
+      status: 'open',
+    });
+
+    __testing__.registerPrompt(threadId, moderatorChatId, promptMessageId);
+
+    const reply = mock.fn(async () => ({
+      message_id: 801,
+      chat: { id: moderatorChatId },
+      text: 'OK',
+    }));
+
+    const replyCtx = {
+      chat: { id: moderatorChatId, type: 'channel' as const },
+      channelPost: {
+        message_id: 800,
+        text: 'Ответ пользователю',
+        chat: { id: moderatorChatId, type: 'channel' as const },
+        reply_to_message: { message_id: promptMessageId },
+      },
+      telegram: telegram.api,
+      reply,
+      auth: createAuthState(9999),
+    } as unknown as BotContext;
+
+    const handled = await __testing__.handleModeratorReplyMessage(replyCtx);
+    assert.equal(handled, true, 'channel post reply should be processed');
+
+    const delivered = telegram.calls.find((call) => call.method === 'copyMessage');
+    assert.ok(delivered, 'reply should be copied to the user');
+    assert.equal(delivered?.args[0], 321);
+    assert.equal(reply.mock.callCount(), 1, 'moderator should receive acknowledgement');
+  });
+
   it('delivers replies when responding to the forwarded message directly', async () => {
     const telegram = createMockTelegram();
 
@@ -506,21 +552,33 @@ describe('support service', () => {
 
   it('registers handlers on a Telegraf instance', async () => {
     const actions: { pattern: RegExp; handler: (ctx: BotContext) => Promise<void> }[] = [];
-    let messageHandler: ((ctx: BotContext, next?: () => Promise<void>) => Promise<void>) | null =
-      null;
+    const onHandlers: {
+      event: string;
+      handler: (ctx: BotContext, next?: () => Promise<void>) => Promise<void>;
+    }[] = [];
 
     const bot = {
       action(pattern: RegExp, handler: (ctx: BotContext) => Promise<void>) {
         actions.push({ pattern, handler });
+        return bot;
       },
-      on(_: string, handler: typeof messageHandler) {
-        messageHandler = handler;
+      on(event: string, handler: (ctx: BotContext, next?: () => Promise<void>) => Promise<void>) {
+        onHandlers.push({ event, handler });
+        return bot;
       },
     } as unknown as Telegraf<BotContext>;
 
     registerSupportModerationBridge(bot);
 
     assert.equal(actions.length, 2, 'two action handlers are registered');
-    assert.ok(messageHandler, 'message handler should be registered');
+    assert.equal(onHandlers.length, 2, 'handlers for messages and channel posts are registered');
+    assert.deepEqual(
+      onHandlers
+        .map((entry) => entry.event)
+        .sort(),
+      ['channel_post', 'message'],
+      'message and channel_post handlers are attached',
+    );
+    assert.ok(onHandlers.every((entry) => typeof entry.handler === 'function'));
   });
 });
