@@ -432,6 +432,74 @@ describe('support service', () => {
     assert.equal(__testing__.pendingReplyPrompts.size, 0);
   });
 
+  it('matches discussion replies to forwarded channel posts', async () => {
+    const telegram = createMockTelegram();
+
+    setPoolQuery(async () => ({ rows: [] }) as any);
+
+    const channelChatId = -100222333;
+    const discussionChatId = -200222333;
+    const moderatorId = 424242;
+
+    __testing__.setModerationChannelResolver(async () => channelChatId);
+
+    const forwardCtx = {
+      chat: { id: 3030 },
+      from: { id: 8080, first_name: 'Client' },
+      message: { message_id: 5050, text: 'Нужна помощь' },
+      telegram: telegram.api,
+      auth: createAuthState(8080),
+    } as unknown as BotContext;
+
+    const forwardResult = (await forwardSupportMessage(forwardCtx)) as SupportForwardResult;
+    assert.equal(forwardResult.status, 'forwarded');
+    const threadId = forwardResult.threadId;
+    assert.ok(threadId, 'thread id should be returned after forwarding');
+
+    const state = __testing__.threadsById.get(threadId!);
+    assert.ok(state, 'thread state should be tracked for forwarded messages');
+
+    const acknowledgements: string[] = [];
+
+    const replyCtx = {
+      chat: { id: discussionChatId, type: 'supergroup' as const },
+      from: { id: moderatorId },
+      message: {
+        message_id: 9090,
+        text: 'Ответ пользователю',
+        chat: { id: discussionChatId, type: 'supergroup' as const },
+        reply_to_message: {
+          message_id: state!.moderatorMessageId,
+          sender_chat: { id: channelChatId, type: 'channel' as const },
+        },
+      },
+      telegram: telegram.api,
+      reply: async (text: string) => {
+        acknowledgements.push(text);
+        return { message_id: 9191, chat: { id: discussionChatId }, text };
+      },
+      auth: createAuthState(moderatorId),
+    } as unknown as BotContext;
+
+    const handled = await __testing__.handleModeratorReplyMessage(replyCtx);
+    assert.equal(
+      handled,
+      true,
+      'discussion reply referencing the channel should be processed',
+    );
+
+    const copyCalls = telegram.calls.filter((call) => call.method === 'copyMessage');
+    assert.equal(copyCalls.length, 2, 'moderator reply should trigger a second copyMessage call');
+
+    const replyCopy = copyCalls.at(-1);
+    assert.ok(replyCopy, 'reply copy should exist');
+    assert.equal(replyCopy?.args[0], state!.userChatId);
+    assert.equal(replyCopy?.args[1], discussionChatId);
+
+    assert.deepEqual(acknowledgements, ['Ответ доставлен пользователю.']);
+    assert.equal(__testing__.pendingReplyPrompts.size, 0);
+  });
+
   it('delivers replies when responding to the forwarded message directly', async () => {
     const telegram = createMockTelegram();
 

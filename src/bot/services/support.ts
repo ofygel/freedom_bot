@@ -848,7 +848,15 @@ const handleModeratorReplyMessage = async (
     replyTo?.sender_chat?.type === 'channel'
       ? parseNumeric(replyTo.sender_chat.id)
       : undefined;
-  const moderationChatId = channelSenderId ?? fallbackChatId;
+  const forwardedFromChat =
+    (replyTo as { forward_from_chat?: { id?: number | string; type?: string } } | undefined)
+      ?.forward_from_chat;
+  const forwardedChannelId =
+    forwardedFromChat?.type === 'channel'
+      ? parseNumeric(forwardedFromChat.id)
+      : undefined;
+  const moderationChatId =
+    channelSenderId ?? forwardedChannelId ?? fallbackChatId;
 
   let promptEntry = resolvePromptEntry(
     replyTo !== undefined
