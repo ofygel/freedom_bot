@@ -153,11 +153,18 @@ const CLOSE_ACTION_PREFIX = 'support:close';
 const REPLY_ACTION_PATTERN = /^support:reply:([\da-f-]+)$/;
 const CLOSE_ACTION_PATTERN = /^support:close:([\da-f-]+)$/;
 
+interface RegisterPromptOptions {
+  additionalChatIds?: number[];
+}
+
 const threadsById = new Map<string, SupportThreadState>();
 const threadsByModeratorMessage = new Map<string, string>();
 const pendingReplyPrompts = new Map<string, SupportThreadPrompt>();
 const promptsByThread = new Map<string, Set<string>>();
 const promptsByModerator = new Map<string, string>();
+const promptAliases = new Map<string, string>();
+const promptAliasIndex = new Map<string, Set<string>>();
+const promptModeratorIndex = new Map<string, Set<string>>();
 
 const extractTelegramErrorDescription = (error: unknown): string | undefined => {
   const telegramError = error as {
@@ -226,13 +233,23 @@ const registerPrompt = (
   chatId: number,
   messageId: number,
   moderatorId?: number,
+  options?: RegisterPromptOptions,
 ): void => {
   const key = buildMessageKey(chatId, messageId);
-  pendingReplyPrompts.set(key, { threadId, chatId, messageId, moderatorId });
+  const prompt: SupportThreadPrompt = { threadId, chatId, messageId, moderatorId };
+  pendingReplyPrompts.set(key, prompt);
 
+  let moderatorKeys: Set<string> | undefined;
   if (moderatorId !== undefined) {
     const moderatorKey = buildModeratorPromptKey(chatId, moderatorId);
     promptsByModerator.set(moderatorKey, key);
+
+    moderatorKeys = promptModeratorIndex.get(key);
+    if (!moderatorKeys) {
+      moderatorKeys = new Set<string>();
+      promptModeratorIndex.set(key, moderatorKeys);
+    }
+    moderatorKeys.add(moderatorKey);
   }
 
   let entries = promptsByThread.get(threadId);
@@ -242,22 +259,110 @@ const registerPrompt = (
   }
 
   entries.add(key);
-};
 
-const clearPrompt = (key: string): void => {
-  const prompt = pendingReplyPrompts.get(key);
-  if (!prompt) {
+  const aliasCandidates = options?.additionalChatIds ?? [];
+  const aliasChatIds = Array.from(
+    new Set<number>(aliasCandidates.filter((id) => id !== chatId)),
+  );
+
+  if (aliasChatIds.length === 0) {
     return;
   }
 
-  pendingReplyPrompts.delete(key);
+  let aliasKeys = promptAliasIndex.get(key);
+  if (!aliasKeys) {
+    aliasKeys = new Set<string>();
+    promptAliasIndex.set(key, aliasKeys);
+  }
+
+  for (const aliasChatId of aliasChatIds) {
+    const aliasKey = buildMessageKey(aliasChatId, messageId);
+    promptAliases.set(aliasKey, key);
+    aliasKeys.add(aliasKey);
+
+    if (moderatorId !== undefined && moderatorKeys) {
+      const aliasModeratorKey = buildModeratorPromptKey(aliasChatId, moderatorId);
+      promptsByModerator.set(aliasModeratorKey, key);
+      moderatorKeys.add(aliasModeratorKey);
+    }
+  }
+};
+
+interface PromptLookupResult {
+  prompt: SupportThreadPrompt;
+  key: string;
+}
+
+const resolvePromptEntry = (key?: string): PromptLookupResult | undefined => {
+  if (!key) {
+    return undefined;
+  }
+
+  const prompt = pendingReplyPrompts.get(key);
+  if (prompt) {
+    return { prompt, key };
+  }
+
+  const canonicalKey = promptAliases.get(key);
+  if (!canonicalKey) {
+    return undefined;
+  }
+
+  const canonicalPrompt = pendingReplyPrompts.get(canonicalKey);
+  if (!canonicalPrompt) {
+    promptAliases.delete(key);
+    const aliasKeys = promptAliasIndex.get(canonicalKey);
+    if (aliasKeys) {
+      aliasKeys.delete(key);
+      if (aliasKeys.size === 0) {
+        promptAliasIndex.delete(canonicalKey);
+      }
+    }
+    const moderatorKeys = promptModeratorIndex.get(canonicalKey);
+    if (moderatorKeys) {
+      for (const moderatorKey of moderatorKeys) {
+        const storedKey = promptsByModerator.get(moderatorKey);
+        if (storedKey === canonicalKey) {
+          promptsByModerator.delete(moderatorKey);
+        }
+      }
+      promptModeratorIndex.delete(canonicalKey);
+    }
+    return undefined;
+  }
+
+  return { prompt: canonicalPrompt, key: canonicalKey };
+};
+
+const clearPrompt = (key: string): void => {
+  const resolved = resolvePromptEntry(key);
+  if (!resolved) {
+    return;
+  }
+
+  const { prompt, key: canonicalKey } = resolved;
+
+  pendingReplyPrompts.delete(canonicalKey);
 
   if (prompt.moderatorId !== undefined) {
-    const moderatorKey = buildModeratorPromptKey(prompt.chatId, prompt.moderatorId);
-    const storedKey = promptsByModerator.get(moderatorKey);
-    if (storedKey === key) {
-      promptsByModerator.delete(moderatorKey);
+    const moderatorKeys = promptModeratorIndex.get(canonicalKey);
+    if (moderatorKeys) {
+      for (const moderatorKey of moderatorKeys) {
+        const storedKey = promptsByModerator.get(moderatorKey);
+        if (storedKey === canonicalKey) {
+          promptsByModerator.delete(moderatorKey);
+        }
+      }
+      promptModeratorIndex.delete(canonicalKey);
     }
+  }
+
+  const aliasKeys = promptAliasIndex.get(canonicalKey);
+  if (aliasKeys) {
+    for (const aliasKey of aliasKeys) {
+      promptAliases.delete(aliasKey);
+    }
+    promptAliasIndex.delete(canonicalKey);
   }
 
   const entries = promptsByThread.get(prompt.threadId);
@@ -265,7 +370,7 @@ const clearPrompt = (key: string): void => {
     return;
   }
 
-  entries.delete(key);
+  entries.delete(canonicalKey);
   if (entries.size === 0) {
     promptsByThread.delete(prompt.threadId);
   }
@@ -277,17 +382,8 @@ const clearPromptsForThread = (threadId: string): void => {
     return;
   }
 
-  for (const key of entries) {
-    const prompt = pendingReplyPrompts.get(key);
-    if (prompt?.moderatorId !== undefined) {
-      const moderatorKey = buildModeratorPromptKey(prompt.chatId, prompt.moderatorId);
-      const storedKey = promptsByModerator.get(moderatorKey);
-      if (storedKey === key) {
-        promptsByModerator.delete(moderatorKey);
-      }
-    }
-
-    pendingReplyPrompts.delete(key);
+  for (const key of Array.from(entries)) {
+    clearPrompt(key);
   }
 
   promptsByThread.delete(threadId);
@@ -570,10 +666,26 @@ const handleReplyAction = async (
     '\n\nОтветьте на это сообщение, чтобы отправить ответ пользователю.';
   const moderatorId = ctx.from?.id;
 
+  const storePrompt = (prompt: { chat?: { id?: number }; message_id: number }) => {
+    const aliasChatId = prompt.chat?.id;
+    const options =
+      aliasChatId !== undefined && aliasChatId !== state.moderatorChatId
+        ? { additionalChatIds: [aliasChatId] }
+        : undefined;
+
+    registerPrompt(
+      threadId,
+      state.moderatorChatId,
+      prompt.message_id,
+      moderatorId,
+      options,
+    );
+  };
+
   try {
     const forceReply: ForceReply = { force_reply: true, selective: true };
     const prompt = await ctx.reply(promptText, { reply_markup: forceReply });
-    registerPrompt(threadId, prompt.chat.id, prompt.message_id, moderatorId);
+    storePrompt(prompt);
     await ctx.answerCbQuery('Отправьте ответ пользователю сообщением.');
     return;
   } catch (error) {
@@ -594,7 +706,7 @@ const handleReplyAction = async (
 
   try {
     const prompt = await ctx.reply(`${promptText}${fallbackHint}`);
-    registerPrompt(threadId, prompt.chat.id, prompt.message_id, moderatorId);
+    storePrompt(prompt);
     await ctx.answerCbQuery('Отправьте ответ пользователю сообщением.');
   } catch (error) {
     logger.error(
@@ -722,9 +834,9 @@ const handleModeratorReplyMessage = async (
   ctx: BotContext,
 ): Promise<boolean> => {
   const message = getContextMessage(ctx);
-  const chatId = ctx.chat?.id ?? (message?.chat?.id as number | undefined);
+  const fallbackChatId = ctx.chat?.id ?? (message?.chat?.id as number | undefined);
 
-  if (!message || chatId === undefined) {
+  if (!message || fallbackChatId === undefined) {
     return false;
   }
 
@@ -732,27 +844,37 @@ const handleModeratorReplyMessage = async (
     ?.reply_to_message;
   const moderatorId = ctx.from?.id;
 
-  let promptKey =
-    replyTo !== undefined
-      ? buildMessageKey(chatId, replyTo.message_id)
+  const channelSenderId =
+    replyTo?.sender_chat?.type === 'channel'
+      ? parseNumeric(replyTo.sender_chat.id)
       : undefined;
-  let prompt = promptKey ? pendingReplyPrompts.get(promptKey) : undefined;
+  const moderationChatId = channelSenderId ?? fallbackChatId;
 
-  if (!prompt && moderatorId !== undefined) {
-    const moderatorKey = buildModeratorPromptKey(chatId, moderatorId);
+  let promptEntry = resolvePromptEntry(
+    replyTo !== undefined
+      ? buildMessageKey(moderationChatId, replyTo.message_id)
+      : undefined,
+  );
+
+  if (!promptEntry && moderatorId !== undefined) {
+    const moderatorKey = buildModeratorPromptKey(moderationChatId, moderatorId);
     const storedKey = promptsByModerator.get(moderatorKey);
     if (storedKey) {
-      const storedPrompt = pendingReplyPrompts.get(storedKey);
-      if (storedPrompt) {
-        prompt = storedPrompt;
-        promptKey = storedKey;
+      const resolved = resolvePromptEntry(storedKey);
+      if (resolved) {
+        promptEntry = resolved;
       } else {
         promptsByModerator.delete(moderatorKey);
       }
     }
   }
 
-  if (!prompt) {
+  if (!promptEntry) {
+    const promptKey =
+      replyTo !== undefined
+        ? buildMessageKey(moderationChatId, replyTo.message_id)
+        : undefined;
+
     if (!promptKey) {
       return false;
     }
@@ -792,15 +914,15 @@ const handleModeratorReplyMessage = async (
     return true;
   }
 
+  const { prompt, key: promptKey } = promptEntry;
+
   if (prompt.moderatorId !== undefined && moderatorId !== prompt.moderatorId) {
     return false;
   }
 
   const state = threadsById.get(prompt.threadId);
   if (!state) {
-    if (promptKey) {
-      clearPrompt(promptKey);
-    }
+    clearPrompt(promptKey);
     await acknowledgeModeratorReply(
       ctx,
       message.message_id,
@@ -810,9 +932,7 @@ const handleModeratorReplyMessage = async (
   }
 
   if (state.status !== 'open') {
-    if (promptKey) {
-      clearPrompt(promptKey);
-    }
+    clearPrompt(promptKey);
     await acknowledgeModeratorReply(
       ctx,
       message.message_id,
@@ -822,9 +942,7 @@ const handleModeratorReplyMessage = async (
   }
 
   const delivered = await copyModeratorReplyToUser(ctx, state);
-  if (promptKey) {
-    clearPrompt(promptKey);
-  }
+  clearPrompt(promptKey);
 
   const response = delivered
     ? 'Ответ доставлен пользователю.'
@@ -879,6 +997,9 @@ const resetSupportState = (): void => {
   pendingReplyPrompts.clear();
   promptsByThread.clear();
   promptsByModerator.clear();
+  promptAliases.clear();
+  promptAliasIndex.clear();
+  promptModeratorIndex.clear();
   resolveModerationChannel = defaultResolveModerationChannel;
 };
 

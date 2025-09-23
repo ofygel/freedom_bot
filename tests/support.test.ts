@@ -377,6 +377,61 @@ describe('support service', () => {
     assert.equal(reply.mock.callCount(), 1, 'moderator should receive acknowledgement');
   });
 
+  it('delivers discussion replies using the channel sender chat context', async () => {
+    const threadId = 'thread-discussion-sender';
+    const channelChatId = -100654321;
+    const discussionChatId = -200654321;
+    const promptMessageId = 900;
+    const telegram = createMockTelegram();
+
+    __testing__.threadsById.set(threadId, {
+      id: threadId,
+      userChatId: 321,
+      userMessageId: 5,
+      userTelegramId: 654,
+      moderatorChatId: channelChatId,
+      moderatorMessageId: 77,
+      status: 'open',
+    });
+
+    __testing__.registerPrompt(threadId, channelChatId, promptMessageId, undefined, {
+      additionalChatIds: [discussionChatId],
+    });
+
+    const acknowledgements: string[] = [];
+
+    const replyCtx = {
+      chat: { id: discussionChatId, type: 'supergroup' as const },
+      from: { id: 987654 },
+      message: {
+        message_id: 901,
+        text: 'Ответ пользователю',
+        chat: { id: discussionChatId, type: 'supergroup' as const },
+        reply_to_message: {
+          message_id: promptMessageId,
+          sender_chat: { id: channelChatId, type: 'channel' as const },
+        },
+      },
+      telegram: telegram.api,
+      reply: async (text: string) => {
+        acknowledgements.push(text);
+        return { message_id: 902, chat: { id: discussionChatId }, text };
+      },
+      auth: createAuthState(987654),
+    } as unknown as BotContext;
+
+    const handled = await __testing__.handleModeratorReplyMessage(replyCtx);
+    assert.equal(handled, true, 'reply should be processed when sender_chat matches channel');
+
+    const delivered = telegram.calls.find((call) => call.method === 'copyMessage');
+    assert.ok(delivered, 'reply should be copied to the user');
+    assert.equal(delivered?.args[0], 321);
+    assert.equal(delivered?.args[1], discussionChatId);
+
+    assert.deepEqual(acknowledgements, ['Ответ доставлен пользователю.']);
+    assert.equal(__testing__.pendingReplyPrompts.size, 0);
+  });
+
   it('delivers replies when responding to the forwarded message directly', async () => {
     const telegram = createMockTelegram();
 
