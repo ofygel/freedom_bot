@@ -4,6 +4,7 @@ import type { BotContext } from '../types';
 import { phoneCollect } from '../flows/common/phoneCollect';
 import { setChatCommands } from '../services/commands';
 import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from './sets';
+import { hideClientMenu } from '../../ui/clientMenu';
 
 type RoleKey = 'client' | 'courier' | 'driver';
 
@@ -77,6 +78,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
     }
 
     await applyCommandsForRole(ctx);
+    await hideClientMenu(ctx, 'Возвращаю стандартную клавиатуру…');
     await presentRoleSelection(ctx);
   });
 

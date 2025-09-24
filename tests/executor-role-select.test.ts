@@ -3,7 +3,7 @@ import './helpers/setup-env';
 import assert from 'node:assert/strict';
 import { afterEach, before, beforeEach, describe, it, mock } from 'node:test';
 import type { Telegraf } from 'telegraf';
-import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
+import type { InlineKeyboardMarkup, ReplyKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import {
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
@@ -216,7 +216,10 @@ describe('executor role selection', () => {
     const fallbackCall = sendMessageCalls.at(-1);
     assert.ok(fallbackCall, 'fallback sendMessage should be recorded');
     assert.equal(fallbackCall.chatId, ctx.chat!.id);
-    assert.ok((fallbackCall.extra as { reply_markup?: InlineKeyboardMarkup }).reply_markup);
+    const fallbackMarkup = (fallbackCall.extra as {
+      reply_markup?: InlineKeyboardMarkup | ReplyKeyboardMarkup;
+    }).reply_markup;
+    assert.ok(fallbackMarkup);
     assert.match(fallbackCall.text, /Меню водителя/);
   });
 });

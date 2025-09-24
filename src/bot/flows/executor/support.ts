@@ -6,7 +6,11 @@ import { pool } from '../../../db';
 import { forwardSupportMessage } from '../../services/support';
 import { ui } from '../../ui';
 import type { BotContext } from '../../types';
-import { EXECUTOR_MENU_ACTION, EXECUTOR_SUPPORT_ACTION } from './menu';
+import {
+  EXECUTOR_MENU_ACTION,
+  EXECUTOR_MENU_TEXT_LABELS,
+  EXECUTOR_SUPPORT_ACTION,
+} from './menu';
 
 const SUPPORT_CONTACT_STEP_ID = 'executor:support:contact';
 
@@ -136,16 +140,29 @@ const isBotCommandMessage = (message: Message): boolean => {
   return typeof text === 'string' && text.startsWith('/');
 };
 
-const handleSupportPrompt = async (ctx: BotContext): Promise<void> => {
+const handleSupportPrompt = async (
+  ctx: BotContext,
+  source: 'callback' | 'text',
+): Promise<void> => {
   const support = ensureSupportState(ctx);
 
   if (ctx.chat?.type !== 'private') {
-    await ctx.answerCbQuery('Доступно только в личных сообщениях.');
+    if (source === 'callback') {
+      await ctx.answerCbQuery('Доступно только в личных сообщениях.');
+    }
     return;
   }
 
+  const respond = async (text?: string): Promise<void> => {
+    if (source === 'callback') {
+      await ctx.answerCbQuery(text);
+    } else if (text) {
+      await ctx.reply(text);
+    }
+  };
+
   if (support.status === 'awaiting_message') {
-    await ctx.answerCbQuery('Отправьте сообщение с описанием проблемы.');
+    await respond('Отправьте сообщение с описанием проблемы.');
     await ui.step(ctx, {
       id: SUPPORT_CONTACT_STEP_ID,
       text: buildSupportPromptText(),
@@ -162,7 +179,7 @@ const handleSupportPrompt = async (ctx: BotContext): Promise<void> => {
     support.lastThreadId = existing.id;
     support.lastThreadShortId = existing.shortId;
 
-    await ctx.answerCbQuery('Обращение уже на рассмотрении.');
+    await respond('Обращение уже на рассмотрении.');
     await ui.step(ctx, {
       id: SUPPORT_CONTACT_STEP_ID,
       text: buildSupportOpenThreadText(existing.shortId),
@@ -175,7 +192,7 @@ const handleSupportPrompt = async (ctx: BotContext): Promise<void> => {
   support.lastThreadId = undefined;
   support.lastThreadShortId = undefined;
 
-  await ctx.answerCbQuery('Опишите проблему одним сообщением.');
+  await respond('Опишите проблему одним сообщением.');
   await ui.step(ctx, {
     id: SUPPORT_CONTACT_STEP_ID,
     text: buildSupportPromptText(),
@@ -249,7 +266,7 @@ const handleSupportMessage = async (
 
 export const registerExecutorSupport = (bot: Telegraf<BotContext>): void => {
   bot.action(EXECUTOR_SUPPORT_ACTION, async (ctx) => {
-    await handleSupportPrompt(ctx);
+    await handleSupportPrompt(ctx, 'callback');
   });
 
   bot.command('support', async (ctx) => {
@@ -257,7 +274,7 @@ export const registerExecutorSupport = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    await handleSupportPrompt(ctx);
+    await handleSupportPrompt(ctx, 'text');
   });
 
   bot.on('message', async (ctx, next) => {
@@ -265,6 +282,14 @@ export const registerExecutorSupport = (bot: Telegraf<BotContext>): void => {
     if (!handled && next) {
       await next();
     }
+  });
+
+  bot.hears(EXECUTOR_MENU_TEXT_LABELS.support, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      return;
+    }
+
+    await handleSupportPrompt(ctx, 'text');
   });
 };
 

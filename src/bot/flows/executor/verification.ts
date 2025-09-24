@@ -11,9 +11,11 @@ import {
 import { persistVerificationSubmission } from '../../../db/verifications';
 import {
   EXECUTOR_MENU_ACTION,
+  EXECUTOR_MENU_TEXT_LABELS,
   EXECUTOR_SUBSCRIPTION_ACTION,
   EXECUTOR_VERIFICATION_ACTION,
   ensureExecutorState,
+  isExecutorMenuTextCommand,
   resetVerificationState,
   showExecutorMenu,
 } from './menu';
@@ -439,6 +441,11 @@ const handleTextDuringCollection = async (ctx: BotContext, next: () => Promise<v
     return;
   }
 
+  if (isExecutorMenuTextCommand(text.trim())) {
+    await next();
+    return;
+  }
+
   await ui.step(ctx, {
     id: VERIFICATION_PHOTO_REMINDER_STEP_ID,
     text: 'Отправьте, пожалуйста, фотографию документа.',
@@ -454,6 +461,15 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
     }
 
     await ctx.answerCbQuery();
+    await startExecutorVerification(ctx);
+  });
+
+  bot.hears(EXECUTOR_MENU_TEXT_LABELS.documents, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      return;
+    }
+
+    ensureExecutorState(ctx);
     await startExecutorVerification(ctx);
   });
 

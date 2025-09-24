@@ -96,6 +96,7 @@ const registerVerificationHandlers = (): { handlePhoto: PhotoHandler } => {
       return bot;
     },
     command: () => bot,
+    hears: () => bot,
   } as unknown as import('telegraf').Telegraf<BotContext>;
 
   registerExecutorVerification(bot);

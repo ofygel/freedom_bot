@@ -10,6 +10,7 @@ import { config, logger } from '../../../config';
 import type { BotContext } from '../../types';
 import {
   EXECUTOR_MENU_ACTION,
+  EXECUTOR_MENU_TEXT_LABELS,
   EXECUTOR_SUBSCRIPTION_ACTION,
   ensureExecutorState,
   showExecutorMenu,
@@ -470,6 +471,15 @@ export const registerExecutorSubscription = (bot: Telegraf<BotContext>): void =>
     }
 
     await ctx.answerCbQuery();
+    await startExecutorSubscription(ctx);
+  });
+
+  bot.hears(EXECUTOR_MENU_TEXT_LABELS.subscription, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      return;
+    }
+
+    ensureExecutorState(ctx);
     await startExecutorSubscription(ctx);
   });
 
