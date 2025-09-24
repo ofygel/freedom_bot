@@ -2,6 +2,7 @@ import type { MiddlewareFn } from 'telegraf';
 
 import { executorKeyboard, onboardingKeyboard, removeKeyboard } from '../ui/menus';
 import type { BotContext } from '../types';
+import { logger } from '../../config';
 
 const GUEST_ALLOWLIST = new Set<string>([
   '/start',
@@ -25,6 +26,20 @@ const getMessageText = (ctx: BotContext): string | undefined => {
 export const stateGate = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   const user = ctx.auth?.user;
   const text = getMessageText(ctx);
+  const isCallbackQuery = Boolean(ctx.callbackQuery);
+  const isChannelChat = ctx.chat?.type === 'channel';
+
+  const answerCallbackQuery = async (message: string) => {
+    if (!isCallbackQuery || typeof ctx.answerCbQuery !== 'function') {
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery(message, { show_alert: false });
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to answer callback query in stateGate');
+    }
+  };
 
   if (!user || user.status === 'awaiting_phone' || !user.phone) {
     if (!text || GUEST_ALLOWLIST.has(text) || isContactMessage(ctx)) {
@@ -32,17 +47,33 @@ export const stateGate = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       return;
     }
 
-    await ctx.reply('Чтобы продолжить, отправьте номер телефона через кнопку ниже.', onboardingKeyboard());
+    const warning = 'Чтобы продолжить, отправьте номер телефона через кнопку ниже.';
+    await answerCallbackQuery(warning);
+
+    if (!isCallbackQuery || !isChannelChat) {
+      await ctx.reply(warning, onboardingKeyboard());
+    }
     return;
   }
 
   if (user.status === 'suspended' || user.status === 'banned') {
-    await ctx.reply('Доступ к функциям бота ограничен. Обратитесь в поддержку.', removeKeyboard());
+    const warning = 'Доступ к функциям бота ограничен. Обратитесь в поддержку.';
+    await answerCallbackQuery(warning);
+
+    if (!isCallbackQuery || !isChannelChat) {
+      await ctx.reply(warning, removeKeyboard());
+    }
     return;
   }
 
   if (user.status === 'trial_expired') {
-    await ctx.reply('Пробный период завершён. Продлите подписку, чтобы продолжить получать заказы.', executorKeyboard());
+    const warning =
+      'Пробный период завершён. Продлите подписку, чтобы продолжить получать заказы.';
+    await answerCallbackQuery(warning);
+
+    if (!isCallbackQuery || !isChannelChat) {
+      await ctx.reply(warning, executorKeyboard());
+    }
     return;
   }
 
