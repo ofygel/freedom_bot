@@ -151,13 +151,16 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
       ctx.session.executor.subscription,
     );
 
+    const subscription = ctx.session.executor.subscription;
     if (ctx.auth.executor.hasActiveSubscription) {
-      const subscription = ctx.session.executor.subscription;
       if (subscription.status !== 'idle') {
         subscription.status = 'idle';
         subscription.selectedPeriodId = undefined;
         subscription.pendingPaymentId = undefined;
       }
+    } else {
+      subscription.lastInviteLink = undefined;
+      subscription.lastIssuedAt = undefined;
     }
   }
 
@@ -330,15 +333,6 @@ const buildSubscriptionSection = (
 
     return [
       `Подписка активна. Если нужна новая ссылка на ${channelLabel}, используйте кнопку «Заказы» ниже.`,
-    ];
-  }
-
-  if (subscription.lastInviteLink) {
-    const issued = subscription.lastIssuedAt
-      ? ` (выдана ${formatTimestamp(subscription.lastIssuedAt)})`
-      : '';
-    return [
-      `Ссылка на канал уже выдана${issued}. При необходимости запросите новую с помощью кнопки ниже.`,
     ];
   }
 

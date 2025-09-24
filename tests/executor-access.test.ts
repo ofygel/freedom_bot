@@ -253,3 +253,35 @@ describe('executor access control', () => {
     ]);
   });
 });
+
+describe('executor menu formatting', () => {
+  it('omits cached invite link when subscription becomes inactive', async () => {
+    const { ctx } = createContext();
+    ensureExecutorState(ctx);
+
+    ctx.auth.executor.verifiedRoles.courier = true;
+    ctx.auth.executor.isVerified = true;
+    ctx.auth.user.isVerified = true;
+
+    ctx.session.executor.subscription.lastInviteLink = 'https://t.me/+cached-invite';
+    ctx.session.executor.subscription.lastIssuedAt = 1_700_000_000_000;
+
+    await showExecutorMenu(ctx, { skipAccessCheck: true });
+
+    const subscription = ctx.session.executor.subscription;
+    assert.strictEqual(subscription.lastInviteLink, undefined);
+    assert.strictEqual(subscription.lastIssuedAt, undefined);
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be displayed');
+
+    assert.ok(
+      menuStep.text?.includes('Получите ссылку на канал курьеров после проверки'),
+      'menu should prompt to request a new link',
+    );
+    assert.ok(
+      !menuStep.text?.includes('Ссылка на канал уже выдана'),
+      'menu should not mention previously issued link when subscription is inactive',
+    );
+  });
+});
