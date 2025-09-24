@@ -6,6 +6,11 @@ export type CompletedOrderDraft = ClientOrderDraftState & {
   pickup: OrderLocation;
   dropoff: OrderLocation;
   price: OrderPriceDetails;
+  isPrivateHouse: boolean;
+  recipientPhone: string;
+  apartment?: string;
+  entrance?: string;
+  floor?: string;
 };
 
 export const resetClientOrderDraft = (draft: ClientOrderDraftState): void => {
@@ -15,12 +20,26 @@ export const resetClientOrderDraft = (draft: ClientOrderDraftState): void => {
   draft.price = undefined;
   draft.confirmationMessageId = undefined;
   draft.notes = undefined;
+  draft.isPrivateHouse = undefined;
+  draft.apartment = undefined;
+  draft.entrance = undefined;
+  draft.floor = undefined;
+  draft.recipientPhone = undefined;
 };
 
 export const isOrderDraftComplete = (
   draft: ClientOrderDraftState,
 ): draft is CompletedOrderDraft =>
-  Boolean(draft.pickup && draft.dropoff && draft.price);
+  Boolean(
+    draft.pickup &&
+      draft.dropoff &&
+      draft.price &&
+      typeof draft.isPrivateHouse === 'boolean' &&
+      draft.recipientPhone &&
+      (draft.isPrivateHouse
+        ? true
+        : Boolean(draft.apartment && draft.entrance && draft.floor)),
+  );
 
 export interface OrderSummaryOptions {
   title: string;

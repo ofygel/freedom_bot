@@ -92,6 +92,11 @@ export type ClientOrderStage =
   | 'idle'
   | 'collectingPickup'
   | 'collectingDropoff'
+  | 'selectingAddressType'
+  | 'collectingApartment'
+  | 'collectingEntrance'
+  | 'collectingFloor'
+  | 'collectingRecipientPhone'
   | 'collectingComment'
   | 'awaitingConfirmation'
   | 'creatingOrder';
@@ -103,6 +108,11 @@ export interface ClientOrderDraftState {
   price?: OrderPriceDetails;
   confirmationMessageId?: number;
   notes?: string;
+  isPrivateHouse?: boolean;
+  apartment?: string;
+  entrance?: string;
+  floor?: string;
+  recipientPhone?: string;
 }
 
 export interface ClientFlowState {

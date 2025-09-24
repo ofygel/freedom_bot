@@ -45,6 +45,8 @@ import { dgBase } from '../../../utils/2gis';
 export const START_DELIVERY_ORDER_ACTION = 'client:order:delivery:start';
 const CONFIRM_DELIVERY_ORDER_ACTION = 'client:order:delivery:confirm';
 const CANCEL_DELIVERY_ORDER_ACTION = 'client:order:delivery:cancel';
+const DELIVERY_ADDRESS_TYPE_PRIVATE_ACTION = 'client:order:delivery:address-type:private';
+const DELIVERY_ADDRESS_TYPE_APARTMENT_ACTION = 'client:order:delivery:address-type:apartment';
 
 const getDraft = (ctx: BotContext): ClientOrderDraftState => ctx.session.client.delivery;
 
@@ -58,6 +60,30 @@ const DELIVERY_CANCELLED_STEP_ID = 'client:delivery:cancelled';
 const DELIVERY_CREATED_STEP_ID = 'client:delivery:created';
 const DELIVERY_CONFIRM_ERROR_STEP_ID = 'client:delivery:error:confirm';
 const DELIVERY_CREATE_ERROR_STEP_ID = 'client:delivery:error:create';
+const DELIVERY_ADDRESS_TYPE_HINT_STEP_ID = 'client:delivery:hint:address-type';
+const DELIVERY_ADDRESS_DETAILS_ERROR_STEP_ID = 'client:delivery:error:address-details';
+const DELIVERY_RECIPIENT_PHONE_ERROR_STEP_ID = 'client:delivery:error:recipient-phone';
+
+export const normaliseRecipientPhone = (value: string): string | undefined => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const compact = trimmed.replace(/[\s()-]/g, '');
+  const hasPlus = compact.startsWith('+');
+  const digitsPart = hasPlus ? compact.slice(1) : compact;
+
+  if (!/^\d+$/.test(digitsPart)) {
+    return undefined;
+  }
+
+  if (digitsPart.length < 10 || digitsPart.length > 15) {
+    return undefined;
+  }
+
+  return hasPlus ? `+${digitsPart}` : digitsPart;
+};
 
 const updateDeliveryStep = async (
   ctx: BotContext,
@@ -90,6 +116,143 @@ const remindManualAddressAccuracy = async (ctx: BotContext): Promise<void> => {
   await ui.step(ctx, {
     id: DELIVERY_MANUAL_ADDRESS_HINT_STEP_ID,
     text: '⚠️ При ручном вводе адреса укажите город, улицу, дом и ориентиры. Если есть ссылка 2ГИС или геопозиция, отправьте её.',
+    cleanup: true,
+  });
+};
+
+const buildAddressTypeKeyboard = () =>
+  buildInlineKeyboard([
+    [
+      { label: '🏠 Частный дом', action: DELIVERY_ADDRESS_TYPE_PRIVATE_ACTION },
+      { label: '🏢 Многоквартирный дом', action: DELIVERY_ADDRESS_TYPE_APARTMENT_ACTION },
+    ],
+  ]);
+
+const requestAddressType = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+): Promise<void> => {
+  if (!draft.pickup || !draft.dropoff) {
+    logger.warn('Attempted to request address type without collected locations');
+    draft.stage = 'idle';
+    return;
+  }
+
+  await updateDeliveryStep(
+    ctx,
+    [
+      `Адрес забора: ${draft.pickup.address}.`,
+      `Адрес доставки: ${draft.dropoff.address}.`,
+      '',
+      'Выберите тип адреса доставки:',
+    ].join('\n'),
+    buildAddressTypeKeyboard(),
+  );
+};
+
+const remindAddressTypeSelection = async (ctx: BotContext): Promise<void> => {
+  await ui.step(ctx, {
+    id: DELIVERY_ADDRESS_TYPE_HINT_STEP_ID,
+    text: 'Выберите тип адреса доставки с помощью кнопок ниже.',
+    cleanup: true,
+  });
+};
+
+const requestApartment = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+): Promise<void> => {
+  if (!draft.dropoff) {
+    logger.warn('Attempted to request apartment without dropoff location');
+    draft.stage = 'idle';
+    return;
+  }
+
+  await updateDeliveryStep(
+    ctx,
+    [
+      `Адрес доставки: ${draft.dropoff.address}.`,
+      '',
+      'Укажите номер квартиры получателя (например, 45 или 12Б):',
+    ].join('\n'),
+  );
+};
+
+const requestEntrance = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+): Promise<void> => {
+  if (!draft.dropoff) {
+    logger.warn('Attempted to request entrance without dropoff location');
+    draft.stage = 'idle';
+    return;
+  }
+
+  await updateDeliveryStep(
+    ctx,
+    [
+      `Адрес доставки: ${draft.dropoff.address}.`,
+      '',
+      'Укажите подъезд (например, 3 или 3А):',
+    ].join('\n'),
+  );
+};
+
+const requestFloor = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+): Promise<void> => {
+  if (!draft.dropoff) {
+    logger.warn('Attempted to request floor without dropoff location');
+    draft.stage = 'idle';
+    return;
+  }
+
+  await updateDeliveryStep(
+    ctx,
+    [
+      `Адрес доставки: ${draft.dropoff.address}.`,
+      '',
+      'Укажите этаж (например, 5):',
+    ].join('\n'),
+  );
+};
+
+const requestRecipientPhone = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+): Promise<void> => {
+  if (!draft.dropoff) {
+    logger.warn('Attempted to request recipient phone without dropoff location');
+    draft.stage = 'idle';
+    return;
+  }
+
+  await updateDeliveryStep(
+    ctx,
+    [
+      `Адрес доставки: ${draft.dropoff.address}.`,
+      '',
+      'Укажите номер телефона получателя (в формате +77001234567):',
+    ].join('\n'),
+  );
+};
+
+const remindAddressDetailsRequirement = async (
+  ctx: BotContext,
+  message: string,
+): Promise<void> => {
+  await ui.step(ctx, {
+    id: DELIVERY_ADDRESS_DETAILS_ERROR_STEP_ID,
+    text: message,
+    cleanup: true,
+  });
+};
+
+const remindRecipientPhoneRequirement = async (ctx: BotContext): Promise<void> => {
+  await ui.step(ctx, {
+    id: DELIVERY_RECIPIENT_PHONE_ERROR_STEP_ID,
+    text: 'Введите номер телефона целиком, начиная с +7 или 8. Допускаются только цифры.',
     cleanup: true,
   });
 };
@@ -142,11 +305,34 @@ const requestDeliveryComment = async (
     return;
   }
 
+  const details: string[] = [];
+  if (typeof draft.isPrivateHouse === 'boolean') {
+    const typeLabel = draft.isPrivateHouse ? 'Частный дом' : 'Многоквартирный дом';
+    details.push(`🏠 Тип адреса: ${typeLabel}.`);
+  }
+
+  if (!draft.isPrivateHouse) {
+    if (draft.apartment) {
+      details.push(`🚪 Квартира: ${draft.apartment}.`);
+    }
+    if (draft.entrance) {
+      details.push(`📮 Подъезд: ${draft.entrance}.`);
+    }
+    if (draft.floor) {
+      details.push(`⬆️ Этаж: ${draft.floor}.`);
+    }
+  }
+
+  if (draft.recipientPhone) {
+    details.push(`📞 Телефон получателя: ${draft.recipientPhone}.`);
+  }
+
   await updateDeliveryStep(
     ctx,
     [
       `Адрес забора: ${draft.pickup.address}.`,
       `Адрес доставки: ${draft.dropoff.address}.`,
+      ...(details.length > 0 ? ['', ...details] : []),
       '',
       'Добавьте обязательный комментарий для курьера:',
       '• Что нужно забрать или доставить.',
@@ -196,9 +382,14 @@ const applyDropoffDetails = async (
   }
 
   draft.price = estimateDeliveryPrice(draft.pickup, dropoff);
-  draft.stage = 'collectingComment';
+  draft.isPrivateHouse = undefined;
+  draft.apartment = undefined;
+  draft.entrance = undefined;
+  draft.floor = undefined;
+  draft.recipientPhone = undefined;
+  draft.stage = 'selectingAddressType';
 
-  await requestDeliveryComment(ctx, draft);
+  await requestAddressType(ctx, draft);
 };
 
 const applyPickupAddress = async (ctx: BotContext, draft: ClientOrderDraftState, text: string) => {
@@ -220,6 +411,30 @@ const buildConfirmationKeyboard = () =>
 const buildOrderAgainKeyboard = () =>
   buildInlineKeyboard([[{ label: 'Заказать ещё', action: CLIENT_DELIVERY_ORDER_AGAIN_ACTION }]]);
 
+const buildDeliveryInstructions = (
+  draft: CompletedOrderDraft,
+  comment?: string,
+): string[] => {
+  const lines: string[] = [
+    `🏠 Тип адреса: ${draft.isPrivateHouse ? 'Частный дом' : 'Многоквартирный дом'}.`,
+    `📞 Телефон получателя: ${draft.recipientPhone}.`,
+  ];
+
+  if (!draft.isPrivateHouse) {
+    lines.push(`🚪 Квартира: ${draft.apartment ?? '—'}.`);
+    lines.push(`📮 Подъезд: ${draft.entrance ?? '—'}.`);
+    lines.push(`⬆️ Этаж: ${draft.floor ?? '—'}.`);
+  }
+
+  if (comment) {
+    lines.push(`📝 Комментарий: ${comment}`);
+  }
+
+  lines.push('Подтвердите заказ или отмените оформление.');
+
+  return lines;
+};
+
 const showConfirmation = async (ctx: BotContext, draft: CompletedOrderDraft): Promise<void> => {
   const comment = draft.notes?.trim();
   const summary = buildOrderSummary(draft, {
@@ -228,9 +443,7 @@ const showConfirmation = async (ctx: BotContext, draft: CompletedOrderDraft): Pr
     dropoffLabel: '📮 Доставка',
     distanceLabel: '📏 Расстояние',
     priceLabel: '💰 Оценка стоимости',
-    instructions: comment
-      ? ['📝 Комментарий: ' + comment, 'Подтвердите заказ или отмените оформление.']
-      : undefined,
+    instructions: buildDeliveryInstructions(draft, comment),
   });
 
   const city = ctx.session.city;
@@ -289,6 +502,90 @@ const applyDropoffLocation = async (
   }
 
   await applyDropoffDetails(ctx, draft, dropoff);
+};
+
+const applyAddressTypeSelection = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+  isPrivateHouse: boolean,
+): Promise<void> => {
+  draft.isPrivateHouse = isPrivateHouse;
+
+  if (isPrivateHouse) {
+    draft.apartment = undefined;
+    draft.entrance = undefined;
+    draft.floor = undefined;
+    draft.stage = 'collectingRecipientPhone';
+    await requestRecipientPhone(ctx, draft);
+    return;
+  }
+
+  draft.stage = 'collectingApartment';
+  await requestApartment(ctx, draft);
+};
+
+const applyApartmentDetails = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+  text: string,
+): Promise<void> => {
+  const value = text.trim();
+  if (!value) {
+    await remindAddressDetailsRequirement(ctx, 'Номер квартиры обязателен. Укажите его, чтобы курьер нашёл адрес.');
+    return;
+  }
+
+  draft.apartment = value;
+  draft.stage = 'collectingEntrance';
+  await requestEntrance(ctx, draft);
+};
+
+const applyEntranceDetails = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+  text: string,
+): Promise<void> => {
+  const value = text.trim();
+  if (!value) {
+    await remindAddressDetailsRequirement(ctx, 'Укажите подъезд, чтобы курьер быстрее нашёл вход.');
+    return;
+  }
+
+  draft.entrance = value;
+  draft.stage = 'collectingFloor';
+  await requestFloor(ctx, draft);
+};
+
+const applyFloorDetails = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+  text: string,
+): Promise<void> => {
+  const value = text.trim();
+  if (!value) {
+    await remindAddressDetailsRequirement(ctx, 'Укажите этаж, чтобы курьер подготовился заранее.');
+    return;
+  }
+
+  draft.floor = value;
+  draft.stage = 'collectingRecipientPhone';
+  await requestRecipientPhone(ctx, draft);
+};
+
+const applyRecipientPhone = async (
+  ctx: BotContext,
+  draft: ClientOrderDraftState,
+  text: string,
+): Promise<void> => {
+  const phone = normaliseRecipientPhone(text);
+  if (!phone) {
+    await remindRecipientPhoneRequirement(ctx);
+    return;
+  }
+
+  draft.recipientPhone = phone;
+  draft.stage = 'collectingComment';
+  await requestDeliveryComment(ctx, draft);
 };
 
 const applyDeliveryComment = async (
@@ -402,9 +699,14 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
       city,
       clientId: ctx.auth.user.telegramId,
       clientPhone: ctx.session.phoneNumber,
+      recipientPhone: draft.recipientPhone,
       customerName: buildCustomerName(ctx),
       customerUsername: ctx.auth.user.username,
       clientComment: draft.notes,
+      apartment: draft.apartment,
+      entrance: draft.entrance,
+      floor: draft.floor,
+      isPrivateHouse: draft.isPrivateHouse,
       pickup: draft.pickup,
       dropoff: draft.dropoff,
       price: draft.price,
@@ -476,6 +778,36 @@ const handleIncomingText = async (ctx: BotContext, next: () => Promise<void>): P
       }
       await applyDropoffAddress(ctx, draft, text);
       break;
+    case 'selectingAddressType':
+      if (await processCancellationText(ctx, draft, text)) {
+        return;
+      }
+      await remindAddressTypeSelection(ctx);
+      break;
+    case 'collectingApartment':
+      if (await processCancellationText(ctx, draft, text)) {
+        return;
+      }
+      await applyApartmentDetails(ctx, draft, text);
+      break;
+    case 'collectingEntrance':
+      if (await processCancellationText(ctx, draft, text)) {
+        return;
+      }
+      await applyEntranceDetails(ctx, draft, text);
+      break;
+    case 'collectingFloor':
+      if (await processCancellationText(ctx, draft, text)) {
+        return;
+      }
+      await applyFloorDetails(ctx, draft, text);
+      break;
+    case 'collectingRecipientPhone':
+      if (await processCancellationText(ctx, draft, text)) {
+        return;
+      }
+      await applyRecipientPhone(ctx, draft, text);
+      break;
     case 'collectingComment':
       if (await processCancellationText(ctx, draft, text)) {
         return;
@@ -518,6 +850,21 @@ const handleIncomingLocation = async (
     case 'collectingDropoff':
       await applyDropoffLocation(ctx, draft, message.location);
       return;
+    case 'selectingAddressType':
+      await remindAddressTypeSelection(ctx);
+      return;
+    case 'collectingApartment':
+      await remindAddressDetailsRequirement(ctx, 'Отправьте номер квартиры текстом.');
+      return;
+    case 'collectingEntrance':
+      await remindAddressDetailsRequirement(ctx, 'Отправьте номер подъезда текстом.');
+      return;
+    case 'collectingFloor':
+      await remindAddressDetailsRequirement(ctx, 'Отправьте этаж текстом.');
+      return;
+    case 'collectingRecipientPhone':
+      await remindRecipientPhoneRequirement(ctx);
+      return;
     case 'collectingComment':
       await remindDeliveryCommentRequirement(ctx);
       return;
@@ -559,6 +906,32 @@ const handleConfirmationAction = async (ctx: BotContext): Promise<void> => {
   await confirmOrder(ctx, draft);
 };
 
+const createAddressTypeActionHandler = (isPrivateHouse: boolean) =>
+  async (ctx: BotContext): Promise<void> => {
+    if (
+      !(await ensurePrivateCallback(
+        ctx,
+        undefined,
+        'Выбирайте тип адреса доставки в личном чате с ботом.',
+      ))
+    ) {
+      return;
+    }
+
+    const draft = getDraft(ctx);
+    if (draft.stage !== 'selectingAddressType') {
+      if (ctx.callbackQuery) {
+        await ctx.answerCbQuery('Тип адреса уже выбран.');
+      }
+      return;
+    }
+
+    await applyAddressTypeSelection(ctx, draft, isPrivateHouse);
+  };
+
+const handlePrivateHouseAddressType = createAddressTypeActionHandler(true);
+const handleApartmentAddressType = createAddressTypeActionHandler(false);
+
 const handleCancellationAction = async (ctx: BotContext): Promise<void> => {
   if (!(await ensurePrivateCallback(ctx, 'Оформление отменено.', 'Отмените заказ в личном чате с ботом.'))) {
     return;
@@ -581,6 +954,14 @@ export const registerDeliveryOrderFlow = (bot: Telegraf<BotContext>): void => {
 
   bot.action(CANCEL_DELIVERY_ORDER_ACTION, async (ctx) => {
     await handleCancellationAction(ctx);
+  });
+
+  bot.action(DELIVERY_ADDRESS_TYPE_PRIVATE_ACTION, async (ctx) => {
+    await handlePrivateHouseAddressType(ctx);
+  });
+
+  bot.action(DELIVERY_ADDRESS_TYPE_APARTMENT_ACTION, async (ctx) => {
+    await handleApartmentAddressType(ctx);
   });
 
   bot.action(CLIENT_DELIVERY_ORDER_AGAIN_ACTION, async (ctx) => {

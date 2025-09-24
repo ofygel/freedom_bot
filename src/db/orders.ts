@@ -22,6 +22,7 @@ interface OrderRow {
   city: string | null;
   client_id: string | number | null;
   client_phone: string | null;
+  recipient_phone: string | null;
   customer_name: string | null;
   customer_username: string | null;
   client_comment: string | null;
@@ -38,6 +39,10 @@ interface OrderRow {
   dropoff_lat: number;
   dropoff_lon: number;
   dropoff_2gis_url: string | null;
+  dropoff_apartment: string | null;
+  dropoff_entrance: string | null;
+  dropoff_floor: string | null;
+  is_private_house: boolean | null;
   price_amount: number;
   price_currency: string;
   distance_km: number | string;
@@ -104,9 +109,14 @@ const mapOrderRow = (row: OrderRow): OrderRecord => {
     city,
     clientId: parseNumeric(row.client_id),
     clientPhone: row.client_phone ?? undefined,
+    recipientPhone: row.recipient_phone ?? undefined,
     customerName: row.customer_name ?? undefined,
     customerUsername: row.customer_username ?? undefined,
     clientComment: row.client_comment ?? undefined,
+    apartment: row.dropoff_apartment ?? undefined,
+    entrance: row.dropoff_entrance ?? undefined,
+    floor: row.dropoff_floor ?? undefined,
+    isPrivateHouse: row.is_private_house ?? undefined,
     claimedBy: parseNumeric(row.claimed_by),
     claimedAt:
       row.claimed_at instanceof Date
@@ -169,6 +179,7 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         status,
         client_id,
         client_phone,
+        recipient_phone,
         customer_name,
         customer_username,
         client_comment,
@@ -182,6 +193,10 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         dropoff_lat,
         dropoff_lon,
         dropoff_2gis_url,
+        dropoff_apartment,
+        dropoff_entrance,
+        dropoff_floor,
+        is_private_house,
         city,
         price_amount,
         price_currency,
@@ -213,6 +228,11 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         $18,
         $19,
         $20,
+        $21,
+        $22,
+        $23,
+        $24,
+        $25,
         NULL,
         NULL,
         NULL
@@ -223,6 +243,7 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
       input.kind,
       input.clientId ?? null,
       input.clientPhone ?? null,
+      input.recipientPhone ?? null,
       input.customerName ?? null,
       input.customerUsername ?? null,
       input.clientComment ?? null,
@@ -236,6 +257,10 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
       input.dropoff.latitude,
       input.dropoff.longitude,
       input.dropoff.twoGisUrl ?? null,
+      input.apartment ?? null,
+      input.entrance ?? null,
+      input.floor ?? null,
+      input.isPrivateHouse ?? null,
       input.city,
       input.price.amount,
       input.price.currency,

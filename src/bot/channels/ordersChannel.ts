@@ -70,7 +70,27 @@ export const buildOrderDetailsMessage = (order: OrderRecord): string => {
   const lines = [...buildOrderBaseLines(order)];
 
   if (order.clientPhone) {
-    lines.push(`📞 Телефон: ${order.clientPhone}`);
+    lines.push(`📞 Телефон клиента: ${order.clientPhone}`);
+  }
+
+  if (order.recipientPhone) {
+    lines.push(`📱 Телефон получателя: ${order.recipientPhone}`);
+  }
+
+  if (typeof order.isPrivateHouse === 'boolean') {
+    lines.push(`🏠 Тип адреса: ${order.isPrivateHouse ? 'Частный дом' : 'Многоквартирный дом'}`);
+  }
+
+  if (order.isPrivateHouse === false) {
+    if (order.apartment) {
+      lines.push(`🚪 Квартира: ${order.apartment}`);
+    }
+    if (order.entrance) {
+      lines.push(`📮 Подъезд: ${order.entrance}`);
+    }
+    if (order.floor) {
+      lines.push(`⬆️ Этаж: ${order.floor}`);
+    }
   }
 
   const customerName = order.customerName?.trim();
