@@ -222,6 +222,9 @@ describe('support service', () => {
 
     __testing__.setModerationChannelResolver(async () => 987654321);
 
+    const auth = createAuthState(222);
+    auth.user.phone = '+7 700 000 00 00';
+
     const ctx = {
       chat: { id: 111 },
       from: {
@@ -232,12 +235,27 @@ describe('support service', () => {
       },
       message: { message_id: 123, text: 'Нужна помощь' },
       telegram: telegram.api,
-      auth: createAuthState(222),
+      auth,
     } as unknown as BotContext;
 
     const result = (await forwardSupportMessage(ctx)) as SupportForwardResult;
     assert.equal(result.status, 'forwarded');
     assert.ok(result.threadId);
+
+    const headerCall = telegram.calls.find((call) => call.method === 'sendMessage');
+    assert.ok(headerCall, 'support header should be sent to the moderation chat');
+    assert.equal(headerCall?.args[0], 987654321);
+    assert.equal(
+      headerCall?.args[1],
+      [
+        '🆘 Новое обращение в поддержку',
+        `ID обращения: ${result.threadId}`,
+        'Telegram ID: 222',
+        'Username: @support_user',
+        'Имя: Support User',
+        'Телефон: +7 700 000 00 00',
+      ].join('\n'),
+    );
 
     const copyCall = telegram.calls.find((call) => call.method === 'copyMessage');
     assert.ok(copyCall, 'copyMessage should be invoked');
