@@ -27,6 +27,7 @@ const callbackMap = new Map<string, CallbackRecord>();
 const channelsRow = {
   verify_channel_id: '555',
   drivers_channel_id: null,
+  stats_channel_id: '-100777888',
 };
 
 const originalQuery = pool.query.bind(pool);

@@ -1,22 +1,24 @@
 import { pool } from '../../db';
 
-export type ChannelType = 'verify' | 'drivers';
+export type ChannelType = 'verify' | 'drivers' | 'stats';
 
 export interface ChannelBinding {
   type: ChannelType;
   chatId: number;
 }
 
-type ChannelColumn = 'verify_channel_id' | 'drivers_channel_id';
+type ChannelColumn = 'verify_channel_id' | 'drivers_channel_id' | 'stats_channel_id';
 
 interface ChannelsRow {
   verify_channel_id: string | number | null;
   drivers_channel_id: string | number | null;
+  stats_channel_id: string | number | null;
 }
 
 const CHANNEL_COLUMNS: Record<ChannelType, ChannelColumn> = {
   verify: 'verify_channel_id',
   drivers: 'drivers_channel_id',
+  stats: 'stats_channel_id',
 };
 
 const parseChatId = (value: string | number): number => {
@@ -55,7 +57,7 @@ export const getChannelBinding = async (
 
   const { rows } = await pool.query<ChannelsRow>(
     `
-      SELECT verify_channel_id, drivers_channel_id
+      SELECT verify_channel_id, drivers_channel_id, stats_channel_id
       FROM channels
       WHERE id = 1
       LIMIT 1

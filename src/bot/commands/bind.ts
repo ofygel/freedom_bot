@@ -24,6 +24,11 @@ const BIND_COMMANDS: BindCommandConfig[] = [
     type: 'drivers',
     successLabel: 'Канал исполнителей',
   },
+  {
+    command: 'bind_stat_channel',
+    type: 'stats',
+    successLabel: 'Канал отчётов',
+  },
 ];
 
 const COMMAND_LOOKUP = new Map<string, BindCommandConfig>(

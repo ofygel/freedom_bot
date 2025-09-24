@@ -250,6 +250,14 @@ describe('bind command channel flow', () => {
       expectedColumn: 'drivers_channel_id',
       expectedMessage: /Готово! Канал исполнителей привязан к @freedom_drivers\./u,
     },
+    {
+      command: '/bind_stat_channel',
+      chatId: -100999888,
+      title: 'Freedom Reports',
+      username: 'freedom_reports',
+      expectedColumn: 'stats_channel_id',
+      expectedMessage: /Готово! Канал отчётов привязан к @freedom_reports\./u,
+    },
   ] as const;
 
   for (const {
