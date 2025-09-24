@@ -1,5 +1,5 @@
 import { Markup, Telegraf } from 'telegraf';
-import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
+import type { InlineKeyboardMarkup, ReplyKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import {
   EXECUTOR_ROLES,
@@ -23,7 +23,23 @@ export const EXECUTOR_ORDERS_ACTION = 'executor:orders:link';
 export const EXECUTOR_SUPPORT_ACTION = 'support:contact';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
 const EXECUTOR_MENU_STEP_ID = 'executor:menu:main';
+const EXECUTOR_MENU_REPLY_STEP_ID = 'executor:menu:actions';
 const EXECUTOR_MENU_CITY_ACTION = 'executorMenu';
+
+export const EXECUTOR_MENU_TEXT_LABELS = {
+  documents: '📸 Документы',
+  subscription: '📨 Подписка/Ссылка',
+  orders: '🧾 Заказы',
+  support: '🆘 Поддержка',
+  refresh: '🔄 Меню',
+} as const;
+
+export const EXECUTOR_MENU_TEXT_COMMANDS = Object.values(
+  EXECUTOR_MENU_TEXT_LABELS,
+) as readonly string[];
+
+export const isExecutorMenuTextCommand = (value: string): boolean =>
+  EXECUTOR_MENU_TEXT_COMMANDS.includes(value);
 
 const ensurePositiveRequirement = (_value?: number): number => EXECUTOR_VERIFICATION_PHOTO_COUNT;
 
@@ -200,6 +216,16 @@ const buildMenuKeyboard = (
     [Markup.button.callback('🔄 Обновить меню', EXECUTOR_MENU_ACTION)],
   ]).reply_markup;
 };
+
+const buildMenuReplyKeyboard = (): ReplyKeyboardMarkup =>
+  Markup.keyboard([
+    [EXECUTOR_MENU_TEXT_LABELS.documents, EXECUTOR_MENU_TEXT_LABELS.subscription],
+    [EXECUTOR_MENU_TEXT_LABELS.orders],
+    [EXECUTOR_MENU_TEXT_LABELS.support],
+    [EXECUTOR_MENU_TEXT_LABELS.refresh],
+  ])
+    .resize()
+    .persistent().reply_markup;
 
 const formatTimestamp = (timestamp: number): string => {
   return new Intl.DateTimeFormat('ru-RU', {
@@ -401,6 +427,16 @@ export const showExecutorMenu = async (
 
   const text = buildMenuText(state, access, CITY_LABEL[city]);
   const keyboard = buildMenuKeyboard(state, access);
+
+  if (ctx.chat.type === 'private') {
+    await ui.step(ctx, {
+      id: EXECUTOR_MENU_REPLY_STEP_ID,
+      text: 'Быстрые действия доступны через клавиатуру ниже.',
+      keyboard: buildMenuReplyKeyboard(),
+      cleanup: false,
+    });
+  }
+
   await ui.step(ctx, {
     id: EXECUTOR_MENU_STEP_ID,
     text,
@@ -436,6 +472,15 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
   });
 
   bot.command('menu', async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      return;
+    }
+
+    ensureExecutorState(ctx);
+    await showExecutorMenu(ctx);
+  });
+
+  bot.hears(EXECUTOR_MENU_TEXT_LABELS.refresh, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
       return;
     }

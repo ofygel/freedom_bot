@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { afterEach, before, beforeEach, describe, it } from 'node:test';
 
 import { EXECUTOR_VERIFICATION_PHOTO_COUNT, type BotContext, type SessionState } from '../src/bot/types';
-import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
+import type { InlineKeyboardMarkup, ReplyKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 import type { UiStepOptions } from '../src/bot/ui';
 
 let ensureExecutorState: typeof import('../src/bot/flows/executor/menu')['ensureExecutorState'];
@@ -14,6 +14,7 @@ let EXECUTOR_SUBSCRIPTION_ACTION: typeof import('../src/bot/flows/executor/menu'
 let EXECUTOR_ORDERS_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_ORDERS_ACTION'];
 let EXECUTOR_SUPPORT_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_SUPPORT_ACTION'];
 let EXECUTOR_MENU_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_ACTION'];
+let EXECUTOR_MENU_TEXT_LABELS: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_TEXT_LABELS'];
 let startExecutorSubscription: typeof import('../src/bot/flows/executor/subscription')['startExecutorSubscription'];
 let uiHelper: typeof import('../src/bot/ui')['ui'];
 
@@ -39,6 +40,7 @@ before(async () => {
     EXECUTOR_ORDERS_ACTION,
     EXECUTOR_SUPPORT_ACTION,
     EXECUTOR_MENU_ACTION,
+    EXECUTOR_MENU_TEXT_LABELS,
   } = await import('../src/bot/flows/executor/menu'));
   ({ startExecutorSubscription } = await import('../src/bot/flows/executor/subscription'));
   ({ ui: uiHelper } = await import('../src/bot/ui'));
@@ -117,9 +119,13 @@ const createContext = () => {
 };
 
 const mapKeyboard = (
-  keyboard: InlineKeyboardMarkup | undefined,
-): { text: string; callback_data?: string }[][] =>
-  (keyboard?.inline_keyboard ?? []).map((row) =>
+  keyboard: InlineKeyboardMarkup | ReplyKeyboardMarkup | undefined,
+): { text: string; callback_data?: string }[][] => {
+  if (!keyboard || !('inline_keyboard' in keyboard)) {
+    return [];
+  }
+
+  return keyboard.inline_keyboard.map((row) =>
     row.map((button) => ({
       text: button.text,
       callback_data:
@@ -128,6 +134,17 @@ const mapKeyboard = (
           : undefined,
     })),
   );
+};
+
+const mapReplyKeyboard = (keyboard: ReplyKeyboardMarkup | undefined): string[][] => {
+  if (!keyboard || !('keyboard' in keyboard)) {
+    return [];
+  }
+
+  return keyboard.keyboard.map((row) =>
+    row.map((button) => (typeof button === 'string' ? button : button.text)),
+  );
+};
 
 let originalStep: typeof uiHelper.step;
 let recordedSteps: UiStepOptions[];
@@ -220,6 +237,24 @@ describe('executor access control', () => {
           callback_data: EXECUTOR_MENU_ACTION,
         },
       ],
+    ]);
+  });
+
+  it('shows the quick action reply keyboard when rendering the executor menu', async () => {
+    const { ctx } = createContext();
+    ensureExecutorState(ctx);
+
+    await showExecutorMenu(ctx, { skipAccessCheck: true });
+
+    const actionsStep = recordedSteps.find((step) => step.id === 'executor:menu:actions');
+    assert.ok(actionsStep, 'quick action step should be displayed');
+
+    const layout = mapReplyKeyboard(actionsStep.keyboard as ReplyKeyboardMarkup | undefined);
+    assert.deepEqual(layout, [
+      [EXECUTOR_MENU_TEXT_LABELS.documents, EXECUTOR_MENU_TEXT_LABELS.subscription],
+      [EXECUTOR_MENU_TEXT_LABELS.orders],
+      [EXECUTOR_MENU_TEXT_LABELS.support],
+      [EXECUTOR_MENU_TEXT_LABELS.refresh],
     ]);
   });
 

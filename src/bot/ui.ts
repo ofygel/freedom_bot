@@ -2,6 +2,7 @@ import type {
   InlineKeyboardMarkup,
   LinkPreviewOptions,
   ParseMode,
+  ReplyKeyboardMarkup,
 } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../config';
@@ -78,13 +79,18 @@ const appendHomeButton = (
   return mergeInlineKeyboards(keyboard, homeKeyboard) ?? homeKeyboard;
 };
 
+const isInlineKeyboard = (
+  keyboard: InlineKeyboardMarkup | ReplyKeyboardMarkup | undefined,
+): keyboard is InlineKeyboardMarkup | undefined =>
+  !keyboard || 'inline_keyboard' in keyboard;
+
 export interface UiStepOptions {
   /** Unique identifier used to track the step message. */
   id: string;
   /** Text displayed in the step message. */
   text: string;
   /** Optional keyboard shown alongside the message. */
-  keyboard?: InlineKeyboardMarkup;
+  keyboard?: InlineKeyboardMarkup | ReplyKeyboardMarkup;
   /** Parse mode used when sending the message. */
   parseMode?: ParseMode;
   /** Link preview behaviour configuration. */
@@ -127,11 +133,18 @@ export const ui = {
     let replyMarkup = options.keyboard;
     if (options.homeAction) {
       registerHomeAction(state, options.homeAction);
-      replyMarkup = appendHomeButton(replyMarkup, options.homeAction, options.homeLabel);
+
+      if (isInlineKeyboard(replyMarkup)) {
+        replyMarkup = appendHomeButton(
+          replyMarkup,
+          options.homeAction,
+          options.homeLabel,
+        );
+      }
     }
 
     const existing = state.steps[options.id];
-    if (existing && existing.chatId === chatId) {
+    if (existing && existing.chatId === chatId && isInlineKeyboard(replyMarkup)) {
       try {
         await ctx.telegram.editMessageText(chatId, existing.messageId, undefined, options.text, {
           parse_mode: options.parseMode,

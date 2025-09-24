@@ -7,6 +7,7 @@ import type { BotContext, ExecutorFlowState } from '../../types';
 import { ui } from '../../ui';
 import {
   EXECUTOR_MENU_ACTION,
+  EXECUTOR_MENU_TEXT_LABELS,
   EXECUTOR_ORDERS_ACTION,
   ensureExecutorState,
   showExecutorMenu,
@@ -158,6 +159,43 @@ export const sendInviteLink = async (
   });
 };
 
+const processOrdersRequest = async (ctx: BotContext): Promise<void> => {
+  const state = ensureExecutorState(ctx);
+  if (!ctx.auth.executor.hasActiveSubscription) {
+    state.subscription.status = 'idle';
+    state.subscription.selectedPeriodId = undefined;
+    state.subscription.pendingPaymentId = undefined;
+    await ui.step(ctx, {
+      id: ORDERS_LINK_STEP_ID,
+      text: EXECUTOR_SUBSCRIPTION_REQUIRED_MESSAGE,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+    await showExecutorMenu(ctx, { skipAccessCheck: true });
+    return;
+  }
+
+  const resolution = await resolveInviteLink(ctx, state);
+  if (!resolution.link) {
+    await ui.step(ctx, {
+      id: ORDERS_LINK_STEP_ID,
+      text: 'Не удалось получить ссылку на канал заказов. Попробуйте позже или обратитесь в поддержку через меню.',
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+    return;
+  }
+
+  state.subscription.lastInviteLink = resolution.link;
+  state.subscription.lastIssuedAt = Date.now();
+  state.subscription.status = 'idle';
+  state.subscription.selectedPeriodId = undefined;
+  state.subscription.pendingPaymentId = undefined;
+  state.subscription.moderationChatId = undefined;
+  state.subscription.moderationMessageId = undefined;
+
+  await sendInviteLink(ctx, state, resolution.link, resolution.expiresAt);
+  await showExecutorMenu(ctx, { skipAccessCheck: true });
+};
+
 export const registerExecutorOrders = (bot: Telegraf<BotContext>): void => {
   bot.action(EXECUTOR_ORDERS_ACTION, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
@@ -166,40 +204,14 @@ export const registerExecutorOrders = (bot: Telegraf<BotContext>): void => {
     }
 
     await ctx.answerCbQuery('Готовим ссылку…');
+    await processOrdersRequest(ctx);
+  });
 
-    const state = ensureExecutorState(ctx);
-    if (!ctx.auth.executor.hasActiveSubscription) {
-      state.subscription.status = 'idle';
-      state.subscription.selectedPeriodId = undefined;
-      state.subscription.pendingPaymentId = undefined;
-      await ui.step(ctx, {
-        id: ORDERS_LINK_STEP_ID,
-        text: EXECUTOR_SUBSCRIPTION_REQUIRED_MESSAGE,
-        homeAction: EXECUTOR_MENU_ACTION,
-      });
-      await showExecutorMenu(ctx, { skipAccessCheck: true });
+  bot.hears(EXECUTOR_MENU_TEXT_LABELS.orders, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
       return;
     }
 
-    const resolution = await resolveInviteLink(ctx, state);
-    if (!resolution.link) {
-      await ui.step(ctx, {
-        id: ORDERS_LINK_STEP_ID,
-        text: 'Не удалось получить ссылку на канал заказов. Попробуйте позже или обратитесь в поддержку через меню.',
-        homeAction: EXECUTOR_MENU_ACTION,
-      });
-      return;
-    }
-
-    state.subscription.lastInviteLink = resolution.link;
-    state.subscription.lastIssuedAt = Date.now();
-    state.subscription.status = 'idle';
-    state.subscription.selectedPeriodId = undefined;
-    state.subscription.pendingPaymentId = undefined;
-    state.subscription.moderationChatId = undefined;
-    state.subscription.moderationMessageId = undefined;
-
-    await sendInviteLink(ctx, state, resolution.link, resolution.expiresAt);
-    await showExecutorMenu(ctx, { skipAccessCheck: true });
+    await processOrdersRequest(ctx);
   });
 };
