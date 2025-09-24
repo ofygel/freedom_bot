@@ -178,6 +178,7 @@ export const resetVerificationState = (state: ExecutorFlowState): void => {
 };
 
 const buildMenuKeyboard = (
+  state: ExecutorFlowState,
   access: ExecutorAccessStatus,
 ): InlineKeyboardMarkup => {
   if (access.isVerified && access.hasActiveSubscription) {
@@ -187,8 +188,14 @@ const buildMenuKeyboard = (
     ]).reply_markup;
   }
 
+  const verification = state.verification[state.role];
+  const verificationButtonLabel =
+    verification.status === 'collecting'
+      ? '📸 Продолжить отправку документов'
+      : '📸 Отправить документы';
+
   return Markup.inlineKeyboard([
-    [Markup.button.callback('📸 Отправить документы', EXECUTOR_VERIFICATION_ACTION)],
+    [Markup.button.callback(verificationButtonLabel, EXECUTOR_VERIFICATION_ACTION)],
     [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
     [Markup.button.callback('🔄 Обновить меню', EXECUTOR_MENU_ACTION)],
   ]).reply_markup;
@@ -393,7 +400,7 @@ export const showExecutorMenu = async (
   }
 
   const text = buildMenuText(state, access, CITY_LABEL[city]);
-  const keyboard = buildMenuKeyboard(access);
+  const keyboard = buildMenuKeyboard(state, access);
   await ui.step(ctx, {
     id: EXECUTOR_MENU_STEP_ID,
     text,
