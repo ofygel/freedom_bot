@@ -32,10 +32,12 @@ interface OrderRow {
   pickup_address: string;
   pickup_lat: number;
   pickup_lon: number;
+  pickup_2gis_url: string | null;
   dropoff_query: string;
   dropoff_address: string;
   dropoff_lat: number;
   dropoff_lon: number;
+  dropoff_2gis_url: string | null;
   price_amount: number;
   price_currency: string;
   distance_km: number | string;
@@ -64,11 +66,18 @@ const parseNumeric = (value: string | number | null | undefined): number | undef
   return Number.isNaN(parsed) ? undefined : parsed;
 };
 
-const mapLocation = (query: string, address: string, lat: number, lon: number): OrderLocation => ({
+const mapLocation = (
+  query: string,
+  address: string,
+  lat: number,
+  lon: number,
+  twoGisUrl: string | null,
+): OrderLocation => ({
   query,
   address,
   latitude: lat,
   longitude: lon,
+  twoGisUrl: twoGisUrl ?? undefined,
 });
 
 const mapPrice = (amount: number, currency: string, distance: number | string): OrderPriceDetails => {
@@ -111,8 +120,20 @@ const mapOrderRow = (row: OrderRow): OrderRecord => {
         : row.completed_at
         ? new Date(row.completed_at)
         : undefined,
-    pickup: mapLocation(row.pickup_query, row.pickup_address, row.pickup_lat, row.pickup_lon),
-    dropoff: mapLocation(row.dropoff_query, row.dropoff_address, row.dropoff_lat, row.dropoff_lon),
+    pickup: mapLocation(
+      row.pickup_query,
+      row.pickup_address,
+      row.pickup_lat,
+      row.pickup_lon,
+      row.pickup_2gis_url,
+    ),
+    dropoff: mapLocation(
+      row.dropoff_query,
+      row.dropoff_address,
+      row.dropoff_lat,
+      row.dropoff_lon,
+      row.dropoff_2gis_url,
+    ),
     price: mapPrice(row.price_amount, row.price_currency, row.distance_km),
     channelMessageId: parseNumeric(row.channel_message_id),
     createdAt: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
@@ -155,10 +176,12 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         pickup_address,
         pickup_lat,
         pickup_lon,
+        pickup_2gis_url,
         dropoff_query,
         dropoff_address,
         dropoff_lat,
         dropoff_lon,
+        dropoff_2gis_url,
         city,
         price_amount,
         price_currency,
@@ -188,6 +211,8 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
         $16,
         $17,
         $18,
+        $19,
+        $20,
         NULL,
         NULL,
         NULL
@@ -205,10 +230,12 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
       input.pickup.address,
       input.pickup.latitude,
       input.pickup.longitude,
+      input.pickup.twoGisUrl ?? null,
       input.dropoff.query,
       input.dropoff.address,
       input.dropoff.latitude,
       input.dropoff.longitude,
+      input.dropoff.twoGisUrl ?? null,
       input.city,
       input.price.amount,
       input.price.currency,

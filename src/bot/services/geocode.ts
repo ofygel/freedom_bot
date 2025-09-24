@@ -14,6 +14,7 @@ export const toOrderLocation = (result: GeocodingResult): OrderLocation => ({
   address: result.address,
   latitude: result.latitude,
   longitude: result.longitude,
+  twoGisUrl: result.twoGisUrl,
 });
 
 export interface GeocodeOrderLocationOptions {
