@@ -25,13 +25,6 @@ const ensureMigrationsTable = async (client: PoolClient) => {
   `);
 };
 
-const loadAppliedMigrations = async (client: PoolClient): Promise<Set<string>> => {
-  const { rows } = await client.query<{ name: string }>(
-    `SELECT name FROM ${MIGRATIONS_TABLE} ORDER BY name ASC`,
-  );
-  return new Set(rows.map((row) => row.name));
-};
-
 const applyMigration = async (
   client: PoolClient,
   fileName: string,
@@ -45,7 +38,14 @@ const applyMigration = async (
 
   console.log(`Applying migration ${fileName}...`);
   await client.query(trimmed);
-  await client.query(`INSERT INTO ${MIGRATIONS_TABLE} (name) VALUES ($1)`, [fileName]);
+  await client.query(
+    `
+      INSERT INTO ${MIGRATIONS_TABLE} (name)
+      VALUES ($1)
+      ON CONFLICT (name) DO UPDATE SET executed_at = now()
+    `,
+    [fileName],
+  );
 };
 
 const runMigrations = async (): Promise<void> => {
@@ -53,14 +53,7 @@ const runMigrations = async (): Promise<void> => {
 
   await withTx(async (client) => {
     await ensureMigrationsTable(client);
-    const applied = await loadAppliedMigrations(client);
-
     for (const file of files) {
-      if (applied.has(file)) {
-        console.log(`Skipping already applied migration ${file}`);
-        continue;
-      }
-
       const fullPath = path.join(MIGRATIONS_DIR, file);
       const sql = await fs.readFile(fullPath, 'utf-8');
       await applyMigration(client, file, sql);
