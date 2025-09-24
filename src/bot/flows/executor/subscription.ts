@@ -32,6 +32,11 @@ import {
   type TrialSubscriptionErrorReason,
 } from '../../../db/subscriptions';
 import { resolveInviteLink, sendInviteLink } from './orders';
+import {
+  reportSubscriptionPaymentSubmitted,
+  reportSubscriptionTrialActivated,
+  type SubscriptionIdentity,
+} from '../../services/reports';
 
 const SUBSCRIPTION_PERIOD_ACTION_PREFIX = 'executor:subscription:period';
 const SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID =
@@ -185,6 +190,17 @@ const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
     ctx.auth.executor.hasActiveSubscription = true;
     subscriptionState.moderationChatId = undefined;
     subscriptionState.moderationMessageId = undefined;
+
+    const subscriber: SubscriptionIdentity = {
+      telegramId: ctx.auth.user.telegramId,
+      username: ctx.auth.user.username ?? undefined,
+      firstName: ctx.auth.user.firstName ?? undefined,
+      lastName: ctx.auth.user.lastName ?? undefined,
+      phone: ctx.auth.user.phone ?? ctx.session.phoneNumber ?? undefined,
+      shortId: trial.subscriptionId ? String(trial.subscriptionId) : undefined,
+    };
+
+    await reportSubscriptionTrialActivated(ctx.telegram, subscriber, trial.expiresAt);
 
     const resolution = await resolveInviteLink(ctx, state);
     if (!resolution.link) {
@@ -414,12 +430,13 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<boolean> => {
 
   const paymentId = buildPaymentId();
   subscription.pendingPaymentId = paymentId;
+  const submittedAt = new Date();
 
   try {
     const result = await submitSubscriptionPaymentReview(ctx.telegram, {
       paymentId,
       period,
-      submittedAt: new Date(),
+      submittedAt,
       executor: {
         role: state.role,
         telegramId: ctx.auth.user.telegramId,
@@ -442,6 +459,24 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<boolean> => {
       subscription.pendingPaymentId = undefined;
       await notifyReceiptFailed(ctx);
       return true;
+    }
+
+    if (result.status === 'published') {
+      const payer: SubscriptionIdentity = {
+        telegramId: ctx.auth.user.telegramId,
+        username: ctx.auth.user.username ?? undefined,
+        firstName: ctx.auth.user.firstName ?? undefined,
+        lastName: ctx.auth.user.lastName ?? undefined,
+        phone: ctx.auth.user.phone ?? ctx.session.phoneNumber ?? undefined,
+      };
+
+      await reportSubscriptionPaymentSubmitted(
+        ctx.telegram,
+        payer,
+        period.label,
+        { value: period.amount, currency: period.currency },
+        submittedAt,
+      );
     }
 
     subscription.status = 'pendingModeration';

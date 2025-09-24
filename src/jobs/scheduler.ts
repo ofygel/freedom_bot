@@ -10,6 +10,11 @@ import {
   recordSubscriptionWarning,
   type SubscriptionWithUser,
 } from '../db/subscriptions';
+import {
+  reportSubscriptionExpired,
+  reportSubscriptionWarning,
+  type SubscriptionIdentity,
+} from '../bot/services/reports';
 
 const CRON_EXPRESSION = '*/10 * * * *';
 
@@ -76,6 +81,16 @@ const sendWarningMessage = async (
   ].join('\n');
 
   await telegram.sendMessage(subscription.telegramId, message);
+
+  const identity: SubscriptionIdentity = {
+    telegramId: subscription.telegramId,
+    username: subscription.username ?? undefined,
+    firstName: subscription.firstName ?? undefined,
+    lastName: subscription.lastName ?? undefined,
+    shortId: subscription.shortId ?? undefined,
+  };
+
+  await reportSubscriptionWarning(telegram, identity, subscription.expiresAt);
 };
 
 const sendExpirationMessage = async (
@@ -96,6 +111,16 @@ const sendExpirationMessage = async (
   ].join('\n');
 
   await telegram.sendMessage(subscription.telegramId, message);
+
+  const identity: SubscriptionIdentity = {
+    telegramId: subscription.telegramId,
+    username: subscription.username ?? undefined,
+    firstName: subscription.firstName ?? undefined,
+    lastName: subscription.lastName ?? undefined,
+    shortId: subscription.shortId ?? undefined,
+  };
+
+  await reportSubscriptionExpired(telegram, identity, subscription.expiresAt);
 };
 
 const removeUserFromChannel = async (

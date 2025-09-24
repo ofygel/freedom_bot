@@ -2,6 +2,11 @@ import { Telegraf, Telegram } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../../config';
+import {
+  reportVerificationApproved,
+  reportVerificationRejected,
+  type UserIdentity,
+} from '../services/reports';
 
 import type { BotContext } from '../types';
 import {
@@ -321,6 +326,16 @@ const attachVerificationCallbacks = (
 
     await notifyVerificationApproval(telegram, item);
 
+    const applicant: UserIdentity = {
+      telegramId: item.applicant.telegramId,
+      username: item.applicant.username,
+      firstName: item.applicant.firstName,
+      lastName: item.applicant.lastName,
+      phone: item.applicant.phone,
+    };
+
+    await reportVerificationApproved(telegram, applicant, item.role, decidedAt);
+
     if (existingOnApprove) {
       try {
         await existingOnApprove(context);
@@ -372,6 +387,22 @@ const attachVerificationCallbacks = (
     }
 
     await handleVerificationRejection(context);
+
+    const applicant: UserIdentity = {
+      telegramId: item.applicant.telegramId,
+      username: item.applicant.username,
+      firstName: item.applicant.firstName,
+      lastName: item.applicant.lastName,
+      phone: item.applicant.phone,
+    };
+
+    await reportVerificationRejected(
+      context.telegram,
+      applicant,
+      item.role,
+      decidedAt,
+      context.reason,
+    );
 
     if (existingOnReject) {
       try {

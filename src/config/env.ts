@@ -214,6 +214,7 @@ export interface AppConfig {
   features: {
     trialEnabled: boolean;
     executorReplyKeyboard: boolean;
+    reportsEnabled: boolean;
   };
   webhook: {
     domain: string;
@@ -257,6 +258,7 @@ export const loadConfig = (): AppConfig => ({
   features: {
     trialEnabled: parseBoolean(process.env.FEATURE_TRIAL_ENABLED),
     executorReplyKeyboard: parseBoolean(process.env.FEATURE_EXECUTOR_REPLY_KEYBOARD),
+    reportsEnabled: parseBoolean(process.env.FEATURE_REPORTS_ENABLED),
   },
   webhook: {
     domain: getRequiredString('WEBHOOK_DOMAIN'),
