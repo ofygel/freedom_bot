@@ -525,6 +525,12 @@ const formatSupportHeader = (ctx: BotContext, threadId: string): string => {
     parts.push(`Имя: ${fullName}`);
   }
 
+  const phone = ctx.auth?.user.phone ?? ctx.session?.phoneNumber;
+  const normalisedPhone = phone?.trim();
+  if (normalisedPhone) {
+    parts.push(`Телефон: ${normalisedPhone}`);
+  }
+
   return parts.join('\n');
 };
 
