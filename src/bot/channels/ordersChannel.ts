@@ -19,6 +19,13 @@ import type { AppCity } from '../../domain/cities';
 import { buildOrderLocationsKeyboard } from '../keyboards/orders';
 import { buildInlineKeyboard, mergeInlineKeyboards } from '../keyboards/common';
 import { sendClientMenuToChat } from '../../ui/clientMenu';
+import {
+  reportOrderClaimed,
+  reportOrderCompleted,
+  reportOrderPublished,
+  reportOrderReleased,
+  toUserIdentity,
+} from '../services/reports';
 
 export type PublishOrderStatus = 'published' | 'already_published' | 'missing_channel';
 
@@ -475,6 +482,8 @@ export const publishOrderToDriversChannel = async (
         });
         clearOrderDismissals(order.id);
 
+        await reportOrderPublished(telegram, order);
+
         return {
           status: 'published',
           messageId: message.message_id,
@@ -779,6 +788,8 @@ const handleOrderDecision = async (
       }
 
       await ctx.answerCbQuery(answerMessage);
+
+      await reportOrderClaimed(ctx.telegram, result.order, toUserIdentity(ctx.from));
       return;
     }
     case 'dismissed': {
@@ -899,6 +910,14 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
           );
         }
       }
+
+      const republished = publishResult !== undefined && publishResult.status !== 'missing_channel';
+      await reportOrderReleased(
+        ctx.telegram,
+        result.order,
+        toUserIdentity(ctx.from),
+        republished,
+      );
       return;
     default:
       await ctx.answerCbQuery('Не удалось отменить заказ.');
@@ -983,6 +1002,7 @@ const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<
           );
         }
       }
+      await reportOrderCompleted(ctx.telegram, result.order, toUserIdentity(ctx.from));
       return;
     }
     default:

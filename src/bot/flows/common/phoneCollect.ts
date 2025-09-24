@@ -3,6 +3,11 @@ import { Markup } from 'telegraf';
 import { logger } from '../../../config';
 import { updateUserPhone } from '../../../db/users';
 import type { BotContext } from '../../types';
+import {
+  reportUserRegistration,
+  toUserIdentity,
+  type UserIdentity,
+} from '../../services/reports';
 
 export interface PhoneCollectOptions {
   /** Custom prompt shown when requesting the phone number. */
@@ -75,6 +80,7 @@ export const phoneCollect = async (
     ctx.session.awaitingPhone = false;
     if (ctx.auth?.user) {
       const authUser = ctx.auth.user;
+      const hadPhone = Boolean(authUser.phone);
       if (authUser.phone !== phone) {
         try {
           await updateUserPhone({ telegramId: authUser.telegramId, phone });
@@ -86,6 +92,27 @@ export const phoneCollect = async (
         }
       }
       authUser.phone = phone;
+
+      if (!hadPhone) {
+        const identity: UserIdentity = {
+          telegramId: authUser.telegramId,
+          username: authUser.username ?? undefined,
+          firstName: authUser.firstName ?? undefined,
+          lastName: authUser.lastName ?? undefined,
+          phone,
+        };
+
+        await reportUserRegistration(
+          ctx.telegram,
+          identity,
+          phone,
+          authUser.role,
+        );
+      }
+    }
+    if (!ctx.auth?.user) {
+      const fallback = { ...toUserIdentity(ctx.from), phone } satisfies UserIdentity;
+      await reportUserRegistration(ctx.telegram, fallback, phone, 'unknown');
     }
     return phone;
   }

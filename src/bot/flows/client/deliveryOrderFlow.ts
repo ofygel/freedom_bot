@@ -41,6 +41,7 @@ import { CLIENT_DELIVERY_ORDER_AGAIN_ACTION } from './orderActions';
 import { ensureCitySelected } from '../common/citySelect';
 import type { AppCity } from '../../../domain/cities';
 import { dgBase } from '../../../utils/2gis';
+import { reportOrderCreated, type UserIdentity } from '../../services/reports';
 
 export const START_DELIVERY_ORDER_ACTION = 'client:order:delivery:start';
 const CONFIRM_DELIVERY_ORDER_ACTION = 'client:order:delivery:confirm';
@@ -644,6 +645,16 @@ const notifyOrderCreated = async (
   if (publishStatus === 'missing_channel') {
     lines.push('⚠️ Канал исполнителей не настроен. Мы свяжемся с вами вручную.');
   }
+
+  const customer: UserIdentity = {
+    telegramId: ctx.auth.user.telegramId,
+    username: ctx.auth.user.username ?? undefined,
+    firstName: ctx.auth.user.firstName ?? undefined,
+    lastName: ctx.auth.user.lastName ?? undefined,
+    phone: ctx.session.phoneNumber ?? ctx.auth.user.phone ?? undefined,
+  };
+
+  await reportOrderCreated(ctx.telegram, { order, customer, publishStatus });
 
   await ui.step(ctx, {
     id: DELIVERY_CREATED_STEP_ID,

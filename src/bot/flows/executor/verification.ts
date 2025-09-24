@@ -22,6 +22,7 @@ import {
 import { publishVerificationApplication, type VerificationApplication } from '../../moderation/verifyQueue';
 import { getExecutorRoleCopy } from './roleCopy';
 import { ui } from '../../ui';
+import { reportVerificationSubmitted, type UserIdentity } from '../../services/reports';
 
 const ROLE_PROMPTS: Record<ExecutorRole, string[]> = {
   courier: [
@@ -242,6 +243,22 @@ const submitForModeration = async (
         verification.uploadedPhotos = failedPhotos;
       }
     }
+
+    const applicant: UserIdentity = {
+      telegramId: application.applicant.telegramId,
+      username: application.applicant.username,
+      firstName: application.applicant.firstName,
+      lastName: application.applicant.lastName,
+      phone: application.applicant.phone,
+    };
+
+    await reportVerificationSubmitted(
+      ctx.telegram,
+      applicant,
+      role,
+      verification.uploadedPhotos.length,
+      application.applicant.phone,
+    );
 
     await ui.step(ctx, {
       id: VERIFICATION_SUBMITTED_STEP_ID,

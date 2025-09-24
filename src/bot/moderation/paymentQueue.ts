@@ -14,6 +14,11 @@ import {
   type PublishModerationResult,
 } from './queue';
 import type { SubscriptionPeriodOption } from '../flows/executor/subscriptionPlans';
+import {
+  reportSubscriptionApproved,
+  reportSubscriptionRejected,
+  type SubscriptionIdentity,
+} from '../services/reports';
 
 const DEFAULT_TITLE = '💳 Проверка платежа по подписке';
 const DEFAULT_REASONS = [
@@ -317,7 +322,7 @@ const copyReceiptToModerationChannel = async (
 const handleSubscriptionApproval = async (
   context: ModerationDecisionContext<PaymentReviewItem>,
 ): Promise<void> => {
-  const { item, telegram } = context;
+  const { item, telegram, decidedAt } = context;
   const subscription = item.subscription;
   if (!subscription) {
     return;
@@ -409,6 +414,24 @@ const handleSubscriptionApproval = async (
     return;
   }
 
+  const payer: SubscriptionIdentity = {
+    telegramId: subscription.telegramId,
+    username: subscription.username ?? undefined,
+    firstName: subscription.firstName ?? undefined,
+    lastName: subscription.lastName ?? undefined,
+    phone: subscription.phone,
+    shortId: activation.subscriptionId ? String(activation.subscriptionId) : undefined,
+  };
+
+  await reportSubscriptionApproved(
+    telegram,
+    payer,
+    subscription.period.label,
+    { value: item.amount.value, currency: item.amount.currency },
+    decidedAt,
+    activation.nextBillingAt,
+  );
+
   let inviteLink: string | undefined;
   try {
     const expireDate = Math.floor(activation.nextBillingAt.getTime() / 1000);
@@ -469,7 +492,7 @@ const handleSubscriptionApproval = async (
 const handleSubscriptionRejection = async (
   context: ModerationRejectionContext<PaymentReviewItem>,
 ): Promise<void> => {
-  const { item, telegram, reason } = context;
+  const { item, telegram, reason, decidedAt } = context;
   const subscription = item.subscription;
   if (!subscription?.telegramId) {
     return;
@@ -490,6 +513,23 @@ const handleSubscriptionRejection = async (
       'Failed to notify user about rejected subscription payment',
     );
   }
+
+  const payer: SubscriptionIdentity = {
+    telegramId: subscription.telegramId,
+    username: subscription.username ?? undefined,
+    firstName: subscription.firstName ?? undefined,
+    lastName: subscription.lastName ?? undefined,
+    phone: subscription.phone,
+  };
+
+  await reportSubscriptionRejected(
+    telegram,
+    payer,
+    subscription.period.label,
+    { value: item.amount.value, currency: item.amount.currency },
+    decidedAt,
+    reason,
+  );
 };
 
 const attachPaymentModerationHandlers = (
