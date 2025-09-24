@@ -9,6 +9,15 @@ export type SubscriptionStatus =
   | 'rejected'
   | 'expired';
 
+interface TelegramUserDetails {
+  telegramId: number;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  role: ExecutorRole;
+}
+
 interface SubscriptionRow {
   id: string | number;
   short_id?: string | null;
@@ -66,13 +75,7 @@ export interface ActiveSubscriptionDetails {
   expiresAt?: Date;
 }
 
-export interface ActivateSubscriptionParams {
-  telegramId: number;
-  username?: string;
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
-  role: ExecutorRole;
+export interface ActivateSubscriptionParams extends TelegramUserDetails {
   chatId: number;
   periodDays: number;
   periodLabel?: string;
@@ -90,6 +93,30 @@ export interface ActivateSubscriptionResult {
   periodStart: Date;
   periodEnd: Date;
   nextBillingAt: Date;
+}
+
+export type TrialSubscriptionErrorReason = 'already_used' | 'active';
+
+export class TrialSubscriptionUnavailableError extends Error {
+  constructor(
+    public readonly reason: TrialSubscriptionErrorReason,
+    message?: string,
+  ) {
+    super(message ?? 'Trial subscription is unavailable');
+    this.name = 'TrialSubscriptionUnavailableError';
+  }
+}
+
+export interface CreateTrialSubscriptionParams extends TelegramUserDetails {
+  chatId: number;
+  trialDays: number;
+  currency: string;
+  now?: Date;
+}
+
+export interface TrialSubscriptionResult {
+  subscriptionId: number;
+  expiresAt: Date;
 }
 
 const parseNumeric = (
@@ -187,7 +214,7 @@ const mapSubscriptionRow = (row: SubscriptionRow): SubscriptionWithUser => {
 
 const upsertTelegramUser = async (
   client: PoolClient,
-  params: ActivateSubscriptionParams,
+  params: TelegramUserDetails,
 ): Promise<number> => {
   await client.query(
     `
@@ -466,6 +493,167 @@ export const activateSubscription = async (
       periodEnd,
       nextBillingAt: periodEnd,
     } satisfies ActivateSubscriptionResult;
+  });
+};
+
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+
+const ensureMetadataRecord = (
+  metadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> => {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return {};
+  }
+
+  return { ...metadata };
+};
+
+const hasUsedTrial = (metadata: Record<string, unknown> | null | undefined): boolean => {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return false;
+  }
+
+  const record = metadata as Record<string, unknown>;
+  const used = record.trialUsed;
+  if (typeof used === 'boolean') {
+    return used;
+  }
+
+  const activatedAt = record.trialActivatedAt;
+  return typeof activatedAt === 'string' && activatedAt.trim().length > 0;
+};
+
+export const createTrialSubscription = async (
+  params: CreateTrialSubscriptionParams,
+): Promise<TrialSubscriptionResult> => {
+  const trialDays = Math.max(1, Math.floor(params.trialDays));
+  const now = params.now ?? new Date();
+  const nextBillingAt = new Date(now.getTime() + trialDays * DAY_IN_MS);
+
+  return withTx(async (client) => {
+    const telegramId = await upsertTelegramUser(client, params);
+    const existing = await fetchSubscriptionForUpdate(client, telegramId, params.chatId);
+
+    if (existing && hasUsedTrial(existing.metadata)) {
+      throw new TrialSubscriptionUnavailableError('already_used', 'Trial period already used');
+    }
+
+    const currentExpiration = existing
+      ? parseTimestamp(existing.grace_until) ?? parseTimestamp(existing.next_billing_at)
+      : undefined;
+    if (currentExpiration && currentExpiration.getTime() > now.getTime()) {
+      throw new TrialSubscriptionUnavailableError('active', 'An active subscription already exists');
+    }
+
+    const metadata = ensureMetadataRecord(existing?.metadata);
+    metadata.trialUsed = true;
+    metadata.trialActivatedAt = now.toISOString();
+    metadata.trialDays = trialDays;
+    metadata.trialExpiresAt = nextBillingAt.toISOString();
+
+    const payload = [
+      params.currency,
+      trialDays,
+      nextBillingAt,
+      JSON.stringify(metadata),
+      now,
+    ] as const;
+
+    if (existing) {
+      const { rows } = await client.query<{ id: string | number; next_billing_at: Date | string | null }>(
+        `
+          UPDATE subscriptions
+          SET plan = 'trial',
+              tier = NULL,
+              status = 'active',
+              currency = $2,
+              amount = 0,
+              interval = 'day',
+              interval_count = $3,
+              days = $3,
+              next_billing_at = $4,
+              grace_until = NULL,
+              cancel_at_period_end = false,
+              cancelled_at = NULL,
+              ended_at = NULL,
+              metadata = $5::jsonb,
+              last_warning_at = NULL,
+              updated_at = $6
+          WHERE id = $1
+          RETURNING id, next_billing_at
+        `,
+        [existing.id, ...payload],
+      );
+
+      const [row] = rows;
+      const subscriptionId = parseNumeric(row?.id ?? existing.id);
+      if (subscriptionId === undefined) {
+        throw new Error(`Failed to determine subscription id for ${existing.id}`);
+      }
+
+      return {
+        subscriptionId,
+        expiresAt: nextBillingAt,
+      } satisfies TrialSubscriptionResult;
+    }
+
+    const { rows } = await client.query<{ id: string | number }>(
+      `
+        INSERT INTO subscriptions (
+          user_id,
+          chat_id,
+          plan,
+          tier,
+          status,
+          currency,
+          amount,
+          interval,
+          interval_count,
+          days,
+          next_billing_at,
+          grace_until,
+          cancel_at_period_end,
+          cancelled_at,
+          ended_at,
+          metadata
+        )
+        VALUES (
+          $1,
+          $2,
+          'trial',
+          NULL,
+          'active',
+          $3,
+          0,
+          'day',
+          $4,
+          $4,
+          $5,
+          NULL,
+          false,
+          NULL,
+          NULL,
+          $6::jsonb
+        )
+        RETURNING id
+      `,
+      [telegramId, params.chatId, params.currency, trialDays, nextBillingAt, JSON.stringify(metadata)],
+    );
+
+    const [row] = rows;
+    if (!row) {
+      throw new Error('Failed to create trial subscription');
+    }
+
+    const subscriptionId = parseNumeric(row.id);
+    if (subscriptionId === undefined) {
+      throw new Error(`Failed to parse subscription id returned from insert (${row.id})`);
+    }
+
+    return {
+      subscriptionId,
+      expiresAt: nextBillingAt,
+    } satisfies TrialSubscriptionResult;
   });
 };
 
