@@ -49,3 +49,24 @@ export const ensureClientRole = async ({
     ],
   );
 };
+
+export interface UpdateUserPhoneParams {
+  telegramId: number;
+  phone: string;
+}
+
+export const updateUserPhone = async ({
+  telegramId,
+  phone,
+}: UpdateUserPhoneParams): Promise<void> => {
+  await pool.query(
+    `
+      UPDATE users
+      SET
+        phone = $2,
+        updated_at = now()
+      WHERE tg_id = $1
+    `,
+    [telegramId, phone],
+  );
+};

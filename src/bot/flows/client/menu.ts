@@ -57,9 +57,14 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   const username = ctx.from?.username ?? authUser.username;
   const firstName = ctx.from?.first_name ?? authUser.firstName;
   const lastName = ctx.from?.last_name ?? authUser.lastName;
-  const phone = authUser.phone ?? ctx.session.phoneNumber;
+  const sessionPhone = ctx.session.phoneNumber;
+  const authPhone = authUser.phone;
+  const phone = sessionPhone ?? authPhone;
 
-  if (authUser.role !== 'client') {
+  const shouldEnsureRole = authUser.role !== 'client';
+  const shouldUpdatePhone = Boolean(phone && authPhone !== phone);
+
+  if (shouldEnsureRole || shouldUpdatePhone) {
     try {
       await ensureClientRole({
         telegramId: authUser.telegramId,
@@ -80,7 +85,7 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   authUser.username = username ?? undefined;
   authUser.firstName = firstName ?? undefined;
   authUser.lastName = lastName ?? undefined;
-  if (!authUser.phone && phone) {
+  if (phone) {
     authUser.phone = phone;
   }
   ctx.auth.isModerator = false;

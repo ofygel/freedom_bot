@@ -1,5 +1,7 @@
 import { Markup } from 'telegraf';
 
+import { logger } from '../../../config';
+import { updateUserPhone } from '../../../db/users';
 import type { BotContext } from '../../types';
 
 export interface PhoneCollectOptions {
@@ -71,6 +73,20 @@ export const phoneCollect = async (
     const phone = normalisePhone(contact.phone_number);
     ctx.session.phoneNumber = phone;
     ctx.session.awaitingPhone = false;
+    if (ctx.auth?.user) {
+      const authUser = ctx.auth.user;
+      if (authUser.phone !== phone) {
+        try {
+          await updateUserPhone({ telegramId: authUser.telegramId, phone });
+        } catch (error) {
+          logger.error(
+            { err: error, telegramId: authUser.telegramId },
+            'Failed to update user phone number',
+          );
+        }
+      }
+      authUser.phone = phone;
+    }
     return phone;
   }
 
