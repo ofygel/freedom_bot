@@ -159,4 +159,41 @@ describe('subscription queries status casting', () => {
       !/COALESCE\(grace_until, next_billing_at\) IS NULL/u.test(queries[0]?.text ?? ''),
     );
   });
+
+  it('derives expiration from next billing date when grace period is missing', async () => {
+    const queries: RecordedQuery[] = [];
+    const nextBillingAt = new Date('2025-02-01T12:00:00Z');
+
+    setPoolQuery(async (...args) => {
+      const [first, second] = args;
+      if (typeof first === 'string') {
+        queries.push({ text: first, params: second as ReadonlyArray<unknown> | undefined });
+      } else if (first && typeof first === 'object') {
+        const config = first as { text?: string; values?: ReadonlyArray<unknown> };
+        queries.push({ text: config.text ?? '', params: config.values });
+      }
+
+      if (queries.length === 1) {
+        return {
+          rows: [
+            {
+              id: '303',
+              chat_id: '-100777888',
+              next_billing_at: nextBillingAt.toISOString(),
+              grace_until: null,
+            },
+          ],
+        } as any;
+      }
+
+      return { rows: [] } as any;
+    });
+
+    const result = await findActiveSubscriptionForUser(-100777888, 9001);
+
+    assert.ok(result);
+    assert.equal(result?.nextBillingAt?.toISOString(), nextBillingAt.toISOString());
+    assert.equal(result?.expiresAt?.toISOString(), nextBillingAt.toISOString());
+    assert.match(queries[0]?.text ?? '', /SELECT id, chat_id, next_billing_at, grace_until/u);
+  });
 });

@@ -32,7 +32,7 @@ interface InviteResolutionResult {
   source: InviteSource;
 }
 
-const resolveInviteLink = async (
+export const resolveInviteLink = async (
   ctx: BotContext,
   state: ExecutorFlowState,
 ): Promise<InviteResolutionResult> => {
@@ -140,7 +140,7 @@ const buildInviteMessage = (
   return lines.join('\n');
 };
 
-const sendInviteLink = async (
+export const sendInviteLink = async (
   ctx: BotContext,
   state: ExecutorFlowState,
   link: string,

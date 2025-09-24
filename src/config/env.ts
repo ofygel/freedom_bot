@@ -211,6 +211,10 @@ export interface AppConfig {
   bot: {
     token: string;
   };
+  features: {
+    trialEnabled: boolean;
+    executorReplyKeyboard: boolean;
+  };
   webhook: {
     domain: string;
     secret: string;
@@ -225,6 +229,7 @@ export interface AppConfig {
   tariff: TariffRates | null;
   subscriptions: {
     warnHoursBefore: number;
+    trialDays: number;
     prices: {
       sevenDays: number;
       fifteenDays: number;
@@ -249,6 +254,10 @@ export const loadConfig = (): AppConfig => ({
   bot: {
     token: process.env.BOT_TOKEN as string,
   },
+  features: {
+    trialEnabled: parseBoolean(process.env.FEATURE_TRIAL_ENABLED),
+    executorReplyKeyboard: parseBoolean(process.env.FEATURE_EXECUTOR_REPLY_KEYBOARD),
+  },
   webhook: {
     domain: getRequiredString('WEBHOOK_DOMAIN'),
     secret: getRequiredString('WEBHOOK_SECRET'),
@@ -263,6 +272,7 @@ export const loadConfig = (): AppConfig => ({
   tariff: parseGeneralTariff(),
   subscriptions: {
     warnHoursBefore: parseWarnHours(process.env.SUB_WARN_HOURS_BEFORE),
+    trialDays: parsePositiveNumber('SUB_TRIAL_DAYS', 7),
     prices: parseSubscriptionPrices(),
     payment: {
       kaspi: {
@@ -279,6 +289,7 @@ export const loadConfig = (): AppConfig => ({
 export const config: AppConfig = loadConfig();
 
 Object.freeze(config.bot);
+Object.freeze(config.features);
 Object.freeze(config.webhook);
 Object.freeze(config.database);
 Object.freeze(config.city);
