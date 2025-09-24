@@ -167,6 +167,69 @@ describe('auth middleware', () => {
     assert.equal(ctx.session.user?.id, 321);
     assert.equal(ctx.session.phoneNumber, '+7 700 000 00 00');
   });
+
+  it('requires active subscriptions to have a future expiration date', async () => {
+    const authRow = {
+      tg_id: 654,
+      username: 'expiringuser',
+      first_name: 'Expired',
+      last_name: 'User',
+      phone: null,
+      role: 'courier',
+      is_verified: false,
+      is_blocked: false,
+      courier_verified: false,
+      driver_verified: false,
+      has_active_subscription: false,
+    };
+
+    const queries: string[] = [];
+    setPoolQuery(async (...args) => {
+      const [first] = args;
+      let text = '';
+      if (typeof first === 'string') {
+        text = first;
+      } else if (first && typeof first === 'object') {
+        const config = first as { text?: string };
+        text = config.text ?? '';
+      }
+
+      if (text) {
+        queries.push(text);
+      }
+
+      if (text.includes('information_schema.columns')) {
+        return { rows: [{ exists: false }] } as any;
+      }
+
+      return { rows: [authRow] } as any;
+    });
+
+    const middleware = auth();
+    const session = createSessionState();
+    const ctx = {
+      from: { id: 654, username: 'expiringuser', first_name: 'Expired', last_name: 'User' },
+      chat: { id: 555, type: 'private' as const },
+      update: { message: { chat: { id: 555, type: 'private' as const } } },
+      session,
+      auth: undefined as any,
+    } as unknown as BotContext;
+
+    await middleware(ctx, async () => {});
+
+    const subscriptionQuery = queries.find((text) =>
+      text.includes('FROM channels c') && text.includes('JOIN subscriptions s'),
+    );
+
+    assert.ok(subscriptionQuery, 'subscription check query should be executed');
+    assert.match(
+      subscriptionQuery!,
+      /COALESCE\(s\.grace_until, s\.next_billing_at\) > now\(\)/u,
+    );
+    assert.ok(
+      !/COALESCE\(s\.grace_until, s\.next_billing_at\) IS NULL/u.test(subscriptionQuery!),
+    );
+  });
 });
 
 describe('bind command channel flow', () => {

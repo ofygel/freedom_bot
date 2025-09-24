@@ -10,7 +10,7 @@ import { EXECUTOR_SUBSCRIPTION_REQUIRED_MESSAGE } from '../src/bot/flows/executo
 import type { BotContext } from '../src/bot/types';
 
 describe('registerJoinRequests', () => {
-  it('declines join request and notifies the user when subscription is inactive', async () => {
+  it('declines join request and notifies the user when subscription is expired', async () => {
     let joinRequestHandler:
       | ((ctx: BotContext & { chatJoinRequest?: ChatJoinRequest }) => Promise<void>)
       | undefined;

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
 import {
+  findActiveSubscriptionForUser,
   findSubscriptionsExpiringSoon,
   findSubscriptionsToExpire,
   hasActiveSubscription,
@@ -125,5 +126,37 @@ describe('subscription queries status casting', () => {
     assert.equal(result, true);
     assert.match(queries[0]?.text ?? '', /\$3::subscription_status\[\]/u);
     assert.deepEqual(queries[0]?.params, [-100555666, 987654321, ['active']]);
+    assert.match(
+      queries[0]?.text ?? '',
+      /COALESCE\(s\.grace_until, s\.next_billing_at\) > now\(\)/u,
+    );
+    assert.ok(
+      !/COALESCE\(s\.grace_until, s\.next_billing_at\) IS NULL/u.test(queries[0]?.text ?? ''),
+    );
+  });
+
+  it('filters active subscription candidates by expiration date when returning details', async () => {
+    const queries: RecordedQuery[] = [];
+    setPoolQuery(async (...args) => {
+      const [first, second] = args;
+      if (typeof first === 'string') {
+        queries.push({ text: first, params: second as ReadonlyArray<unknown> | undefined });
+      } else if (first && typeof first === 'object') {
+        const config = first as { text?: string; values?: ReadonlyArray<unknown> };
+        queries.push({ text: config.text ?? '', params: config.values });
+      }
+      return { rows: [] } as any;
+    });
+
+    const result = await findActiveSubscriptionForUser(-100123456, 555777);
+
+    assert.equal(result, null);
+    assert.match(
+      queries[0]?.text ?? '',
+      /COALESCE\(grace_until, next_billing_at\) > now\(\)/u,
+    );
+    assert.ok(
+      !/COALESCE\(grace_until, next_billing_at\) IS NULL/u.test(queries[0]?.text ?? ''),
+    );
   });
 });
