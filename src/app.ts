@@ -36,6 +36,7 @@ import { session } from './bot/middlewares/session';
 import { keyboardGuard } from './bot/middlewares/keyboardGuard';
 import { stateGate } from './bot/middlewares/stateGate';
 import { unknownHandler } from './bot/middlewares/unknown';
+import { callbackDecoder } from './bot/middlewares/callbackDecoder';
 import type { BotContext } from './bot/types';
 import { config, logger } from './config';
 import { pool } from './db';
@@ -52,6 +53,7 @@ app.use(autoDelete());
 app.use(auth());
 app.use(keyboardGuard());
 app.use(stateGate());
+app.use(callbackDecoder());
 
 registerStartCommand(app);
 registerBindCommand(app);

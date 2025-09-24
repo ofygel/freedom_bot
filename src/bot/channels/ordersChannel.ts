@@ -2,7 +2,7 @@ import { Telegraf, Telegram } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { getChannelBinding } from './bindings';
-import { logger } from '../../config';
+import { config, logger } from '../../config';
 import { withTx } from '../../db/client';
 import { formatEtaMinutes } from '../services/pricing';
 import { CITY_LABEL } from '../../domain/cities';
@@ -18,6 +18,7 @@ import type { BotContext, UserRole } from '../types';
 import type { AppCity } from '../../domain/cities';
 import { buildOrderLocationsKeyboard } from '../keyboards/orders';
 import { buildInlineKeyboard, mergeInlineKeyboards } from '../keyboards/common';
+import { wrapCallbackData } from '../services/callbackTokens';
 import { sendClientMenuToChat } from '../../ui/clientMenu';
 import {
   reportOrderClaimed,
@@ -42,6 +43,8 @@ const ACCEPT_ACTION_PATTERN = /^order:accept:(\d+)$/;
 const DECLINE_ACTION_PATTERN = /^order:decline:(\d+)$/;
 const RELEASE_ACTION_PATTERN = /^order:release:(\d+)$/;
 const COMPLETE_ACTION_PATTERN = /^order:complete:(\d+)$/;
+
+const callbackSecret = config.bot.callbackSignSecret ?? config.bot.token;
 
 const formatOrderType = (kind: OrderKind): string =>
   kind === 'taxi' ? 'Такси' : 'Доставка';
@@ -424,9 +427,21 @@ const buildAlreadyProcessedResponse = (state: OrderChannelState): string => {
 
 const buildActionKeyboard = (order: OrderRecord): InlineKeyboardMarkup => {
   const locationsKeyboard = buildOrderLocationsKeyboard(order.city, order.pickup, order.dropoff);
+  const acceptRaw = `${ACCEPT_ACTION_PREFIX}:${order.id}`;
+  const declineRaw = `${DECLINE_ACTION_PREFIX}:${order.id}`;
   const decisionsKeyboard = buildInlineKeyboard([
-    [{ label: '✅ Беру заказ', action: `${ACCEPT_ACTION_PREFIX}:${order.id}` }],
-    [{ label: '❌ Недоступен', action: `${DECLINE_ACTION_PREFIX}:${order.id}` }],
+    [
+      {
+        label: '✅ Беру заказ',
+        action: wrapCallbackData(acceptRaw, { secret: callbackSecret, bindToUser: false }),
+      },
+    ],
+    [
+      {
+        label: '❌ Недоступен',
+        action: wrapCallbackData(declineRaw, { secret: callbackSecret, bindToUser: false }),
+      },
+    ],
   ]);
 
   return mergeInlineKeyboards(locationsKeyboard, decisionsKeyboard) ?? decisionsKeyboard;

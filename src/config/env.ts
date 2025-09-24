@@ -210,6 +210,7 @@ export interface AppConfig {
   logLevel: LevelWithSilent;
   bot: {
     token: string;
+    callbackSignSecret?: string;
   };
   features: {
     trialEnabled: boolean;
@@ -254,6 +255,7 @@ export const loadConfig = (): AppConfig => ({
   logLevel: resolveLogLevel(process.env.LOG_LEVEL),
   bot: {
     token: process.env.BOT_TOKEN as string,
+    callbackSignSecret: getOptionalString('CALLBACK_SIGN_SECRET'),
   },
   features: {
     trialEnabled: parseBoolean(process.env.FEATURE_TRIAL_ENABLED),
