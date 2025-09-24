@@ -5,9 +5,42 @@ import { afterEach, describe, it, mock } from 'node:test';
 import type { Telegram } from 'telegraf';
 
 import * as bindings from '../src/bot/channels/bindings';
-import { handleClientOrderCancellation } from '../src/bot/channels/ordersChannel';
+import {
+  buildOrderChannelMessage,
+  buildOrderDetailsMessage,
+  handleClientOrderCancellation,
+} from '../src/bot/channels/ordersChannel';
 import { estimateEtaMinutes } from '../src/services/pricing';
 import type { OrderWithExecutor } from '../src/types';
+
+const createOrderRecord = (overrides: Partial<OrderWithExecutor> = {}): OrderWithExecutor => ({
+  id: 101,
+  shortId: 'A1B2',
+  kind: 'taxi',
+  status: 'cancelled',
+  city: 'almaty',
+  clientId: 555,
+  pickup: {
+    query: 'start',
+    address: 'Start address',
+    latitude: 43.2,
+    longitude: 76.9,
+  },
+  dropoff: {
+    query: 'end',
+    address: 'End address',
+    latitude: 43.3,
+    longitude: 76.95,
+  },
+  price: {
+    amount: 1500,
+    currency: 'KZT',
+    distanceKm: 5.2,
+    etaMinutes: estimateEtaMinutes(5.2),
+  },
+  createdAt: new Date('2024-01-01T00:00:00Z'),
+  ...overrides,
+});
 
 describe('handleClientOrderCancellation', () => {
   let getChannelBindingMock: ReturnType<typeof mock.method> | undefined;
@@ -33,35 +66,6 @@ describe('handleClientOrderCancellation', () => {
     return { telegram, deleteMessage, sendMessage };
   };
 
-  const createOrder = (overrides: Partial<OrderWithExecutor> = {}): OrderWithExecutor => ({
-    id: 101,
-    shortId: 'A1B2',
-    kind: 'taxi',
-    status: 'cancelled',
-    city: 'almaty',
-    clientId: 555,
-    pickup: {
-      query: 'start',
-      address: 'Start address',
-      latitude: 43.2,
-      longitude: 76.9,
-    },
-    dropoff: {
-      query: 'end',
-      address: 'End address',
-      latitude: 43.3,
-      longitude: 76.95,
-    },
-    price: {
-      amount: 1500,
-      currency: 'KZT',
-      distanceKm: 5.2,
-      etaMinutes: estimateEtaMinutes(5.2),
-    },
-    createdAt: new Date('2024-01-01T00:00:00Z'),
-    ...overrides,
-  });
-
   it('removes the drivers channel message for open orders without notifying executors', async () => {
     getChannelBindingMock = mock.method(bindings, 'getChannelBinding', async () => ({
       type: 'drivers',
@@ -69,7 +73,7 @@ describe('handleClientOrderCancellation', () => {
     }));
 
     const { telegram, deleteMessage, sendMessage } = createTelegram();
-    const order = createOrder({ channelMessageId: 2001 });
+    const order = createOrderRecord({ channelMessageId: 2001 });
 
     await handleClientOrderCancellation(telegram, order);
 
@@ -89,7 +93,7 @@ describe('handleClientOrderCancellation', () => {
     }));
 
     const { telegram, deleteMessage, sendMessage } = createTelegram();
-    const order = createOrder({
+    const order = createOrderRecord({
       channelMessageId: 3002,
       claimedBy: 777,
       executor: {
@@ -113,6 +117,38 @@ describe('handleClientOrderCancellation', () => {
       assert.ok(messageText.includes('Заказ отменён клиентом'));
       assert.ok(messageText.includes(order.shortId));
     }
+  });
+});
+
+describe('order message formatting', () => {
+  const baseOrder = createOrderRecord({
+    kind: 'delivery',
+    clientPhone: '+77001234567',
+    recipientPhone: '+77007654321',
+    isPrivateHouse: false,
+    apartment: '12Б',
+    entrance: '3',
+    floor: '5',
+    clientComment: 'Позвонить получателю за 10 минут.',
+  });
+
+  it('includes recipient details for executors', () => {
+    const message = buildOrderDetailsMessage(baseOrder);
+    assert.ok(message.includes('Телефон клиента: +77001234567'));
+    assert.ok(message.includes('Телефон получателя: +77007654321'));
+    assert.ok(message.includes('Тип адреса: Многоквартирный дом'));
+    assert.ok(message.includes('Квартира: 12Б'));
+    assert.ok(message.includes('Подъезд: 3'));
+    assert.ok(message.includes('Этаж: 5'));
+  });
+
+  it('keeps pii hidden in the public channel message', () => {
+    const message = buildOrderChannelMessage(baseOrder);
+    assert.ok(!message.includes('Телефон клиента'));
+    assert.ok(!message.includes('Телефон получателя'));
+    assert.ok(!message.includes('Квартира'));
+    assert.ok(!message.includes('Подъезд'));
+    assert.ok(!message.includes('Этаж'));
   });
 });
 
