@@ -52,6 +52,7 @@ const createContext = () => {
         lastName: undefined,
         phone: undefined,
         role: 'client' as const,
+        status: 'active_client',
         isVerified: false,
         isBlocked: false,
       },

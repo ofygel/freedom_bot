@@ -8,6 +8,13 @@ export interface EnsureClientRoleParams {
   phone?: string;
 }
 
+export interface UpdateUserRoleParams {
+  telegramId: number;
+  role: 'client' | 'courier' | 'driver';
+  status?: 'active_client' | 'active_executor';
+  menuRole?: 'client' | 'courier';
+}
+
 export const ensureClientRole = async ({
   telegramId,
   username,
@@ -24,9 +31,11 @@ export const ensureClientRole = async ({
         last_name,
         phone,
         role,
+        status,
+        last_menu_role,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, now())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
       ON CONFLICT (tg_id) DO UPDATE
       SET
         username = COALESCE(EXCLUDED.username, users.username),
@@ -37,6 +46,11 @@ export const ensureClientRole = async ({
           WHEN users.role = 'moderator' THEN users.role
           ELSE EXCLUDED.role
         END,
+        status = CASE
+          WHEN users.status IN ('suspended', 'banned') THEN users.status
+          ELSE 'active_client'
+        END,
+        last_menu_role = 'client',
         updated_at = now()
     `,
     [
@@ -45,6 +59,8 @@ export const ensureClientRole = async ({
       firstName ?? null,
       lastName ?? null,
       phone ?? null,
+      'client',
+      'active_client',
       'client',
     ],
   );
@@ -64,9 +80,42 @@ export const updateUserPhone = async ({
       UPDATE users
       SET
         phone = $2,
+        status = CASE
+          WHEN status IN ('suspended', 'banned') THEN status
+          ELSE 'active_client'
+        END,
         updated_at = now()
       WHERE tg_id = $1
     `,
     [telegramId, phone],
+  );
+};
+
+export const updateUserRole = async ({
+  telegramId,
+  role,
+  status,
+  menuRole,
+}: UpdateUserRoleParams): Promise<void> => {
+  const effectiveStatus = status ?? (role === 'client' ? 'active_client' : 'active_executor');
+  const effectiveMenuRole = menuRole ?? (role === 'client' ? 'client' : 'courier');
+
+  await pool.query(
+    `
+      UPDATE users
+      SET
+        role = CASE
+          WHEN users.role = 'moderator' THEN users.role
+          ELSE $2
+        END,
+        status = CASE
+          WHEN status IN ('suspended', 'banned') THEN status
+          ELSE $3
+        END,
+        last_menu_role = $4,
+        updated_at = now()
+      WHERE tg_id = $1
+    `,
+    [telegramId, role, effectiveStatus, effectiveMenuRole],
   );
 };

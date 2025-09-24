@@ -79,6 +79,7 @@ const createAuthState = (
     lastName: undefined,
     phone: undefined,
     role,
+    status: role === 'client' || role === 'moderator' ? 'active_client' : 'active_executor',
     isVerified: false,
     isBlocked: false,
     citySelected: DEFAULT_CITY,

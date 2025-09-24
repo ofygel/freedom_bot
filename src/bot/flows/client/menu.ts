@@ -82,6 +82,7 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   }
 
   authUser.role = 'client';
+  authUser.status = 'active_client';
   authUser.username = username ?? undefined;
   authUser.firstName = firstName ?? undefined;
   authUser.lastName = lastName ?? undefined;

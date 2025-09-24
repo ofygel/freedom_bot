@@ -2,6 +2,7 @@ import type { Telegraf } from 'telegraf';
 
 import { logger } from '../../../config';
 import { hideClientMenu } from '../../../ui/clientMenu';
+import { updateUserRole } from '../../../db/users';
 import { EXECUTOR_COMMANDS } from '../../commands/sets';
 import { setChatCommands } from '../../services/commands';
 import type { BotContext, ExecutorRole } from '../../types';
@@ -20,6 +21,21 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
   const state = ensureExecutorState(ctx);
   state.role = role;
   ctx.auth.user.role = role;
+  ctx.auth.user.status = 'active_executor';
+
+  try {
+    await updateUserRole({
+      telegramId: ctx.auth.user.telegramId,
+      role,
+      status: 'active_executor',
+      menuRole: 'courier',
+    });
+  } catch (error) {
+    logger.error(
+      { err: error, telegramId: ctx.auth.user.telegramId },
+      'Failed to persist executor role selection',
+    );
+  }
 
   const { genitive } = getExecutorRoleCopy(role);
   await ctx.answerCbQuery(`Вы выбрали роль ${genitive}.`);

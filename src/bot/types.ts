@@ -18,6 +18,18 @@ export interface SessionUser {
   lastName?: string;
 }
 
+export type UserStatus =
+  | 'guest'
+  | 'onboarding'
+  | 'awaiting_phone'
+  | 'active_client'
+  | 'active_executor'
+  | 'trial_expired'
+  | 'suspended'
+  | 'banned';
+
+export type UserMenuRole = 'client' | 'courier' | 'moderator';
+
 export interface AuthUser {
   telegramId: number;
   username?: string;
@@ -25,9 +37,14 @@ export interface AuthUser {
   lastName?: string;
   phone?: string;
   role: UserRole;
+  status: UserStatus;
   isVerified: boolean;
   isBlocked: boolean;
   citySelected?: AppCity;
+  verifiedAt?: Date;
+  trialEndsAt?: Date;
+  lastMenuRole?: UserMenuRole;
+  keyboardNonce?: string;
 }
 
 export interface AuthExecutorState {
