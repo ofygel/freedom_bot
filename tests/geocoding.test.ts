@@ -93,6 +93,7 @@ describe('geocoding 2ГИС firm links', () => {
     assert.equal(result?.latitude, 43.238949);
     assert.equal(result?.longitude, 76.889709);
     assert.equal(result?.address, 'Алматы, проспект Абая 10');
+    assert.equal(result?.twoGisUrl, firmUrl);
 
     assert.ok(
       seenUrls.some((value) => value.includes('/items/byid')),
@@ -165,5 +166,6 @@ describe('geocoding 2ГИС firm links', () => {
     assert.equal(result?.latitude, 49.804688);
     assert.equal(result?.longitude, 73.109382);
     assert.equal(result?.address, 'Караганда, проспект Абая 10');
+    assert.equal(result?.twoGisUrl, undefined);
   });
 });

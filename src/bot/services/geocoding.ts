@@ -6,6 +6,7 @@ export interface GeocodingResult {
   address: string;
   latitude: number;
   longitude: number;
+  twoGisUrl?: string;
 }
 
 const MIN_QUERY_LENGTH = 3;
@@ -1048,7 +1049,17 @@ export const geocodeAddress = async (
   const nominatimConfig = getNominatimConfig();
   const twoGisConfig = getTwoGisConfig();
 
-  const fallbackTwoGisUrl = preferredTwoGisUrl ?? (isTwoGisLink(trimmed) ? trimmed : null);
+  const originalTwoGisUrl = preferredTwoGisUrl ?? (isTwoGisLink(trimmed) ? trimmed : null);
+
+  const attachTwoGisUrl = (result: GeocodingResult): GeocodingResult => {
+    if (!originalTwoGisUrl) {
+      return result;
+    }
+
+    return result.twoGisUrl === originalTwoGisUrl
+      ? result
+      : { ...result, twoGisUrl: originalTwoGisUrl };
+  };
 
   const resolveWithFallback = async (
     latitude: number,
@@ -1064,15 +1075,15 @@ export const geocodeAddress = async (
     });
 
     if (resolved) {
-      return resolved;
+      return attachTwoGisUrl(resolved);
     }
 
-    return {
+    return attachTwoGisUrl({
       query: normalizedQuery,
       address: fallbackLabel,
       latitude,
       longitude,
-    } satisfies GeocodingResult;
+    } satisfies GeocodingResult);
   };
 
   const parsedLink = await parse2GisLink(preferredTwoGisUrl ?? trimmed);
@@ -1101,8 +1112,8 @@ export const geocodeAddress = async (
     scrapedTwoGis = await scrapeTwoGisPlace(parsedLink.url);
   } else if (parsedLink && !parsedLink.coordinates) {
     scrapedTwoGis = await scrapeTwoGisPlace(parsedLink.url);
-  } else if (!parsedLink && fallbackTwoGisUrl) {
-    const parsedUrl = parseUrl(fallbackTwoGisUrl);
+  } else if (!parsedLink && originalTwoGisUrl) {
+    const parsedUrl = parseUrl(originalTwoGisUrl);
     if (parsedUrl) {
       scrapedTwoGis = await scrapeTwoGisPlace(parsedUrl);
     }
@@ -1120,9 +1131,13 @@ export const geocodeAddress = async (
     const trimmedLabel = scrapedTwoGis.label.trim();
     if (trimmedLabel.length > 0) {
       const labelSearchQuery = buildCityAwareQuery(trimmedLabel, cityName);
-      const fallbackResult = await geocodeWithNominatim(labelSearchQuery, normalizedQuery, nominatimConfig);
+      const fallbackResult = await geocodeWithNominatim(
+        labelSearchQuery,
+        normalizedQuery,
+        nominatimConfig,
+      );
       if (fallbackResult) {
-        return fallbackResult;
+        return attachTwoGisUrl(fallbackResult);
       }
     }
   }
@@ -1137,7 +1152,7 @@ export const geocodeAddress = async (
   for (const provider of providers) {
     const result = await provider();
     if (result) {
-      return result;
+      return attachTwoGisUrl(result);
     }
   }
 

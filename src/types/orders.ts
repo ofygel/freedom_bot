@@ -9,6 +9,7 @@ export interface OrderLocation {
   address: string;
   latitude: number;
   longitude: number;
+  twoGisUrl?: string;
 }
 
 export interface OrderPriceDetails {

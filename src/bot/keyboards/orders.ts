@@ -18,14 +18,20 @@ export const buildOrderLocationsKeyboard = (
   dropoff: OrderLocation,
   options: OrderLocationsKeyboardOptions = {},
 ): InlineKeyboardMarkup => {
-  const pickupUrl = build2GisLink(pickup.latitude, pickup.longitude, {
-    query: pickup.address,
-    city,
-  });
-  const dropoffUrl = build2GisLink(dropoff.latitude, dropoff.longitude, {
-    query: dropoff.address,
-    city,
-  });
+  const pickupUrl =
+    pickup.twoGisUrl && pickup.twoGisUrl.length > 0
+      ? pickup.twoGisUrl
+      : build2GisLink(pickup.latitude, pickup.longitude, {
+          query: pickup.address,
+          city,
+        });
+  const dropoffUrl =
+    dropoff.twoGisUrl && dropoff.twoGisUrl.length > 0
+      ? dropoff.twoGisUrl
+      : build2GisLink(dropoff.latitude, dropoff.longitude, {
+          query: dropoff.address,
+          city,
+        });
 
   const pickupLabel = options.pickupLabel ?? '🅰️ Открыть в 2ГИС (A)';
   const dropoffLabel = options.dropoffLabel ?? '🅱️ Открыть в 2ГИС (B)';
