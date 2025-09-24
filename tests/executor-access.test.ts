@@ -223,6 +223,43 @@ describe('executor access control', () => {
     ]);
   });
 
+  it('highlights verification progress while collecting photos', async () => {
+    const { ctx } = createContext();
+    ensureExecutorState(ctx);
+
+    ctx.session.executor.verification.courier.status = 'collecting';
+    ctx.session.executor.verification.courier.uploadedPhotos.push({
+      fileId: 'photo-1',
+      messageId: 101,
+    });
+
+    await showExecutorMenu(ctx, { skipAccessCheck: true });
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be displayed');
+
+    assert.deepEqual(mapKeyboard(menuStep.keyboard), [
+      [
+        {
+          text: '📸 Продолжить отправку документов',
+          callback_data: EXECUTOR_VERIFICATION_ACTION,
+        },
+      ],
+      [
+        {
+          text: '📨 Получить ссылку на канал',
+          callback_data: EXECUTOR_SUBSCRIPTION_ACTION,
+        },
+      ],
+      [
+        {
+          text: '🔄 Обновить меню',
+          callback_data: EXECUTOR_MENU_ACTION,
+        },
+      ],
+    ]);
+  });
+
   it('renders the executor menu when verification and subscription are active', async () => {
     const { ctx } = createContext();
     ensureExecutorState(ctx);

@@ -321,7 +321,7 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<boolean> => {
   }
 
   const role = state.role;
-  const verification = state.verification[role];
+  let verification = state.verification[role];
   const copy = getExecutorRoleCopy(role);
   const alreadyVerified = Boolean(ctx.auth.executor.verifiedRoles[role]) || ctx.auth.executor.isVerified;
 
@@ -336,6 +336,11 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<boolean> => {
     return true;
   }
 
+  const message = ctx.message;
+  if (!message || !('photo' in message) || !Array.isArray(message.photo) || message.photo.length === 0) {
+    return false;
+  }
+
   if (verification.status === 'submitted') {
     await ui.step(ctx, {
       id: VERIFICATION_ALREADY_ON_REVIEW_STEP_ID,
@@ -346,7 +351,34 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<boolean> => {
     return true;
   }
 
-  if (verification.status !== 'collecting') {
+  if (verification.status === 'idle') {
+    const hasConflicts =
+      verification.uploadedPhotos.length > 0 ||
+      typeof verification.submittedAt === 'number' ||
+      Boolean(verification.moderation);
+
+    if (hasConflicts) {
+      await ui.step(ctx, {
+        id: VERIFICATION_START_REMINDER_STEP_ID,
+        text: `Начните проверку через меню ${copy.genitive}, чтобы отправить документы.`,
+        cleanup: true,
+        homeAction: EXECUTOR_MENU_ACTION,
+      });
+      return true;
+    }
+
+    resetVerificationState(state);
+    verification = state.verification[role];
+    verification.status = 'collecting';
+
+    const promptText = buildVerificationPrompt(role);
+    await ui.step(ctx, {
+      id: VERIFICATION_PROMPT_STEP_ID,
+      text: promptText,
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+  } else if (verification.status !== 'collecting') {
     await ui.step(ctx, {
       id: VERIFICATION_START_REMINDER_STEP_ID,
       text: `Начните проверку через меню ${copy.genitive}, чтобы отправить документы.`,
@@ -354,11 +386,6 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<boolean> => {
       homeAction: EXECUTOR_MENU_ACTION,
     });
     return true;
-  }
-
-  const message = ctx.message;
-  if (!message || !('photo' in message) || !Array.isArray(message.photo) || message.photo.length === 0) {
-    return false;
   }
 
   const photoSizes = message.photo;
