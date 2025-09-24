@@ -225,9 +225,11 @@ const upsertTelegramUser = async (
         last_name,
         phone,
         role,
+        status,
+        last_menu_role,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, now())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
       ON CONFLICT (tg_id) DO UPDATE
       SET
         username = COALESCE(EXCLUDED.username, users.username),
@@ -235,6 +237,11 @@ const upsertTelegramUser = async (
         last_name = COALESCE(EXCLUDED.last_name, users.last_name),
         phone = COALESCE(EXCLUDED.phone, users.phone),
         role = CASE WHEN users.role = 'moderator' THEN users.role ELSE EXCLUDED.role END,
+        status = CASE
+          WHEN users.status IN ('suspended', 'banned') THEN users.status
+          ELSE COALESCE(EXCLUDED.status, users.status)
+        END,
+        last_menu_role = COALESCE(EXCLUDED.last_menu_role, users.last_menu_role),
         updated_at = now()
     `,
     [
@@ -244,6 +251,8 @@ const upsertTelegramUser = async (
       params.lastName ?? null,
       params.phone ?? null,
       params.role,
+      'active_executor',
+      'courier',
     ],
   );
 

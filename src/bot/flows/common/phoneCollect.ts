@@ -92,6 +92,9 @@ export const phoneCollect = async (
         }
       }
       authUser.phone = phone;
+      if (authUser.status === 'awaiting_phone' || authUser.status === 'guest') {
+        authUser.status = 'active_client';
+      }
 
       if (!hadPhone) {
         const identity: UserIdentity = {

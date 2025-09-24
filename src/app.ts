@@ -33,6 +33,9 @@ import { auth } from './bot/middlewares/auth';
 import { autoDelete } from './bot/middlewares/autoDelete';
 import { errorBoundary } from './bot/middlewares/errorBoundary';
 import { session } from './bot/middlewares/session';
+import { keyboardGuard } from './bot/middlewares/keyboardGuard';
+import { stateGate } from './bot/middlewares/stateGate';
+import { unknownHandler } from './bot/middlewares/unknown';
 import type { BotContext } from './bot/types';
 import { config, logger } from './config';
 import { pool } from './db';
@@ -47,6 +50,8 @@ app.use(errorBoundary());
 app.use(session());
 app.use(autoDelete());
 app.use(auth());
+app.use(keyboardGuard());
+app.use(stateGate());
 
 registerStartCommand(app);
 registerBindCommand(app);
@@ -68,6 +73,8 @@ registerPaymentModerationQueue(app);
 registerSupportModerationBridge(app);
 registerOrdersChannel(app);
 registerJoinRequests(app);
+
+app.on('message', unknownHandler);
 
 let gracefulShutdownConfigured = false;
 let cleanupStarted = false;

@@ -74,6 +74,7 @@ const createContext = (role: BotContext['auth']['user']['role']): BotContext => 
         lastName: undefined,
         phone: undefined,
         role,
+        status: role === 'client' ? 'active_client' : 'active_executor',
         isVerified: false,
         isBlocked: false,
       },

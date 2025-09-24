@@ -10,6 +10,8 @@ import {
   type BotContext,
   type ExecutorRole,
   type UserRole,
+  type UserMenuRole,
+  type UserStatus,
 } from '../types';
 
 type Nullable<T> = T | null | undefined;
@@ -21,12 +23,17 @@ interface AuthQueryRow {
   last_name: string | null;
   phone: string | null;
   role: string | null;
+  status: string | null;
   is_verified: boolean | null;
   is_blocked: boolean | null;
   courier_verified: boolean | null;
   driver_verified: boolean | null;
   has_active_subscription: boolean | null;
   city_selected?: string | null;
+  verified_at?: string | Date | null;
+  trial_ends_at?: string | Date | null;
+  last_menu_role?: string | null;
+  keyboard_nonce?: string | null;
 }
 
 const parseNumericId = (value: string | number): number => {
@@ -63,6 +70,50 @@ const normaliseRole = (value: Nullable<string>): UserRole => {
   }
 };
 
+const normaliseStatus = (value: Nullable<string>): UserStatus => {
+  switch (value) {
+    case 'onboarding':
+    case 'awaiting_phone':
+    case 'active_client':
+    case 'active_executor':
+    case 'trial_expired':
+    case 'suspended':
+    case 'banned':
+      return value;
+    case 'guest':
+    default:
+      return 'guest';
+  }
+};
+
+const normaliseMenuRole = (value: Nullable<string>): UserMenuRole | undefined => {
+  switch (value) {
+    case 'client':
+    case 'courier':
+    case 'moderator':
+      return value;
+    default:
+      return undefined;
+  }
+};
+
+const parseTimestamp = (value: Nullable<string | Date>): Date | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  if (value instanceof Date) {
+    return new Date(value);
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) {
+    return undefined;
+  }
+
+  return parsed;
+};
+
 const buildVerifiedMap = (row: AuthQueryRow): Record<ExecutorRole, boolean> => ({
   courier: Boolean(row.courier_verified),
   driver: Boolean(row.driver_verified),
@@ -79,6 +130,36 @@ const buildExecutorState = (row: AuthQueryRow): AuthExecutorState => {
   } satisfies AuthExecutorState;
 };
 
+const deriveUserStatus = (row: AuthQueryRow, status: UserStatus): UserStatus => {
+  if (status === 'trial_expired' || status === 'suspended' || status === 'banned') {
+    return status;
+  }
+
+  if (row.is_blocked) {
+    return 'suspended';
+  }
+
+  const role = normaliseRole(row.role);
+  const hasPhone = Boolean(normaliseString(row.phone));
+
+  if (!hasPhone) {
+    return 'awaiting_phone';
+  }
+
+  if (status === 'active_executor') {
+    return 'active_executor';
+  }
+
+  const hasExecutorAccess =
+    role === 'courier' || role === 'driver' ? Boolean(row.has_active_subscription) : false;
+
+  if (hasExecutorAccess) {
+    return 'active_executor';
+  }
+
+  return 'active_client';
+};
+
 const buildAuthQuery = (includeCitySelected: boolean): string => `
       WITH upsert AS (
         INSERT INTO users (tg_id, username, first_name, last_name, updated_at)
@@ -89,9 +170,20 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
           first_name = COALESCE(EXCLUDED.first_name, users.first_name),
           last_name = COALESCE(EXCLUDED.last_name, users.last_name),
           updated_at = now()
-        RETURNING tg_id, username, first_name, last_name, phone, role, is_verified, is_blocked${
-          includeCitySelected ? ', city_selected' : ''
-        }
+        RETURNING
+          tg_id,
+          username,
+          first_name,
+          last_name,
+          phone,
+          role,
+          status,
+          is_verified,
+          is_blocked${includeCitySelected ? ',\n          city_selected' : ''},
+          verified_at,
+          trial_ends_at,
+          last_menu_role,
+          keyboard_nonce
       )
       SELECT
         u.tg_id,
@@ -100,8 +192,13 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
         u.last_name,
         u.phone,
         u.role,
+        u.status,
         u.is_verified,
         u.is_blocked${includeCitySelected ? ',\n        u.city_selected' : ''},
+        u.verified_at,
+        u.trial_ends_at,
+        u.last_menu_role,
+        u.keyboard_nonce,
         COALESCE(cv.is_verified, false) AS courier_verified,
         COALESCE(dv.is_verified, false) AS driver_verified,
         COALESCE(sub.has_active_subscription, false) AS has_active_subscription
@@ -144,6 +241,7 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
   const telegramId = parseNumericId(row.tg_id);
   const executor = buildExecutorState(row);
   const role = normaliseRole(row.role);
+  const status = deriveUserStatus(row, normaliseStatus(row.status));
 
   return {
     user: {
@@ -153,11 +251,16 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
       lastName: normaliseString(row.last_name),
       phone: normaliseString(row.phone),
       role,
+      status,
       isVerified: Boolean(row.is_verified),
       isBlocked: Boolean(row.is_blocked),
       citySelected: isAppCity(row.city_selected)
         ? row.city_selected
         : undefined,
+      verifiedAt: parseTimestamp(row.verified_at),
+      trialEndsAt: parseTimestamp(row.trial_ends_at),
+      lastMenuRole: normaliseMenuRole(row.last_menu_role),
+      keyboardNonce: normaliseString(row.keyboard_nonce),
     },
     executor,
     isModerator: role === 'moderator',
