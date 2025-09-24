@@ -134,8 +134,11 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS channels (
   id integer PRIMARY KEY CHECK (id = 1),
   verify_channel_id bigint,
-  drivers_channel_id bigint
+  drivers_channel_id bigint,
+  stats_channel_id bigint
 );
+
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS stats_channel_id bigint;
 
 INSERT INTO channels (id)
 VALUES (1)
