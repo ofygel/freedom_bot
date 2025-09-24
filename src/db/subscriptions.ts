@@ -566,10 +566,7 @@ export const hasActiveSubscription = async (
       WHERE s.chat_id = $1
         AND s.user_id = $2
         AND s.status = ANY($3::subscription_status[])
-        AND (
-          COALESCE(s.grace_until, s.next_billing_at) IS NULL
-          OR COALESCE(s.grace_until, s.next_billing_at) > now()
-        )
+        AND COALESCE(s.grace_until, s.next_billing_at) > now()
       LIMIT 1
     `,
     [chatId, telegramId, ACTIVE_SUBSCRIPTION_STATUSES],
@@ -589,10 +586,7 @@ export const findActiveSubscriptionForUser = async (
       WHERE chat_id = $1
         AND user_id = $2
         AND status = ANY($3::subscription_status[])
-        AND (
-          COALESCE(grace_until, next_billing_at) IS NULL
-          OR COALESCE(grace_until, next_billing_at) > now()
-        )
+        AND COALESCE(grace_until, next_billing_at) > now()
       ORDER BY COALESCE(grace_until, next_billing_at) DESC NULLS LAST
       LIMIT 1
     `,

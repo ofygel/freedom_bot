@@ -135,10 +135,7 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
             AND c.drivers_channel_id IS NOT NULL
             AND s.user_id = u.tg_id
             AND s.status = 'active'
-            AND (
-              COALESCE(s.grace_until, s.next_billing_at) IS NULL
-              OR COALESCE(s.grace_until, s.next_billing_at) > now()
-            )
+            AND COALESCE(s.grace_until, s.next_billing_at) > now()
         ) AS has_active_subscription
       ) sub ON true
     `;
