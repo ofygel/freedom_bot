@@ -1,10 +1,12 @@
 import { Markup, Telegraf } from 'telegraf';
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import type { BotContext } from '../types';
 import { phoneCollect } from '../flows/common/phoneCollect';
 import { setChatCommands } from '../services/commands';
 import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from './sets';
 import { hideClientMenu } from '../../ui/clientMenu';
+import { bindInlineKeyboardToUser } from '../services/callbackTokens';
 
 type RoleKey = 'client' | 'courier' | 'driver';
 
@@ -32,20 +34,22 @@ const ROLE_OPTIONS: RoleOption[] = [
   },
 ];
 
-const buildRoleKeyboard = () =>
+const buildRoleKeyboard = (): InlineKeyboardMarkup =>
   Markup.inlineKeyboard(
     ROLE_OPTIONS.map((option) => [
       Markup.button.callback(option.label, `role:${option.key}`),
     ]),
-  );
+  ).reply_markup as InlineKeyboardMarkup;
 
 export const presentRoleSelection = async (ctx: BotContext): Promise<void> => {
   const description = ROLE_OPTIONS.map((option) => `• ${option.label} — ${option.description}`)
     .join('\n');
 
+  const keyboard = buildRoleKeyboard();
+  const replyMarkup = bindInlineKeyboardToUser(ctx, keyboard) ?? keyboard;
   await ctx.reply(
     ['Выберите роль, чтобы продолжить работу с ботом:', description].join('\n\n'),
-    buildRoleKeyboard(),
+    { reply_markup: replyMarkup },
   );
 };
 

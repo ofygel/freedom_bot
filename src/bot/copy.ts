@@ -7,6 +7,11 @@ export const copy = {
   refresh: '🔄 Обновить',
   resume: '🔄 Продолжить',
   home: '🏠 Главное меню',
+<<<<<<< HEAD
+=======
+  errorRecovered: 'Произошёл сбой, но я вернул вас к последнему шагу.',
+  errorGeneric: 'Произошёл сбой. Попробуйте повторить действие чуть позже.',
+>>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
   invalidPhone: (example = '+7 777 123-45-67') => `Уточните телефон в формате E.164 (пример: ${example}).`,
   statusLine: (emoji: string, text: string) => `${emoji} ${text}`,
   clientMiniStatus: (cityLabel?: string, trialDaysLeft?: number) =>

@@ -21,8 +21,14 @@ interface PendingSessionRow {
   keyboard_nonce: string | null;
 }
 
+interface FlowRecoveryShape {
+  type: string;
+  payload?: unknown;
+}
+
 interface FlowPayloadShape {
   homeAction?: string | null;
+  recovery?: FlowRecoveryShape;
 }
 
 const secret = config.bot.callbackSignSecret ?? config.bot.token;
@@ -34,7 +40,20 @@ const parseFlowPayload = (value: unknown): FlowPayloadShape => {
 
   const candidate = value as Record<string, unknown>;
   const homeAction = typeof candidate.homeAction === 'string' ? candidate.homeAction : null;
-  return { homeAction: homeAction ?? undefined };
+  const recoveryCandidate = candidate.recovery;
+  let recovery: FlowRecoveryShape | undefined;
+  if (recoveryCandidate && typeof recoveryCandidate === 'object') {
+    const recoveryObject = recoveryCandidate as Record<string, unknown>;
+    const type = typeof recoveryObject.type === 'string' ? recoveryObject.type : undefined;
+    if (type) {
+      recovery = { type, payload: recoveryObject.payload };
+    }
+  }
+
+  return {
+    homeAction: homeAction ?? undefined,
+    recovery,
+  };
 };
 
 const bindAction = (

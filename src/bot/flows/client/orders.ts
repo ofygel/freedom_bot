@@ -28,9 +28,12 @@ import {
   CLIENT_TAXI_ORDER_AGAIN_ACTION,
 } from './orderActions';
 import { CITY_LABEL } from '../../../domain/cities';
+import { buildStatusMessage } from '../../ui/status';
+import { registerFlowRecovery } from '../recovery';
 
 const CLIENT_ORDERS_LIST_STEP_ID = 'client:orders:list';
 const CLIENT_ORDER_DETAIL_STEP_ID = 'client:orders:detail';
+const CLIENT_ORDER_STATUS_STEP_ID = 'client:orders:status';
 
 const ACTIVE_ORDER_STATUSES: OrderStatus[] = ['open', 'claimed'];
 
@@ -216,11 +219,53 @@ const buildOrderDetailText = (
   return lines.join('\n');
 };
 
+const renderOrderStatus = async (
+  ctx: BotContext,
+  order: OrderWithExecutor,
+): Promise<void> => {
+  if (!ACTIVE_ORDER_STATUSES.includes(order.status)) {
+    await ui.clear(ctx, { ids: CLIENT_ORDER_STATUS_STEP_ID });
+    return;
+  }
+
+  const status = formatStatusLabel(order.status);
+  const emoji = order.status === 'claimed' ? '🚗' : '⏳';
+  const { text, reply_markup } = buildStatusMessage(
+    emoji,
+    `Заказ №${order.shortId}: ${status.full}.`,
+    `${CLIENT_VIEW_ORDER_ACTION_PREFIX}:${order.id}`,
+    CLIENT_ORDERS_ACTION,
+  );
+
+  await ui.step(ctx, {
+    id: CLIENT_ORDER_STATUS_STEP_ID,
+    text,
+    keyboard: reply_markup,
+    homeAction: CLIENT_MENU_ACTION,
+    cleanup: false,
+    recovery: { type: 'client:orders:status', payload: { orderId: order.id } },
+  });
+};
+
+const parseOrderId = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  }
+
+  return null;
+};
+
 const renderOrderDetail = async (
   ctx: BotContext,
   order: OrderWithExecutor,
   options: OrderDetailOptions = {},
 ): Promise<void> => {
+  await renderOrderStatus(ctx, order);
   const text = buildOrderDetailText(order, options);
   const keyboard = buildOrderDetailKeyboard(order, options);
 
@@ -229,6 +274,10 @@ const renderOrderDetail = async (
     text,
     keyboard,
     homeAction: CLIENT_MENU_ACTION,
+    recovery: {
+      type: 'client:orders:detail',
+      payload: { orderId: order.id, confirmCancellation: Boolean(options.confirmCancellation) },
+    },
   });
 };
 
@@ -288,6 +337,7 @@ const renderOrdersList = async (
     text,
     keyboard,
     homeAction: CLIENT_MENU_ACTION,
+    recovery: { type: 'client:orders:list' },
   });
 
   return items;
@@ -307,6 +357,47 @@ const showClientOrderDetail = async (
   await renderOrderDetail(ctx, order, options);
   return order;
 };
+
+registerFlowRecovery('client:orders:list', async (ctx) => {
+  await renderOrdersList(ctx);
+  return true;
+});
+
+registerFlowRecovery('client:orders:detail', async (ctx, payload) => {
+  const details =
+    payload && typeof payload === 'object'
+      ? (payload as { orderId?: unknown; confirmCancellation?: unknown })
+      : {};
+  const orderId = parseOrderId(details.orderId);
+  if (!orderId) {
+    return false;
+  }
+
+  const options: OrderDetailOptions = {
+    confirmCancellation: Boolean(details.confirmCancellation),
+  };
+
+  const order = await showClientOrderDetail(ctx, orderId, options);
+  return Boolean(order);
+});
+
+registerFlowRecovery('client:orders:status', async (ctx, payload) => {
+  const details =
+    payload && typeof payload === 'object' ? (payload as { orderId?: unknown }) : {};
+  const orderId = parseOrderId(details.orderId);
+  if (!orderId) {
+    return false;
+  }
+
+  const order = await getOrderWithExecutorById(orderId);
+  if (!order || order.clientId !== ctx.auth.user.telegramId) {
+    await ui.clear(ctx, { ids: CLIENT_ORDER_STATUS_STEP_ID });
+    return false;
+  }
+
+  await renderOrderStatus(ctx, order);
+  return true;
+});
 
 const confirmClientOrderCancellation = async (
   ctx: BotContext,
