@@ -15,14 +15,11 @@ import { bindInlineKeyboardToUser } from './services/callbackTokens';
 import { copy } from './copy';
 
 const HOME_BUTTON_LABEL = copy.home;
-<<<<<<< HEAD
-=======
 
 export interface FlowRecoveryDescriptor {
   type: string;
   payload?: unknown;
 }
->>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
 
 const ensureUiState = (ctx: BotContext): UiSessionState => {
   if (!ctx.session.ui) {
