@@ -4,6 +4,7 @@ import type { MessageEntity } from 'telegraf/types';
 import { saveChannelBinding, type ChannelType } from '../channels/bindings';
 import { logger } from '../../config';
 import type { BotContext } from '../types';
+import { onlyPrivate } from '../middlewares/onlyPrivate';
 
 type BindSource = 'private' | 'channel';
 
@@ -203,7 +204,7 @@ const processBinding = async (
 
 export const registerBindCommand = (bot: Telegraf<BotContext>): void => {
   for (const config of BIND_COMMANDS) {
-    bot.command(config.command, async (ctx) => {
+    bot.command(config.command, onlyPrivate, async (ctx) => {
       const message = toMessageLike(ctx.message);
       if (!message) {
         return;

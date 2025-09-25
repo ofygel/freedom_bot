@@ -1,32 +1,83 @@
-import pino from 'pino';
+import pino, { type LoggerOptions } from 'pino';
 
 import { config } from './env';
 
 export type Logger = pino.Logger;
 
-const transport = pino.transport({
-  targets: [
-    {
-      target: 'pino/file',
-      level: config.logLevel,
-      options: { destination: 1, mkdir: false },
-    },
-  ],
-});
+const buildTransport = () => {
+  if (config.logTransport === 'pretty') {
+    return pino.transport({
+      targets: [
+        {
+          target: 'pino-pretty',
+          level: config.logLevel,
+          options: { colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' },
+        },
+      ],
+    });
+  }
 
-export const logger: Logger = pino(
-  {
-    level: config.logLevel,
-    base: {
-      service: 'freedom-bot',
-      environment: config.nodeEnv,
-    },
-    formatters: {
-      level(label: string) {
-        return { level: label };
+  return pino.transport({
+    targets: [
+      {
+        target: 'pino/file',
+        level: config.logLevel,
+        options: { destination: 1, mkdir: false },
       },
+    ],
+  });
+};
+
+const createRateLimitHook = (limit: number): LoggerOptions['hooks'] | undefined => {
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return undefined;
+  }
+
+  let windowStart = Date.now();
+  let emitted = 0;
+
+  return {
+    logMethod(this: Logger, args, method, level) {
+      if (level >= 40) {
+        method.apply(this, args);
+        return;
+      }
+
+      const now = Date.now();
+      if (now - windowStart >= 1000) {
+        windowStart = now;
+        emitted = 0;
+      }
+
+      if (emitted >= limit) {
+        return;
+      }
+
+      emitted += 1;
+      method.apply(this, args);
     },
-    timestamp: pino.stdTimeFunctions.isoTime,
+  } satisfies LoggerOptions['hooks'];
+};
+
+const transport = buildTransport();
+
+const loggerOptions: LoggerOptions = {
+  level: config.logLevel,
+  base: {
+    service: 'freedom-bot',
+    environment: config.nodeEnv,
   },
-  transport,
-);
+  formatters: {
+    level(label: string) {
+      return { level: label };
+    },
+  },
+  timestamp: pino.stdTimeFunctions.isoTime,
+};
+
+const rateLimitHooks = createRateLimitHook(config.logRateLimit);
+if (rateLimitHooks) {
+  loggerOptions.hooks = rateLimitHooks;
+}
+
+export const logger: Logger = pino(loggerOptions, transport);

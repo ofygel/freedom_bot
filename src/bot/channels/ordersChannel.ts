@@ -773,6 +773,12 @@ const handleOrderDecision = async (
     return;
   }
 
+  const chatType = message.chat.type;
+  if (chatType && chatType !== 'private') {
+    await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
+    return;
+  }
+
   const chatId = message.chat.id;
   const messageId = message.message_id;
   const actorId = ctx.from?.id;
@@ -893,6 +899,12 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
   const message = ctx.callbackQuery?.message;
   if (!message || !('message_id' in message) || !message.chat) {
     await ctx.answerCbQuery('Не удалось обработать действие.');
+    return;
+  }
+
+  const chatType = message.chat.type;
+  if (chatType && chatType !== 'private') {
+    await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
     return;
   }
 
@@ -1019,6 +1031,18 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
 };
 
 const handleUndoOrderRelease = async (ctx: BotContext, orderId: number): Promise<void> => {
+  const message = ctx.callbackQuery?.message;
+  if (!message || !('chat' in message) || !message.chat) {
+    await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
+    return;
+  }
+
+  const chatType = message.chat.type;
+  if (chatType && chatType !== 'private') {
+    await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
+    return;
+  }
+
   const preview = peekUndoState(releaseUndoStates, orderId);
   if (!preview) {
     await ctx.answerCbQuery(copy.undoExpired);
@@ -1131,6 +1155,18 @@ const handleUndoOrderRelease = async (ctx: BotContext, orderId: number): Promise
 };
 
 const handleUndoOrderCompletion = async (ctx: BotContext, orderId: number): Promise<void> => {
+  const message = ctx.callbackQuery?.message;
+  if (!message || !('chat' in message) || !message.chat) {
+    await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
+    return;
+  }
+
+  const chatType = message.chat.type;
+  if (chatType && chatType !== 'private') {
+    await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
+    return;
+  }
+
   const preview = peekUndoState(completionUndoStates, orderId);
   if (!preview) {
     await ctx.answerCbQuery(copy.undoExpired);
@@ -1245,6 +1281,12 @@ const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<
   const message = ctx.callbackQuery?.message;
   if (!message || !('message_id' in message) || !message.chat) {
     await ctx.answerCbQuery('Не удалось обработать действие.');
+    return;
+  }
+
+  const chatType = message.chat.type;
+  if (chatType && chatType !== 'private') {
+    await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
     return;
   }
 

@@ -25,6 +25,8 @@ const LOG_LEVELS: LevelWithSilent[] = [
   'silent',
 ];
 
+type LogTransport = 'pretty' | 'json';
+
 const getTrimmedEnv = (key: string): string | undefined => {
   const value = process.env[key];
   if (typeof value !== 'string') {
@@ -67,6 +69,23 @@ const resolveLogLevel = (value: string | undefined): LevelWithSilent => {
   }
 
   return normalised;
+};
+
+const resolveLogTransport = (value: string | undefined): LogTransport => {
+  if (!value) {
+    return 'pretty';
+  }
+
+  const normalised = value.trim().toLowerCase();
+  if (normalised === 'pretty') {
+    return 'pretty';
+  }
+
+  if (normalised === 'json') {
+    return 'json';
+  }
+
+  throw new Error(`Unsupported PINO_TRANSPORT provided: ${value}`);
 };
 
 const parseWarnHours = (value: string | undefined): number => {
@@ -226,6 +245,8 @@ const parseSubscriptionPrices = () => ({
 export interface AppConfig {
   nodeEnv: string;
   logLevel: LevelWithSilent;
+  logTransport: LogTransport;
+  logRateLimit: number;
   bot: {
     token: string;
     callbackSignSecret?: string;
@@ -283,6 +304,8 @@ export interface AppConfig {
 export const loadConfig = (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   logLevel: resolveLogLevel(process.env.PINO_LEVEL ?? process.env.LOG_LEVEL),
+  logTransport: resolveLogTransport(process.env.PINO_TRANSPORT),
+  logRateLimit: parsePositiveInt('PINO_RATE_LIMIT', 50),
   bot: {
     token: process.env.BOT_TOKEN as string,
     callbackSignSecret: getOptionalString('CALLBACK_SIGN_SECRET'),
