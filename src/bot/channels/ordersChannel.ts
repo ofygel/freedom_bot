@@ -11,7 +11,9 @@ import {
   setOrderChannelMessageId,
   tryClaimOrder,
   tryCompleteOrder,
+  tryReclaimOrder,
   tryReleaseOrder,
+  tryRestoreCompletedOrder,
 } from '../../db/orders';
 import type { OrderKind, OrderRecord, OrderWithExecutor } from '../../types';
 import type { BotContext, UserRole } from '../types';
@@ -29,6 +31,7 @@ import {
   toUserIdentity,
 } from '../services/reports';
 import { withIdempotency } from '../middlewares/idempotency';
+import { sendProcessingFeedback } from '../services/feedback';
 
 export type PublishOrderStatus = 'published' | 'already_published' | 'missing_channel';
 
@@ -45,6 +48,11 @@ const ACCEPT_ACTION_PATTERN = /^order:accept:(\d+)$/;
 const DECLINE_ACTION_PATTERN = /^order:decline:(\d+)$/;
 const RELEASE_ACTION_PATTERN = /^order:release:(\d+)$/;
 const COMPLETE_ACTION_PATTERN = /^order:complete:(\d+)$/;
+const UNDO_RELEASE_ACTION_PREFIX = 'order:undo-release';
+const UNDO_RELEASE_ACTION_PATTERN = /^order:undo-release:(\d+)$/;
+const UNDO_COMPLETE_ACTION_PREFIX = 'order:undo-complete';
+const UNDO_COMPLETE_ACTION_PATTERN = /^order:undo-complete:(\d+)$/;
+const UNDO_TTL_MS = 2 * 60 * 1000;
 
 const callbackSecret = config.bot.callbackSignSecret ?? config.bot.token;
 
@@ -176,6 +184,53 @@ interface OrderChannelState {
 
 const orderStates = new Map<number, OrderChannelState>();
 const orderDismissals = new Map<number, Set<number>>();
+interface OrderUndoState {
+  executorId: number;
+  expiresAt: number;
+}
+
+const releaseUndoStates = new Map<number, OrderUndoState>();
+const completionUndoStates = new Map<number, OrderUndoState>();
+
+const rememberUndoState = (
+  map: Map<number, OrderUndoState>,
+  orderId: number,
+  executorId: number,
+): void => {
+  map.set(orderId, {
+    executorId,
+    expiresAt: Date.now() + UNDO_TTL_MS,
+  });
+};
+
+const consumeUndoState = (map: Map<number, OrderUndoState>, orderId: number): OrderUndoState | undefined => {
+  const state = map.get(orderId);
+  if (!state) {
+    return undefined;
+  }
+
+  if (Date.now() > state.expiresAt) {
+    map.delete(orderId);
+    return undefined;
+  }
+
+  map.delete(orderId);
+  return state;
+};
+
+const peekUndoState = (map: Map<number, OrderUndoState>, orderId: number): OrderUndoState | undefined => {
+  const state = map.get(orderId);
+  if (!state) {
+    return undefined;
+  }
+
+  if (Date.now() > state.expiresAt) {
+    map.delete(orderId);
+    return undefined;
+  }
+
+  return state;
+};
 
 const getOrderDismissals = (orderId: number): Set<number> => {
   let dismissals = orderDismissals.get(orderId);
@@ -542,6 +597,16 @@ type OrderCompletionOutcome =
   | { outcome: 'forbidden'; order: OrderRecord }
   | { outcome: 'completed'; order: OrderRecord };
 
+type UndoReleaseOutcome =
+  | { outcome: 'not_found' }
+  | { outcome: 'already_taken'; order: OrderRecord }
+  | { outcome: 'reclaimed'; order: OrderRecord };
+
+type UndoCompletionOutcome =
+  | { outcome: 'not_found' }
+  | { outcome: 'invalid'; order: OrderRecord }
+  | { outcome: 'restored'; order: OrderRecord };
+
 const processOrderAction = async (
   orderId: number,
   decision: 'accept' | 'decline',
@@ -734,6 +799,8 @@ const handleOrderDecision = async (
     }
   }
 
+  await sendProcessingFeedback(ctx);
+
   let result: OrderActionOutcome;
   try {
     result = await processOrderAction(orderId, decision, {
@@ -835,6 +902,8 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
     return;
   }
 
+  await sendProcessingFeedback(ctx);
+
   let result: OrderReleaseOutcome;
   try {
     result = await processOrderRelease(orderId, moderatorId);
@@ -870,6 +939,10 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
         result.order.pickup,
         result.order.dropoff,
       );
+      const undoKeyboard = buildInlineKeyboard([
+        [{ label: '↩️ Вернуть заказ', action: `${UNDO_RELEASE_ACTION_PREFIX}:${orderId}` }],
+      ]);
+      const replyMarkup = mergeInlineKeyboards(locationKeyboard, undoKeyboard) ?? undoKeyboard;
 
       let statusLine = copy.statusLine('🚫', 'Заказ отменён и возвращён в канал.');
       let answerText = copy.orderReleasedToast;
@@ -883,7 +956,7 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
 
       try {
         await ctx.editMessageText([baseMessage, '', statusLine].join('\n'), {
-          reply_markup: locationKeyboard,
+          reply_markup: replyMarkup,
         });
       } catch (error) {
         logger.debug(
@@ -891,7 +964,7 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
           'Failed to update direct message after release',
         );
         try {
-          await ctx.editMessageReplyMarkup(locationKeyboard);
+          await ctx.editMessageReplyMarkup(replyMarkup);
         } catch (markupError) {
           logger.debug(
             { err: markupError, orderId, chatId: message.chat.id, messageId: message.message_id },
@@ -899,6 +972,8 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
           );
         }
       }
+
+      rememberUndoState(releaseUndoStates, orderId, moderatorId);
 
       await ctx.answerCbQuery(answerText);
       const clientId = result.order.clientId;
@@ -943,6 +1018,229 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
   }
 };
 
+const handleUndoOrderRelease = async (ctx: BotContext, orderId: number): Promise<void> => {
+  const preview = peekUndoState(releaseUndoStates, orderId);
+  if (!preview) {
+    await ctx.answerCbQuery(copy.undoExpired);
+    return;
+  }
+
+  const executorId = ctx.from?.id;
+  if (typeof executorId !== 'number' || executorId !== preview.executorId) {
+    await ctx.answerCbQuery(copy.noAccess);
+    return;
+  }
+
+  if (!consumeUndoState(releaseUndoStates, orderId)) {
+    await ctx.answerCbQuery(copy.undoExpired);
+    return;
+  }
+
+  await sendProcessingFeedback(ctx);
+
+  let result: UndoReleaseOutcome;
+  try {
+    result = await withTx(
+      async (client) => {
+        const order = await lockOrderById(client, orderId);
+        if (!order) {
+          return { outcome: 'not_found' } as const;
+        }
+
+        const updated = await tryReclaimOrder(client, orderId, executorId);
+        if (!updated) {
+          return { outcome: 'already_taken', order } as const;
+        }
+
+        return { outcome: 'reclaimed', order: updated } as const;
+      },
+      { isolationLevel: 'serializable' },
+    );
+  } catch (error) {
+    logger.error({ err: error, orderId }, 'Failed to undo order release');
+    await ctx.answerCbQuery(copy.undoUnavailable);
+    return;
+  }
+
+  switch (result.outcome) {
+    case 'not_found': {
+      await ctx.answerCbQuery('Заказ не найден.');
+      return;
+    }
+    case 'already_taken': {
+      const locationKeyboard = buildOrderLocationsKeyboard(
+        result.order.city,
+        result.order.pickup,
+        result.order.dropoff,
+      );
+      try {
+        await ctx.editMessageReplyMarkup(locationKeyboard ?? undefined);
+      } catch (error) {
+        logger.debug(
+          { err: error, orderId },
+          'Failed to remove undo markup after failed release undo',
+        );
+      }
+      await ctx.answerCbQuery(copy.orderUndoReleaseFailed, { show_alert: true });
+      return;
+    }
+    case 'reclaimed': {
+      await removeOrderState(ctx.telegram, orderId);
+
+      const directMessage = buildOrderDirectMessage(result.order);
+      try {
+        await ctx.editMessageText(directMessage.text, {
+          reply_markup: directMessage.keyboard,
+        });
+      } catch (error) {
+        logger.debug(
+          { err: error, orderId },
+          'Failed to restore direct message while undoing release',
+        );
+        try {
+          await ctx.editMessageReplyMarkup(directMessage.keyboard);
+        } catch (markupError) {
+          logger.debug(
+            { err: markupError, orderId },
+            'Failed to restore keyboard while undoing release',
+          );
+        }
+      }
+
+      await ctx.answerCbQuery(copy.orderUndoReleaseRestored);
+
+      const clientId = result.order.clientId;
+      if (typeof clientId === 'number') {
+        const shortId = result.order.shortId ?? result.order.id.toString();
+        try {
+          await ctx.telegram.sendMessage(clientId, copy.orderUndoReleaseClientNotice(shortId));
+        } catch (error) {
+          logger.debug(
+            { err: error, orderId, clientId },
+            'Failed to notify client about release undo',
+          );
+        }
+      }
+
+      await reportOrderClaimed(ctx.telegram, result.order, toUserIdentity(ctx.from));
+      return;
+    }
+    default:
+      await ctx.answerCbQuery(copy.undoUnavailable);
+  }
+};
+
+const handleUndoOrderCompletion = async (ctx: BotContext, orderId: number): Promise<void> => {
+  const preview = peekUndoState(completionUndoStates, orderId);
+  if (!preview) {
+    await ctx.answerCbQuery(copy.undoExpired);
+    return;
+  }
+
+  const executorId = ctx.from?.id;
+  if (typeof executorId !== 'number' || executorId !== preview.executorId) {
+    await ctx.answerCbQuery(copy.noAccess);
+    return;
+  }
+
+  if (!consumeUndoState(completionUndoStates, orderId)) {
+    await ctx.answerCbQuery(copy.undoExpired);
+    return;
+  }
+
+  await sendProcessingFeedback(ctx);
+
+  let result: UndoCompletionOutcome;
+  try {
+    result = await withTx(
+      async (client) => {
+        const order = await lockOrderById(client, orderId);
+        if (!order) {
+          return { outcome: 'not_found' } as const;
+        }
+
+        if (order.status !== 'done' || order.claimedBy !== executorId) {
+          return { outcome: 'invalid', order } as const;
+        }
+
+        const updated = await tryRestoreCompletedOrder(client, orderId, executorId);
+        if (!updated) {
+          return { outcome: 'invalid', order } as const;
+        }
+
+        return { outcome: 'restored', order: updated } as const;
+      },
+      { isolationLevel: 'serializable' },
+    );
+  } catch (error) {
+    logger.error({ err: error, orderId }, 'Failed to undo order completion');
+    await ctx.answerCbQuery(copy.undoUnavailable);
+    return;
+  }
+
+  switch (result.outcome) {
+    case 'not_found': {
+      await ctx.answerCbQuery('Заказ не найден.');
+      return;
+    }
+    case 'invalid': {
+      try {
+        await ctx.editMessageReplyMarkup(
+          buildOrderLocationsKeyboard(result.order.city, result.order.pickup, result.order.dropoff) ??
+            undefined,
+        );
+      } catch (error) {
+        logger.debug(
+          { err: error, orderId },
+          'Failed to remove undo markup after failed completion undo',
+        );
+      }
+      await ctx.answerCbQuery(copy.orderUndoCompleteFailed, { show_alert: true });
+      return;
+    }
+    case 'restored': {
+      const directMessage = buildOrderDirectMessage(result.order);
+      try {
+        await ctx.editMessageText(directMessage.text, {
+          reply_markup: directMessage.keyboard,
+        });
+      } catch (error) {
+        logger.debug(
+          { err: error, orderId },
+          'Failed to restore direct message while undoing completion',
+        );
+        try {
+          await ctx.editMessageReplyMarkup(directMessage.keyboard);
+        } catch (markupError) {
+          logger.debug(
+            { err: markupError, orderId },
+            'Failed to restore keyboard while undoing completion',
+          );
+        }
+      }
+
+      await ctx.answerCbQuery(copy.orderUndoCompleteRestored);
+
+      const clientId = result.order.clientId;
+      if (typeof clientId === 'number') {
+        const shortId = result.order.shortId ?? result.order.id.toString();
+        try {
+          await ctx.telegram.sendMessage(clientId, copy.orderUndoCompletionClientNotice(shortId));
+        } catch (error) {
+          logger.debug(
+            { err: error, orderId, clientId },
+            'Failed to notify client about completion undo',
+          );
+        }
+      }
+
+      return;
+    }
+    default:
+      await ctx.answerCbQuery(copy.undoUnavailable);
+  }
+};
+
 const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<void> => {
   const message = ctx.callbackQuery?.message;
   if (!message || !('message_id' in message) || !message.chat) {
@@ -955,6 +1253,8 @@ const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<
     await ctx.answerCbQuery('Не удалось определить пользователя.');
     return;
   }
+
+  await sendProcessingFeedback(ctx);
 
   let result: OrderCompletionOutcome;
   try {
@@ -982,11 +1282,15 @@ const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<
         result.order.pickup,
         result.order.dropoff,
       );
+      const undoKeyboard = buildInlineKeyboard([
+        [{ label: '↩️ Вернуть в работу', action: `${UNDO_COMPLETE_ACTION_PREFIX}:${orderId}` }],
+      ]);
+      const replyMarkup = mergeInlineKeyboards(locationKeyboard, undoKeyboard) ?? undoKeyboard;
       const statusLine = '✅ Заказ завершён.';
 
       try {
         await ctx.editMessageText([baseMessage, '', statusLine].join('\n'), {
-          reply_markup: locationKeyboard,
+          reply_markup: replyMarkup,
         });
       } catch (error) {
         logger.debug(
@@ -994,7 +1298,7 @@ const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<
           'Failed to update direct message after completion',
         );
         try {
-          await ctx.editMessageReplyMarkup(locationKeyboard);
+          await ctx.editMessageReplyMarkup(replyMarkup);
         } catch (markupError) {
           logger.debug(
             { err: markupError, orderId, chatId: message.chat.id, messageId: message.message_id },
@@ -1002,6 +1306,8 @@ const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<
           );
         }
       }
+
+      rememberUndoState(completionUndoStates, orderId, executorId);
 
       await ctx.answerCbQuery('Заказ завершён. Спасибо!');
       const clientId = result.order.clientId;
@@ -1087,6 +1393,40 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
 
     const guard = await withIdempotency(ctx, 'order:complete', String(orderId), () =>
       handleOrderCompletion(ctx, orderId),
+    );
+    if (guard.status === 'duplicate') {
+      await ctx.answerCbQuery('Запрос уже обработан.');
+    }
+  });
+
+  bot.action(UNDO_RELEASE_ACTION_PATTERN, async (ctx) => {
+    const match = ctx.match as RegExpMatchArray | undefined;
+    const idText = match?.[1];
+    const orderId = idText ? Number.parseInt(idText, 10) : NaN;
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      await ctx.answerCbQuery('Некорректный идентификатор заказа.');
+      return;
+    }
+
+    const guard = await withIdempotency(ctx, 'order:undo-release', String(orderId), () =>
+      handleUndoOrderRelease(ctx, orderId),
+    );
+    if (guard.status === 'duplicate') {
+      await ctx.answerCbQuery('Запрос уже обработан.');
+    }
+  });
+
+  bot.action(UNDO_COMPLETE_ACTION_PATTERN, async (ctx) => {
+    const match = ctx.match as RegExpMatchArray | undefined;
+    const idText = match?.[1];
+    const orderId = idText ? Number.parseInt(idText, 10) : NaN;
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      await ctx.answerCbQuery('Некорректный идентификатор заказа.');
+      return;
+    }
+
+    const guard = await withIdempotency(ctx, 'order:undo-complete', String(orderId), () =>
+      handleUndoOrderCompletion(ctx, orderId),
     );
     if (guard.status === 'duplicate') {
       await ctx.answerCbQuery('Запрос уже обработан.');

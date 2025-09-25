@@ -354,6 +354,28 @@ export const tryReleaseOrder = async (
   return row ? mapOrderRow(row) : null;
 };
 
+export const tryReclaimOrder = async (
+  client: PoolClient,
+  id: number,
+  executorId: number,
+): Promise<OrderRecord | null> => {
+  const { rows } = await client.query<OrderRow>(
+    `
+      UPDATE orders
+      SET status = 'claimed',
+          claimed_by = $2,
+          claimed_at = now(),
+          channel_message_id = NULL
+      WHERE id = $1 AND status = 'open' AND claimed_by IS NULL
+      RETURNING *
+    `,
+    [id, executorId],
+  );
+
+  const [row] = rows;
+  return row ? mapOrderRow(row) : null;
+};
+
 export const tryCompleteOrder = async (
   client: PoolClient,
   id: number,
@@ -368,6 +390,26 @@ export const tryCompleteOrder = async (
       RETURNING *
     `,
     [id, claimedBy],
+  );
+
+  const [row] = rows;
+  return row ? mapOrderRow(row) : null;
+};
+
+export const tryRestoreCompletedOrder = async (
+  client: PoolClient,
+  id: number,
+  executorId: number,
+): Promise<OrderRecord | null> => {
+  const { rows } = await client.query<OrderRow>(
+    `
+      UPDATE orders
+      SET status = 'claimed',
+          completed_at = NULL
+      WHERE id = $1 AND status = 'done' AND claimed_by = $2
+      RETURNING *
+    `,
+    [id, executorId],
   );
 
   const [row] = rows;
