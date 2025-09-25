@@ -1,47 +1,23 @@
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-
 import { logger } from '../config';
-import { pool } from './client';
-
-interface RegclassRow {
-  oid: string | null;
-}
-
-const ALL_MIGRATIONS_PATH = path.resolve(__dirname, '../../db/sql/all_migrations.sql');
-const CHECK_SESSIONS_SQL = "SELECT to_regclass('public.sessions') AS oid";
+import { runPendingMigrations, type MigrationEvent } from './migrations';
 
 let schemaReady = false;
 let bootstrapPromise: Promise<void> | null = null;
-let cachedSchemaSql: string | null = null;
 
-const loadSchemaSql = async (): Promise<string> => {
-  if (cachedSchemaSql) {
-    return cachedSchemaSql;
+const logMigrationEvent = ({ name, action }: MigrationEvent): void => {
+  if (action === 'skip') {
+    logger.debug({ migration: name }, 'Skipping already applied migration during bootstrap');
+  } else {
+    logger.info({ migration: name }, 'Applying migration during bootstrap');
   }
-
-  cachedSchemaSql = await readFile(ALL_MIGRATIONS_PATH, 'utf-8');
-  return cachedSchemaSql;
 };
 
-const applySchemaSnapshot = async (): Promise<void> => {
-  const client = await pool.connect();
-  try {
-    const { rows } = await client.query<RegclassRow>(CHECK_SESSIONS_SQL);
-    if (rows[0]?.oid) {
-      logger.debug('Database schema already contains sessions table, skipping bootstrap');
-      schemaReady = true;
-      return;
-    }
-
-    const schemaSql = await loadSchemaSql();
-    logger.info('Database schema missing, applying all_migrations.sql snapshot');
-    await client.query(schemaSql);
-    schemaReady = true;
-    logger.info('Database schema snapshot applied successfully');
-  } finally {
-    client.release();
+const applyMigrations = async (): Promise<void> => {
+  const applied = await runPendingMigrations(logMigrationEvent);
+  if (applied === 0) {
+    logger.debug('No pending database migrations found');
   }
+  schemaReady = true;
 };
 
 export const ensureDatabaseSchema = async (): Promise<void> => {
@@ -50,18 +26,20 @@ export const ensureDatabaseSchema = async (): Promise<void> => {
   }
 
   if (!bootstrapPromise) {
-    bootstrapPromise = applySchemaSnapshot().catch((error) => {
-      logger.error({ err: error }, 'Failed to apply database schema snapshot');
-      throw error;
-    }).finally(() => {
-      bootstrapPromise = null;
-    });
+    bootstrapPromise = applyMigrations()
+      .catch((error) => {
+        logger.error({ err: error }, 'Failed to apply database migrations');
+        throw error;
+      })
+      .finally(() => {
+        bootstrapPromise = null;
+      });
   }
 
   await bootstrapPromise;
 
   if (!schemaReady) {
-    throw new Error('Database schema bootstrap failed');
+    throw new Error('Database schema migration failed');
   }
 };
 
@@ -72,5 +50,4 @@ export const ensureDatabaseSchema = async (): Promise<void> => {
 export const resetDatabaseSchemaCache = (): void => {
   schemaReady = false;
   bootstrapPromise = null;
-  cachedSchemaSql = null;
 };
