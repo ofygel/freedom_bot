@@ -6,8 +6,11 @@ import type {
 } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../config';
+import { pool } from '../db';
+import { updateFlowMeta } from '../db/sessions';
 import { mergeInlineKeyboards, buildInlineKeyboard } from './keyboards/common';
 import type { BotContext, UiSessionState } from './types';
+import { resolveSessionKey } from './middlewares/session';
 
 const HOME_BUTTON_LABEL = '🏠 На главную';
 
@@ -77,6 +80,21 @@ const appendHomeButton = (
 ): InlineKeyboardMarkup => {
   const homeKeyboard = buildInlineKeyboard([[{ label, action }]]);
   return mergeInlineKeyboards(keyboard, homeKeyboard) ?? homeKeyboard;
+};
+
+const trackFlowStep = async (ctx: BotContext, options: UiStepOptions): Promise<void> => {
+  try {
+    const key = resolveSessionKey(ctx);
+    if (!key) {
+      return;
+    }
+
+    await updateFlowMeta(pool, key, options.id, {
+      homeAction: options.homeAction ?? null,
+    });
+  } catch (error) {
+    logger.debug({ err: error, stepId: options.id }, 'Failed to update flow metadata');
+  }
 };
 
 const isInlineKeyboard = (
@@ -152,6 +170,7 @@ export const ui = {
           link_preview_options: options.linkPreviewOptions,
         });
         existing.cleanup = cleanup;
+        await trackFlowStep(ctx, options);
         return { messageId: existing.messageId, sent: false };
       } catch (error) {
         if (isMessageNotModifiedError(error)) {
@@ -160,6 +179,7 @@ export const ui = {
             'Step message not modified, skipping edit',
           );
           existing.cleanup = cleanup;
+          await trackFlowStep(ctx, options);
           return { messageId: existing.messageId, sent: false };
         }
 
@@ -194,6 +214,7 @@ export const ui = {
 
     const messageId = message.message_id;
     state.steps[options.id] = { chatId, messageId, cleanup };
+    await trackFlowStep(ctx, options);
     return { messageId, sent: true };
   },
   clear: async (ctx: BotContext, options: UiClearOptions = {}): Promise<void> => {

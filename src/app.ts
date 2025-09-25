@@ -32,6 +32,7 @@ import {
 import { auth } from './bot/middlewares/auth';
 import { autoDelete } from './bot/middlewares/autoDelete';
 import { errorBoundary } from './bot/middlewares/errorBoundary';
+import { antiFlood } from './bot/middlewares/antiFlood';
 import { session } from './bot/middlewares/session';
 import { keyboardGuard } from './bot/middlewares/keyboardGuard';
 import { stateGate } from './bot/middlewares/stateGate';
@@ -49,6 +50,7 @@ app.catch((error, ctx) => {
 
 app.use(errorBoundary());
 app.use(session());
+app.use(antiFlood());
 app.use(autoDelete());
 app.use(auth());
 app.use(keyboardGuard());

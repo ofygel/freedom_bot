@@ -125,7 +125,7 @@ const parseScopeId = (value: unknown): string | undefined => {
   return undefined;
 };
 
-const resolveSessionKey = (ctx: BotContext): SessionKey | undefined => {
+export const resolveSessionKey = (ctx: BotContext): SessionKey | undefined => {
   const chatId = parseScopeId(ctx.chat?.id);
   if (chatId !== undefined) {
     return { scope: 'chat', scopeId: chatId } satisfies SessionKey;
