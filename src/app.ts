@@ -41,6 +41,7 @@ import { callbackDecoder } from './bot/middlewares/callbackDecoder';
 import type { BotContext } from './bot/types';
 import { config, logger } from './config';
 import { pool } from './db';
+import { ensureDatabaseSchema } from './db/bootstrap';
 
 export const app = new Telegraf<BotContext>(config.bot.token);
 
@@ -161,6 +162,8 @@ export const setupGracefulShutdown = (bot: Telegraf<BotContext>): void => {
 setupGracefulShutdown(app);
 
 export const initialiseAppState = async (): Promise<void> => {
+  await ensureDatabaseSchema();
+
   const tasks: Promise<void>[] = [
     restoreVerificationModerationQueue().catch((error) => {
       logger.error({ err: error }, 'Failed to restore verification moderation queue');

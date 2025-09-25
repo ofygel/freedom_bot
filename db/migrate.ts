@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { PoolClient } from 'pg';
 
-import { pool, withTx } from '../src/db/client';
+import { pool } from '../src/db/client';
 
 const MIGRATIONS_DIR = path.resolve(__dirname, 'sql');
 const MIGRATIONS_TABLE = 'schema_migrations';
@@ -48,17 +48,34 @@ const applyMigration = async (
   );
 };
 
+const hasMigrationRun = async (client: PoolClient, fileName: string): Promise<boolean> => {
+  const { rows } = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM ${MIGRATIONS_TABLE} WHERE name = $1) AS exists`,
+    [fileName],
+  );
+  return rows[0]?.exists ?? false;
+};
+
 const runMigrations = async (): Promise<void> => {
   const files = await readMigrationFiles();
 
-  await withTx(async (client) => {
+  const client = await pool.connect();
+  try {
     await ensureMigrationsTable(client);
+
     for (const file of files) {
+      if (await hasMigrationRun(client, file)) {
+        console.log(`Skipping already applied migration ${file}`);
+        continue;
+      }
+
       const fullPath = path.join(MIGRATIONS_DIR, file);
       const sql = await fs.readFile(fullPath, 'utf-8');
       await applyMigration(client, file, sql);
     }
-  });
+  } finally {
+    client.release();
+  }
 };
 
 const main = async () => {

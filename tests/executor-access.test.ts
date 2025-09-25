@@ -356,5 +356,10 @@ describe('executor menu formatting', () => {
       !menuStep.text?.includes('Ссылка на канал уже выдана'),
       'menu should not mention previously issued link when subscription is inactive',
     );
+
+    assert.ok(
+      menuStep.text?.includes('👉 Что дальше:'),
+      'menu should explain the next steps for исполнителя',
+    );
   });
 });
