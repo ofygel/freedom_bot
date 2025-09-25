@@ -8,20 +8,14 @@ import path from 'node:path';
 import { ensureDatabaseSchema, resetDatabaseSchemaCache } from '../src/db/bootstrap';
 import { pool } from '../src/db';
 
-const MIGRATIONS_DIR = path.resolve(__dirname, '../db/sql');
-const SNAPSHOT_FILE = 'all_migrations.sql';
+const MIGRATIONS_DIR = path.resolve(__dirname, '../db/migrations');
 
 const loadMigrationFiles = async (): Promise<string[]> => {
   const entries = await readdir(MIGRATIONS_DIR, { withFileTypes: true });
   const sqlFiles = entries
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.sql'))
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.up.sql'))
     .map((entry) => entry.name)
     .sort();
-
-  if (sqlFiles.includes(SNAPSHOT_FILE)) {
-    return [SNAPSHOT_FILE];
-  }
-
   return sqlFiles;
 };
 

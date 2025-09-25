@@ -25,7 +25,10 @@ const getMessageText = (ctx: BotContext): string | undefined => {
 };
 
 export const stateGate = (): MiddlewareFn<BotContext> => async (ctx, next) => {
-  if (ctx.chat && ctx.chat.type !== 'private') {
+  const chatType = ctx.chat?.type;
+  const isChannelChat = chatType === 'channel';
+
+  if (chatType && chatType !== 'private') {
     await next();
     return;
   }
@@ -33,7 +36,6 @@ export const stateGate = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   const user = ctx.auth?.user;
   const text = getMessageText(ctx);
   const isCallbackQuery = Boolean(ctx.callbackQuery);
-  const isChannelChat = ctx.chat?.type === 'channel';
 
   const answerCallbackQuery = async (message: string) => {
     if (!isCallbackQuery || typeof ctx.answerCbQuery !== 'function') {
