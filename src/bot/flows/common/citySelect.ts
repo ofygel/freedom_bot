@@ -46,7 +46,19 @@ export const askCity = async (
 
   const keyboard = buildCityKeyboard();
   const replyMarkup = bindInlineKeyboardToUser(ctx, keyboard) ?? keyboard;
-  await ctx.reply(title, { reply_markup: replyMarkup });
+  try {
+    await ctx.reply(title, { reply_markup: replyMarkup });
+  } catch (error) {
+    if (!ctx.chat?.id) {
+      throw error;
+    }
+
+    try {
+      await ctx.telegram.sendMessage(ctx.chat.id, title, { reply_markup: replyMarkup });
+    } catch {
+      throw error;
+    }
+  }
 };
 
 export const ensureCitySelected = async (

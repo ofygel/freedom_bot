@@ -211,16 +211,17 @@ describe('executor role selection', () => {
     }
 
     const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
-    assert.ok(menuStep, 'executor menu step should be displayed');
+    assert.equal(menuStep, undefined, 'executor menu should wait until city is selected');
+    assert.equal(ctx.session.ui.pendingCityAction, 'executorMenu');
     assert.equal(ctx.auth.user.role, 'driver');
     assert.ok(sendMessageCalls.length >= 1);
-    const fallbackCall = sendMessageCalls.at(-1);
-    assert.ok(fallbackCall, 'fallback sendMessage should be recorded');
-    assert.equal(fallbackCall.chatId, ctx.chat!.id);
-    const fallbackMarkup = (fallbackCall.extra as {
+    const promptCall = sendMessageCalls.at(-1);
+    assert.ok(promptCall, 'city selection prompt should be sent');
+    assert.equal(promptCall.chatId, ctx.chat!.id);
+    const promptMarkup = (promptCall.extra as {
       reply_markup?: InlineKeyboardMarkup | ReplyKeyboardMarkup;
     }).reply_markup;
-    assert.ok(fallbackMarkup);
-    assert.match(fallbackCall.text, /Меню водителя/);
+    assert.ok(promptMarkup, 'city selection keyboard should be attached');
+    assert.match(promptCall.text, /Сначала выбери город/);
   });
 });
