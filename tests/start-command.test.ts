@@ -7,7 +7,7 @@ import type { BotContext } from '../src/bot/types';
 import { EXECUTOR_COMMANDS, CLIENT_COMMANDS } from '../src/bot/commands/sets';
 
 let registerStartCommand: typeof import('../src/bot/commands/start')['registerStartCommand'];
-let askPhoneModule: typeof import('../src/bot/middlewares/askPhone');
+let askPhoneModule: typeof import('../src/bot/flows/common/phoneCollect');
 let commandsService: typeof import('../src/bot/services/commands');
 
 before(async () => {
@@ -24,7 +24,7 @@ before(async () => {
   process.env.SUB_PRICE_15 = process.env.SUB_PRICE_15 ?? '9000';
   process.env.SUB_PRICE_30 = process.env.SUB_PRICE_30 ?? '16000';
 
-  askPhoneModule = await import('../src/bot/middlewares/askPhone');
+  askPhoneModule = await import('../src/bot/flows/common/phoneCollect');
   commandsService = await import('../src/bot/services/commands');
   ({ registerStartCommand } = await import('../src/bot/commands/start'));
 });

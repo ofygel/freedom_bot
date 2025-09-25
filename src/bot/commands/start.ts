@@ -6,7 +6,7 @@ import { setChatCommands } from '../services/commands';
 import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from './sets';
 import { hideClientMenu } from '../../ui/clientMenu';
 import { bindInlineKeyboardToUser } from '../services/callbackTokens';
-import { askPhone } from '../middlewares/askPhone';
+import { askPhone } from '../flows/common/phoneCollect';
 
 type RoleKey = 'client' | 'courier' | 'driver';
 
