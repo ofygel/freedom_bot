@@ -47,10 +47,7 @@ import {
 import { copy } from '../../copy';
 import { buildStatusMessage } from '../../ui/status';
 import { flowStart, flowComplete } from '../../../metrics/agg';
-<<<<<<< HEAD
-=======
 import { registerFlowRecovery } from '../recovery';
->>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
 
 export const START_TAXI_ORDER_ACTION = 'client:order:taxi:start';
 const CONFIRM_TAXI_ORDER_ACTION = 'client:order:taxi:confirm';
@@ -339,10 +336,7 @@ const notifyOrderCreated = async (
       ? 'Заказ создан. Оператор свяжется вручную.'
       : 'Заказ отправлен водителям. Ожидаем отклика.';
   const statusEmoji = publishStatus === 'missing_channel' ? '⚠️' : '⏳';
-<<<<<<< HEAD
-=======
   const statusPayload = { emoji: statusEmoji, label: statusLabel };
->>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
   const { text: statusText, reply_markup } = buildStatusMessage(
     statusEmoji,
     statusLabel,
@@ -355,11 +349,8 @@ const notifyOrderCreated = async (
     text: statusText,
     keyboard: reply_markup,
     cleanup: true,
-<<<<<<< HEAD
-=======
     homeAction: CLIENT_MENU_ACTION,
     recovery: { type: 'client:taxi:status', payload: statusPayload },
->>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
   });
 
   const lines = [
