@@ -1,6 +1,7 @@
 import type { MiddlewareFn } from 'telegraf';
 
 import { config, logger } from '../../config';
+import { withLatencyLog } from '../../metrics/latency';
 import type { BotContext } from '../types';
 import { renderMenuFor } from '../ui/menus';
 import {
@@ -54,6 +55,8 @@ export const callbackDecoder = (): MiddlewareFn<BotContext> => async (ctx, next)
   state.callbackPayload = decoded.wrapped;
   (query as { data?: string }).data = decoded.wrapped.raw;
 
-  await next();
+  await withLatencyLog(`callback:${decoded.wrapped.raw}`, async () => {
+    await next();
+  });
 };
 

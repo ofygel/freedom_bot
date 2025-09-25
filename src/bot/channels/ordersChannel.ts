@@ -27,6 +27,7 @@ import {
   reportOrderReleased,
   toUserIdentity,
 } from '../services/reports';
+import { withIdempotency } from '../middlewares/idempotency';
 
 export type PublishOrderStatus = 'published' | 'already_published' | 'missing_channel';
 
@@ -1036,7 +1037,12 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    await handleOrderDecision(ctx, orderId, 'accept');
+    const guard = await withIdempotency(ctx, 'order:accept', String(orderId), () =>
+      handleOrderDecision(ctx, orderId, 'accept'),
+    );
+    if (guard.status === 'duplicate') {
+      await ctx.answerCbQuery('Запрос уже обработан.');
+    }
   });
 
   bot.action(DECLINE_ACTION_PATTERN, async (ctx) => {
@@ -1060,7 +1066,12 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    await handleOrderRelease(ctx, orderId);
+    const guard = await withIdempotency(ctx, 'order:release', String(orderId), () =>
+      handleOrderRelease(ctx, orderId),
+    );
+    if (guard.status === 'duplicate') {
+      await ctx.answerCbQuery('Запрос уже обработан.');
+    }
   });
 
   bot.action(COMPLETE_ACTION_PATTERN, async (ctx) => {
@@ -1072,6 +1083,11 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    await handleOrderCompletion(ctx, orderId);
+    const guard = await withIdempotency(ctx, 'order:complete', String(orderId), () =>
+      handleOrderCompletion(ctx, orderId),
+    );
+    if (guard.status === 'duplicate') {
+      await ctx.answerCbQuery('Запрос уже обработан.');
+    }
   });
 };

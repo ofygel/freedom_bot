@@ -98,3 +98,67 @@ export const deleteSessionState = async (
   ]);
 };
 
+const serialisePayload = (payload: unknown): string => {
+  try {
+    return JSON.stringify(payload ?? {});
+  } catch (error) {
+    const reason =
+      error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error';
+    throw new Error(`Failed to serialise session flow payload: ${reason}`);
+  }
+};
+
+export const updateFlowMeta = async (
+  queryable: Queryable,
+  key: SessionKey,
+  stepId: string,
+  payload?: unknown,
+): Promise<void> => {
+  const payloadJson = serialisePayload(payload);
+
+  const { rows } = await queryable.query<{ flow_state: string | null }>(
+    `SELECT flow_state FROM sessions WHERE scope = $1 AND scope_id = $2`,
+    [key.scope, key.scopeId],
+  );
+  const previousState = rows[0]?.flow_state ?? null;
+
+  await queryable.query(
+    `
+      INSERT INTO sessions (scope, scope_id, state, flow_state, flow_payload, last_step_at, nudge_sent_at, updated_at)
+      VALUES ($1, $2, '{}'::jsonb, $3, $4::jsonb, now(), NULL, now())
+      ON CONFLICT (scope, scope_id) DO UPDATE
+      SET flow_state = EXCLUDED.flow_state,
+          flow_payload = EXCLUDED.flow_payload,
+          last_step_at = now(),
+          nudge_sent_at = NULL,
+          updated_at = now()
+    `,
+    [key.scope, key.scopeId, stepId, payloadJson],
+  );
+
+  if (previousState !== stepId) {
+    await queryable.query(
+      `
+        INSERT INTO fsm_journal (scope, scope_id, from_state, to_state, step_id, payload)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+      `,
+      [key.scope, key.scopeId, previousState, stepId, stepId, payloadJson],
+    );
+  }
+};
+
+export const markNudged = async (
+  queryable: Queryable,
+  key: SessionKey,
+): Promise<void> => {
+  await queryable.query(
+    `
+      UPDATE sessions
+      SET nudge_sent_at = now(),
+          updated_at = now()
+      WHERE scope = $1 AND scope_id = $2
+    `,
+    [key.scope, key.scopeId],
+  );
+};
+

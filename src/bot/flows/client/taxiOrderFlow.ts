@@ -39,10 +39,19 @@ import { ensureCitySelected } from '../common/citySelect';
 import type { AppCity } from '../../../domain/cities';
 import { dgBase } from '../../../utils/2gis';
 import { reportOrderCreated, type UserIdentity } from '../../services/reports';
+import {
+  findRecentLocation,
+  loadRecentLocations,
+  rememberLocation,
+} from '../../services/recentLocations';
 
 export const START_TAXI_ORDER_ACTION = 'client:order:taxi:start';
 const CONFIRM_TAXI_ORDER_ACTION = 'client:order:taxi:confirm';
 const CANCEL_TAXI_ORDER_ACTION = 'client:order:taxi:cancel';
+const TAXI_RECENT_PICKUP_ACTION_PREFIX = 'client:order:taxi:recent:pickup';
+const TAXI_RECENT_DROPOFF_ACTION_PREFIX = 'client:order:taxi:recent:dropoff';
+const TAXI_RECENT_PICKUP_ACTION_PATTERN = /^client:order:taxi:recent:pickup:([a-f0-9]+)/;
+const TAXI_RECENT_DROPOFF_ACTION_PATTERN = /^client:order:taxi:recent:dropoff:([a-f0-9]+)/;
 
 const getDraft = (ctx: BotContext): ClientOrderDraftState => ctx.session.client.taxi;
 
@@ -98,11 +107,33 @@ const remindConfirmationActions = async (ctx: BotContext): Promise<void> => {
   });
 };
 
+const buildRecentLocationsKeyboard = async (
+  ctx: BotContext,
+  city: AppCity,
+  kind: 'pickup' | 'dropoff',
+  prefix: string,
+) => {
+  const recent = await loadRecentLocations(ctx.auth.user.telegramId, city, kind);
+  if (recent.length === 0) {
+    return undefined;
+  }
+
+  const rows = recent.map((item) => [{ label: item.label, action: `${prefix}:${item.locationId}` }]);
+  return buildInlineKeyboard(rows);
+};
+
 const requestPickupAddress = async (ctx: BotContext, city: AppCity): Promise<void> => {
+  const shortcuts = buildTwoGisShortcutKeyboard(city);
+  const recent = await buildRecentLocationsKeyboard(
+    ctx,
+    city,
+    'pickup',
+    TAXI_RECENT_PICKUP_ACTION_PREFIX,
+  );
   await updateTaxiStep(
     ctx,
     buildAddressPrompt(['Отправьте точку подачи такси одним из способов:']),
-    buildTwoGisShortcutKeyboard(city),
+    mergeInlineKeyboards(shortcuts, recent) ?? shortcuts,
   );
 };
 
@@ -111,6 +142,13 @@ const requestDropoffAddress = async (
   city: AppCity,
   pickup: CompletedOrderDraft['pickup'],
 ): Promise<void> => {
+  const shortcuts = buildTwoGisShortcutKeyboard(city);
+  const recent = await buildRecentLocationsKeyboard(
+    ctx,
+    city,
+    'dropoff',
+    TAXI_RECENT_DROPOFF_ACTION_PREFIX,
+  );
   await updateTaxiStep(
     ctx,
     buildAddressPrompt([
@@ -118,7 +156,7 @@ const requestDropoffAddress = async (
       '',
       'Теперь отправьте пункт назначения одним из способов:',
     ]),
-    buildTwoGisShortcutKeyboard(city),
+    mergeInlineKeyboards(shortcuts, recent) ?? shortcuts,
   );
 };
 
@@ -145,6 +183,8 @@ const applyPickupDetails = async (
     return;
   }
 
+  await rememberLocation(ctx.auth.user.telegramId, city, 'pickup', pickup);
+
   await requestDropoffAddress(ctx, city, pickup);
 };
 
@@ -170,6 +210,8 @@ const applyDropoffDetails = async (
     draft.stage = 'idle';
     return;
   }
+
+  await rememberLocation(ctx.auth.user.telegramId, city, 'dropoff', dropoff);
 
   if (isOrderDraftComplete(draft)) {
     await showConfirmation(ctx, draft, city);
@@ -504,6 +546,60 @@ const handleCancellationAction = async (ctx: BotContext): Promise<void> => {
 
 export const startTaxiOrder = handleStart;
 
+const handleRecentPickup = async (ctx: BotContext, locationId: string): Promise<void> => {
+  if (!(await ensurePrivateCallback(ctx, undefined, 'Выберите адрес в личном чате с ботом.'))) {
+    return;
+  }
+
+  const draft = getDraft(ctx);
+  if (draft.stage !== 'collectingPickup') {
+    await ctx.answerCbQuery('Кнопка устарела…');
+    return;
+  }
+
+  const city = ctx.session.city;
+  if (!city) {
+    await ctx.answerCbQuery('Сначала выберите город.');
+    return;
+  }
+
+  const location = await findRecentLocation(ctx.auth.user.telegramId, city, 'pickup', locationId);
+  if (!location) {
+    await ctx.answerCbQuery('Кнопка устарела…');
+    return;
+  }
+
+  await applyPickupDetails(ctx, draft, location);
+  await ctx.answerCbQuery('Адрес подставлен.');
+};
+
+const handleRecentDropoff = async (ctx: BotContext, locationId: string): Promise<void> => {
+  if (!(await ensurePrivateCallback(ctx, undefined, 'Выберите адрес в личном чате с ботом.'))) {
+    return;
+  }
+
+  const draft = getDraft(ctx);
+  if (draft.stage !== 'collectingDropoff') {
+    await ctx.answerCbQuery('Кнопка устарела…');
+    return;
+  }
+
+  const city = ctx.session.city;
+  if (!city) {
+    await ctx.answerCbQuery('Сначала выберите город.');
+    return;
+  }
+
+  const location = await findRecentLocation(ctx.auth.user.telegramId, city, 'dropoff', locationId);
+  if (!location) {
+    await ctx.answerCbQuery('Кнопка устарела…');
+    return;
+  }
+
+  await applyDropoffDetails(ctx, draft, location);
+  await ctx.answerCbQuery('Адрес подставлен.');
+};
+
 export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
   bot.action(START_TAXI_ORDER_ACTION, async (ctx) => {
     await handleStart(ctx);
@@ -519,6 +615,28 @@ export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
 
   bot.action(CLIENT_TAXI_ORDER_AGAIN_ACTION, async (ctx) => {
     await handleStart(ctx);
+  });
+
+  bot.action(TAXI_RECENT_PICKUP_ACTION_PATTERN, async (ctx) => {
+    const match = ctx.match as RegExpMatchArray | undefined;
+    const locationId = match?.[1];
+    if (!locationId) {
+      await ctx.answerCbQuery('Кнопка устарела…');
+      return;
+    }
+
+    await handleRecentPickup(ctx, locationId);
+  });
+
+  bot.action(TAXI_RECENT_DROPOFF_ACTION_PATTERN, async (ctx) => {
+    const match = ctx.match as RegExpMatchArray | undefined;
+    const locationId = match?.[1];
+    if (!locationId) {
+      await ctx.answerCbQuery('Кнопка устарела…');
+      return;
+    }
+
+    await handleRecentDropoff(ctx, locationId);
   });
 
   bot.hears(CLIENT_MENU.taxi, async (ctx) => {

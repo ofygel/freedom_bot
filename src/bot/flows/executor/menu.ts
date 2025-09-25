@@ -4,6 +4,7 @@ import type { InlineKeyboardMarkup, ReplyKeyboardMarkup } from 'telegraf/typings
 import {
   EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
+  type AuthUser,
   type BotContext,
   type ExecutorFlowState,
   type ExecutorSubscriptionState,
@@ -378,16 +379,46 @@ const buildMenuText = (
   state: ExecutorFlowState,
   access: ExecutorAccessStatus,
   cityLabel: string,
+  user: AuthUser,
 ): string => {
   const copy = getExecutorRoleCopy(state.role);
-  const parts = [
-    `${copy.emoji} Меню ${copy.genitive}`,
-    `🏙️ Город: ${cityLabel}`,
-    '',
-    ...buildVerificationSection(state, access),
-    '',
-    ...buildSubscriptionSection(state, access),
-  ];
+
+  const statusLines: string[] = [];
+  if (user.trialEndsAt && Number.isFinite(user.trialEndsAt.getTime())) {
+    const msLeft = user.trialEndsAt.getTime() - Date.now();
+    if (msLeft > 0) {
+      const daysLeft = Math.max(1, Math.ceil(msLeft / 86_400_000));
+      statusLines.push(
+        `🧪 Пробный до ${user.trialEndsAt.toLocaleDateString('ru-RU')} (осталось ${daysLeft} дн.)`,
+      );
+    }
+  }
+
+  const verification = state.verification[state.role];
+  const uploadedPhotos = verification.uploadedPhotos.length;
+  const requiredPhotos = ensurePositiveRequirement(verification.requiredPhotos);
+  const verificationStatusLabel =
+    verification.status === 'submitted'
+      ? 'проверка'
+      : verification.status === 'collecting'
+        ? 'ожидаем'
+        : 'не начаты';
+  statusLines.push(`🛡️ Документы: ${verificationStatusLabel} ${uploadedPhotos}/${requiredPhotos}`);
+
+  if (access.hasActiveSubscription) {
+    statusLines.push('📨 Подписка: активна');
+  } else if (access.isVerified) {
+    statusLines.push('📨 Подписка: нужна оплата');
+  } else {
+    statusLines.push('📨 Подписка: после проверки');
+  }
+
+  const parts = [`${copy.emoji} Меню ${copy.genitive}`, `🏙️ Город: ${cityLabel}`];
+  if (statusLines.length > 0) {
+    parts.push(...statusLines);
+  }
+
+  parts.push('', ...buildVerificationSection(state, access), '', ...buildSubscriptionSection(state, access));
 
   return parts.join('\n');
 };
@@ -425,7 +456,7 @@ export const showExecutorMenu = async (
     }
   }
 
-  const text = buildMenuText(state, access, CITY_LABEL[city]);
+  const text = buildMenuText(state, access, CITY_LABEL[city], ctx.auth.user);
   const keyboard = buildMenuKeyboard(state, access);
 
   if (ctx.chat.type === 'private') {

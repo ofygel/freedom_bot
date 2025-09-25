@@ -42,12 +42,21 @@ import { ensureCitySelected } from '../common/citySelect';
 import type { AppCity } from '../../../domain/cities';
 import { dgBase } from '../../../utils/2gis';
 import { reportOrderCreated, type UserIdentity } from '../../services/reports';
+import {
+  findRecentLocation,
+  loadRecentLocations,
+  rememberLocation,
+} from '../../services/recentLocations';
 
 export const START_DELIVERY_ORDER_ACTION = 'client:order:delivery:start';
 const CONFIRM_DELIVERY_ORDER_ACTION = 'client:order:delivery:confirm';
 const CANCEL_DELIVERY_ORDER_ACTION = 'client:order:delivery:cancel';
 const DELIVERY_ADDRESS_TYPE_PRIVATE_ACTION = 'client:order:delivery:address-type:private';
 const DELIVERY_ADDRESS_TYPE_APARTMENT_ACTION = 'client:order:delivery:address-type:apartment';
+const DELIVERY_RECENT_PICKUP_ACTION_PREFIX = 'client:order:delivery:recent:pickup';
+const DELIVERY_RECENT_DROPOFF_ACTION_PREFIX = 'client:order:delivery:recent:dropoff';
+const DELIVERY_RECENT_PICKUP_ACTION_PATTERN = /^client:order:delivery:recent:pickup:([a-f0-9]+)/;
+const DELIVERY_RECENT_DROPOFF_ACTION_PATTERN = /^client:order:delivery:recent:dropoff:([a-f0-9]+)/;
 
 const getDraft = (ctx: BotContext): ClientOrderDraftState => ctx.session.client.delivery;
 
@@ -274,11 +283,33 @@ const remindDeliveryCommentRequirement = async (ctx: BotContext): Promise<void> 
   });
 };
 
+const buildRecentLocationsKeyboard = async (
+  ctx: BotContext,
+  city: AppCity,
+  kind: 'pickup' | 'dropoff',
+  prefix: string,
+) => {
+  const recent = await loadRecentLocations(ctx.auth.user.telegramId, city, kind);
+  if (recent.length === 0) {
+    return undefined;
+  }
+
+  const rows = recent.map((item) => [{ label: item.label, action: `${prefix}:${item.locationId}` }]);
+  return buildInlineKeyboard(rows);
+};
+
 const requestPickupAddress = async (ctx: BotContext, city: AppCity): Promise<void> => {
+  const shortcuts = buildTwoGisShortcutKeyboard(city);
+  const recent = await buildRecentLocationsKeyboard(
+    ctx,
+    city,
+    'pickup',
+    DELIVERY_RECENT_PICKUP_ACTION_PREFIX,
+  );
   await updateDeliveryStep(
     ctx,
     buildAddressPrompt(['Укажите точку забора посылки одним из способов:']),
-    buildTwoGisShortcutKeyboard(city),
+    mergeInlineKeyboards(shortcuts, recent) ?? shortcuts,
   );
 };
 
@@ -287,6 +318,13 @@ const requestDropoffAddress = async (
   city: AppCity,
   pickup: CompletedOrderDraft['pickup'],
 ): Promise<void> => {
+  const shortcuts = buildTwoGisShortcutKeyboard(city);
+  const recent = await buildRecentLocationsKeyboard(
+    ctx,
+    city,
+    'dropoff',
+    DELIVERY_RECENT_DROPOFF_ACTION_PREFIX,
+  );
   await updateDeliveryStep(
     ctx,
     buildAddressPrompt([
@@ -294,7 +332,7 @@ const requestDropoffAddress = async (
       '',
       'Теперь отправьте адрес доставки одним из способов:',
     ]),
-    buildTwoGisShortcutKeyboard(city),
+    mergeInlineKeyboards(shortcuts, recent) ?? shortcuts,
   );
 };
 
@@ -366,6 +404,8 @@ const applyPickupDetails = async (
     return;
   }
 
+  await rememberLocation(ctx.auth.user.telegramId, city, 'pickup', pickup);
+
   await requestDropoffAddress(ctx, city, pickup);
 };
 
@@ -389,6 +429,11 @@ const applyDropoffDetails = async (
   draft.floor = undefined;
   draft.recipientPhone = undefined;
   draft.stage = 'selectingAddressType';
+
+  const city = ctx.session.city;
+  if (city) {
+    await rememberLocation(ctx.auth.user.telegramId, city, 'dropoff', dropoff);
+  }
 
   await requestAddressType(ctx, draft);
 };
@@ -952,6 +997,60 @@ const handleCancellationAction = async (ctx: BotContext): Promise<void> => {
   await cancelOrderDraft(ctx, draft);
 };
 
+const handleRecentPickup = async (ctx: BotContext, locationId: string): Promise<void> => {
+  if (!(await ensurePrivateCallback(ctx, undefined, 'Выберите адрес в личном чате с ботом.'))) {
+    return;
+  }
+
+  const draft = getDraft(ctx);
+  if (draft.stage !== 'collectingPickup') {
+    await ctx.answerCbQuery('Кнопка устарела…');
+    return;
+  }
+
+  const city = ctx.session.city;
+  if (!city) {
+    await ctx.answerCbQuery('Сначала выберите город.');
+    return;
+  }
+
+  const location = await findRecentLocation(ctx.auth.user.telegramId, city, 'pickup', locationId);
+  if (!location) {
+    await ctx.answerCbQuery('Кнопка устарела…');
+    return;
+  }
+
+  await applyPickupDetails(ctx, draft, location);
+  await ctx.answerCbQuery('Адрес подставлен.');
+};
+
+const handleRecentDropoff = async (ctx: BotContext, locationId: string): Promise<void> => {
+  if (!(await ensurePrivateCallback(ctx, undefined, 'Выберите адрес в личном чате с ботом.'))) {
+    return;
+  }
+
+  const draft = getDraft(ctx);
+  if (draft.stage !== 'collectingDropoff') {
+    await ctx.answerCbQuery('Кнопка устарела…');
+    return;
+  }
+
+  const city = ctx.session.city;
+  if (!city) {
+    await ctx.answerCbQuery('Сначала выберите город.');
+    return;
+  }
+
+  const location = await findRecentLocation(ctx.auth.user.telegramId, city, 'dropoff', locationId);
+  if (!location) {
+    await ctx.answerCbQuery('Кнопка устарела…');
+    return;
+  }
+
+  await applyDropoffDetails(ctx, draft, location);
+  await ctx.answerCbQuery('Адрес подставлен.');
+};
+
 export const startDeliveryOrder = handleStart;
 
 export const registerDeliveryOrderFlow = (bot: Telegraf<BotContext>): void => {
@@ -977,6 +1076,28 @@ export const registerDeliveryOrderFlow = (bot: Telegraf<BotContext>): void => {
 
   bot.action(CLIENT_DELIVERY_ORDER_AGAIN_ACTION, async (ctx) => {
     await handleStart(ctx);
+  });
+
+  bot.action(DELIVERY_RECENT_PICKUP_ACTION_PATTERN, async (ctx) => {
+    const match = ctx.match as RegExpMatchArray | undefined;
+    const locationId = match?.[1];
+    if (!locationId) {
+      await ctx.answerCbQuery('Кнопка устарела…');
+      return;
+    }
+
+    await handleRecentPickup(ctx, locationId);
+  });
+
+  bot.action(DELIVERY_RECENT_DROPOFF_ACTION_PATTERN, async (ctx) => {
+    const match = ctx.match as RegExpMatchArray | undefined;
+    const locationId = match?.[1];
+    if (!locationId) {
+      await ctx.answerCbQuery('Кнопка устарела…');
+      return;
+    }
+
+    await handleRecentDropoff(ctx, locationId);
   });
 
   bot.hears(CLIENT_MENU.delivery, async (ctx) => {
