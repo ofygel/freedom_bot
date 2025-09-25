@@ -62,6 +62,7 @@ const createAuthState = (): BotContext['auth'] => ({
     firstName: undefined,
     lastName: undefined,
     phone: undefined,
+    phoneVerified: false,
     role: 'client',
     status: 'active_client',
     isVerified: false,

@@ -48,6 +48,7 @@ const createAuthState = (telegramId = 710): BotContext['auth'] => ({
     firstName: undefined,
     lastName: undefined,
     phone: undefined,
+    phoneVerified: false,
     role: 'courier',
     status: 'active_executor',
     isVerified: false,

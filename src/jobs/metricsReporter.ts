@@ -1,6 +1,6 @@
 import cron, { type ScheduledTask } from 'node-cron';
 
-import { logger } from '../config';
+import { config, logger } from '../config';
 import { snapshot } from '../metrics/agg';
 
 let task: ScheduledTask | null = null;
@@ -10,7 +10,7 @@ export const startMetricsReporter = (): void => {
     return;
   }
 
-  task = cron.schedule('*/60 * * * * *', () => {
+  task = cron.schedule(config.jobs.metrics, () => {
     try {
       const current = snapshot();
       logger.info({ metric: 'agg', snapshot: current }, 'metrics_snapshot');

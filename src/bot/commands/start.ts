@@ -2,11 +2,11 @@ import { Markup, Telegraf } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import type { BotContext } from '../types';
-import { phoneCollect } from '../flows/common/phoneCollect';
 import { setChatCommands } from '../services/commands';
 import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from './sets';
 import { hideClientMenu } from '../../ui/clientMenu';
 import { bindInlineKeyboardToUser } from '../services/callbackTokens';
+import { askPhone } from '../middlewares/askPhone';
 
 type RoleKey = 'client' | 'courier' | 'driver';
 
@@ -76,8 +76,8 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    const phone = await phoneCollect(ctx);
-    if (!phone) {
+    if (!ctx.session.user?.phoneVerified) {
+      await askPhone(ctx);
       return;
     }
 
@@ -92,17 +92,14 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    if (!ctx.session.awaitingPhone && ctx.session.phoneNumber) {
+    const phoneJustVerified = Boolean(
+      (ctx.state as { phoneJustVerified?: unknown }).phoneJustVerified,
+    );
+    if (!phoneJustVerified) {
       await next();
       return;
     }
 
-    const phone = await phoneCollect(ctx, { allowCached: false });
-    if (!phone) {
-      return;
-    }
-
-    await ctx.reply('Спасибо! Номер телефона получен.', Markup.removeKeyboard());
     await applyCommandsForRole(ctx);
     await presentRoleSelection(ctx);
   });

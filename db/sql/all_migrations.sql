@@ -121,7 +121,8 @@ CREATE TABLE IF NOT EXISTS users (
   username text,
   first_name text,
   last_name text,
-  phone text UNIQUE,
+  phone text,
+  phone_verified boolean NOT NULL DEFAULT false,
   role user_role NOT NULL DEFAULT 'client',
   is_verified boolean NOT NULL DEFAULT false,
   marketing_opt_in boolean NOT NULL DEFAULT false,
@@ -139,6 +140,25 @@ CREATE TABLE IF NOT EXISTS channels (
 );
 
 ALTER TABLE channels ADD COLUMN IF NOT EXISTS stats_channel_id bigint;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS phone text,
+  ADD COLUMN IF NOT EXISTS phone_verified boolean NOT NULL DEFAULT false;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'users_phone_key'
+      AND conrelid = 'users'::regclass
+  ) THEN
+    EXECUTE 'ALTER TABLE users RENAME CONSTRAINT users_phone_key TO users_phone_unique';
+  END IF;
+END
+$$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique ON users (phone);
 
 INSERT INTO channels (id)
 VALUES (1)

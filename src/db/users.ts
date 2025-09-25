@@ -30,18 +30,23 @@ export const ensureClientRole = async ({
         first_name,
         last_name,
         phone,
+        phone_verified,
         role,
         status,
         last_menu_role,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
       ON CONFLICT (tg_id) DO UPDATE
       SET
         username = COALESCE(EXCLUDED.username, users.username),
         first_name = COALESCE(EXCLUDED.first_name, users.first_name),
         last_name = COALESCE(EXCLUDED.last_name, users.last_name),
         phone = COALESCE(EXCLUDED.phone, users.phone),
+        phone_verified = CASE
+          WHEN EXCLUDED.phone IS NOT NULL THEN true
+          ELSE users.phone_verified
+        END,
         role = CASE
           WHEN users.role = 'moderator' THEN users.role
           ELSE EXCLUDED.role
@@ -59,6 +64,7 @@ export const ensureClientRole = async ({
       firstName ?? null,
       lastName ?? null,
       phone ?? null,
+      phone ? true : false,
       'client',
       'active_client',
       'client',
@@ -80,6 +86,7 @@ export const updateUserPhone = async ({
       UPDATE users
       SET
         phone = $2,
+        phone_verified = true,
         status = CASE
           WHEN status IN ('suspended', 'banned') THEN status
           ELSE 'active_client'

@@ -28,10 +28,16 @@ const defaultLogger: MigrationLogger = ({ name, action }) => {
 
 export const listMigrationFiles = async (): Promise<string[]> => {
   const entries = await readdir(MIGRATIONS_DIR, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.sql') && entry.name !== SNAPSHOT_FILE)
+  const sqlFiles = entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.sql'))
     .map((entry) => entry.name)
     .sort();
+
+  if (sqlFiles.includes(SNAPSHOT_FILE)) {
+    return [SNAPSHOT_FILE];
+  }
+
+  return sqlFiles;
 };
 
 const ensureMigrationsTable = async (client: PoolClient): Promise<void> => {

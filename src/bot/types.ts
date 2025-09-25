@@ -16,6 +16,7 @@ export interface SessionUser {
   username?: string;
   firstName?: string;
   lastName?: string;
+  phoneVerified?: boolean;
 }
 
 export type UserStatus =
@@ -36,6 +37,7 @@ export interface AuthUser {
   firstName?: string;
   lastName?: string;
   phone?: string;
+  phoneVerified: boolean;
   role: UserRole;
   status: UserStatus;
   isVerified: boolean;

@@ -9,6 +9,7 @@ const GUEST_ALLOWLIST = new Set<string>([
   '/help',
   'Отправить мой номер телефона',
   'Отправить номер',
+  '📲 Поделиться контактом',
 ]);
 
 const isContactMessage = (ctx: BotContext): boolean =>
@@ -24,6 +25,11 @@ const getMessageText = (ctx: BotContext): string | undefined => {
 };
 
 export const stateGate = (): MiddlewareFn<BotContext> => async (ctx, next) => {
+  if (ctx.chat && ctx.chat.type !== 'private') {
+    await next();
+    return;
+  }
+
   const user = ctx.auth?.user;
   const text = getMessageText(ctx);
   const isCallbackQuery = Boolean(ctx.callbackQuery);
@@ -41,7 +47,7 @@ export const stateGate = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     }
   };
 
-  if (!user || user.status === 'awaiting_phone' || !user.phone) {
+  if (!user || user.status === 'awaiting_phone' || !user.phoneVerified) {
     if (!text || GUEST_ALLOWLIST.has(text) || isContactMessage(ctx)) {
       await next();
       return;
