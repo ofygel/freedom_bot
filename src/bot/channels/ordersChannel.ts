@@ -19,6 +19,7 @@ import type { AppCity } from '../../domain/cities';
 import { buildOrderLocationsKeyboard } from '../keyboards/orders';
 import { buildInlineKeyboard, mergeInlineKeyboards } from '../keyboards/common';
 import { wrapCallbackData } from '../services/callbackTokens';
+import { copy } from '../copy';
 import { sendClientMenuToChat } from '../../ui/clientMenu';
 import {
   reportOrderClaimed,
@@ -66,9 +67,8 @@ const formatPrice = (amount: number, currency: string): string =>
   `${new Intl.NumberFormat('ru-RU').format(amount)} ${currency}`;
 
 const buildOrderBaseLines = (order: OrderRecord): string[] => [
-  `🆕 Новый заказ (${formatOrderType(order.kind)})`,
+  copy.orderChannelCard(order.kind, formatPrice(order.price.amount, order.price.currency), CITY_LABEL[order.city]),
   `#${order.shortId}`,
-  `🏙️ ${CITY_LABEL[order.city]}`,
   '',
   `📍 Подача: ${order.pickup.address}`,
   `🎯 Назначение: ${order.dropoff.address}`,
@@ -415,15 +415,17 @@ const ensureMessageReflectsState = async (
 const buildAlreadyProcessedResponse = (state: OrderChannelState): string => {
   if (state.status === 'claimed') {
     const moderatorLabel = formatUserInfo(state.decision?.moderator);
-    return `Заказ уже принят ${moderatorLabel}.`;
+    return moderatorLabel
+      ? `${copy.orderAlreadyTakenToast} (${moderatorLabel})`
+      : copy.orderAlreadyTakenToast;
   }
 
   if (state.status === 'declined') {
     const moderatorLabel = formatUserInfo(state.decision?.moderator);
-    return `Заказ уже снят с публикации ${moderatorLabel}.`;
+    return moderatorLabel ? `${copy.orderReleasedToast} (${moderatorLabel})` : copy.orderReleasedToast;
   }
 
-  return 'Заказ уже обработан.';
+  return copy.orderAlreadyTakenToast;
 };
 
 const buildActionKeyboard = (order: OrderRecord): InlineKeyboardMarkup => {
@@ -781,7 +783,7 @@ const handleOrderDecision = async (
         decidedAt: Date.now(),
       };
       await updateOrderMessage(ctx.telegram, state);
-      let answerMessage = 'Вы взяли этот заказ. Проверьте личные сообщения.';
+      let answerMessage = copy.orderAcceptedToast;
 
       const executorTelegramId = ctx.from?.id;
       if (typeof executorTelegramId === 'number') {
@@ -795,12 +797,10 @@ const handleOrderDecision = async (
             { err: error, orderId, executorId: executorTelegramId },
             'Failed to send order summary to executor',
           );
-          answerMessage =
-            'Вы взяли этот заказ, но не удалось отправить детали в личные сообщения. Пожалуйста, убедитесь, что бот не заблокирован.';
+          answerMessage = `${copy.orderAcceptedToast} Не удалось отправить детали в личные сообщения. Убедитесь, что бот не заблокирован.`;
         }
       } else {
-        answerMessage =
-          'Вы взяли этот заказ, но не удалось отправить детали в личные сообщения.';
+        answerMessage = `${copy.orderAcceptedToast} Не удалось отправить детали в личные сообщения.`;
       }
 
       await ctx.answerCbQuery(answerMessage);
@@ -852,7 +852,7 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
       await ctx.answerCbQuery('Заказ уже недоступен для отмены.');
       return;
     case 'forbidden':
-      await ctx.answerCbQuery('Вы не можете отменить этот заказ.');
+      await ctx.answerCbQuery(copy.noAccess);
       return;
     case 'released':
       await removeOrderState(ctx.telegram, orderId);
@@ -871,12 +871,14 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
         result.order.dropoff,
       );
 
-      let statusLine = '🚫 Заказ отменён и возвращён в канал.';
-      let answerText = 'Заказ отменён и опубликован в канале.';
+      let statusLine = copy.statusLine('🚫', 'Заказ отменён и возвращён в канал.');
+      let answerText = copy.orderReleasedToast;
       if (!publishResult || publishResult.status === 'missing_channel') {
-        statusLine =
-          '🚫 Заказ отменён, но канал исполнителей не настроен. Мы свяжемся с вами вручную.';
-        answerText = 'Заказ отменён, канал исполнителей не настроен. Мы свяжемся с вами.';
+        statusLine = copy.statusLine(
+          '🚫',
+          'Заказ отменён, но канал исполнителей не настроен. Мы свяжемся с вами вручную.',
+        );
+        answerText = `${copy.orderReleasedToast} Мы свяжемся с вами вручную.`;
       }
 
       try {
@@ -971,7 +973,7 @@ const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<
       await ctx.answerCbQuery('Заказ уже недоступен для завершения.');
       return;
     case 'forbidden':
-      await ctx.answerCbQuery('Вы не можете завершить этот заказ.');
+      await ctx.answerCbQuery(copy.noAccess);
       return;
     case 'completed': {
       const baseMessage = buildOrderDetailsMessage(result.order);

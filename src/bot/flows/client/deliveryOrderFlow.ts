@@ -36,8 +36,8 @@ import { buildOrderLocationsKeyboard } from '../../keyboards/orders';
 import type { BotContext, ClientOrderDraftState } from '../../types';
 import { ui } from '../../ui';
 import { CLIENT_MENU, isClientChat, sendClientMenu } from '../../../ui/clientMenu';
-import { CLIENT_MENU_ACTION } from './menu';
-import { CLIENT_DELIVERY_ORDER_AGAIN_ACTION } from './orderActions';
+import { CLIENT_MENU_ACTION, logClientMenuClick } from './menu';
+import { CLIENT_DELIVERY_ORDER_AGAIN_ACTION, CLIENT_ORDERS_ACTION } from './orderActions';
 import { ensureCitySelected } from '../common/citySelect';
 import type { AppCity } from '../../../domain/cities';
 import { dgBase } from '../../../utils/2gis';
@@ -47,6 +47,10 @@ import {
   loadRecentLocations,
   rememberLocation,
 } from '../../services/recentLocations';
+import { copy } from '../../copy';
+import { normalizeE164 } from '../../../utils/phone';
+import { buildStatusMessage } from '../../ui/status';
+import { flowStart, flowComplete } from '../../../metrics/agg';
 
 export const START_DELIVERY_ORDER_ACTION = 'client:order:delivery:start';
 const CONFIRM_DELIVERY_ORDER_ACTION = 'client:order:delivery:confirm';
@@ -68,6 +72,7 @@ const DELIVERY_GEOCODE_ERROR_STEP_ID = 'client:delivery:error:geocode';
 const DELIVERY_SAVE_ERROR_STEP_ID = 'client:delivery:error:save';
 const DELIVERY_CANCELLED_STEP_ID = 'client:delivery:cancelled';
 const DELIVERY_CREATED_STEP_ID = 'client:delivery:created';
+const DELIVERY_STATUS_STEP_ID = 'client:delivery:status';
 const DELIVERY_CONFIRM_ERROR_STEP_ID = 'client:delivery:error:confirm';
 const DELIVERY_CREATE_ERROR_STEP_ID = 'client:delivery:error:create';
 const DELIVERY_ADDRESS_TYPE_HINT_STEP_ID = 'client:delivery:hint:address-type';
@@ -75,24 +80,8 @@ const DELIVERY_ADDRESS_DETAILS_ERROR_STEP_ID = 'client:delivery:error:address-de
 const DELIVERY_RECIPIENT_PHONE_ERROR_STEP_ID = 'client:delivery:error:recipient-phone';
 
 export const normaliseRecipientPhone = (value: string): string | undefined => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  const compact = trimmed.replace(/[\s()-]/g, '');
-  const hasPlus = compact.startsWith('+');
-  const digitsPart = hasPlus ? compact.slice(1) : compact;
-
-  if (!/^\d+$/.test(digitsPart)) {
-    return undefined;
-  }
-
-  if (digitsPart.length < 10 || digitsPart.length > 15) {
-    return undefined;
-  }
-
-  return hasPlus ? `+${digitsPart}` : digitsPart;
+  const result = normalizeE164(value);
+  return result.ok ? result.e164 : undefined;
 };
 
 const updateDeliveryStep = async (
@@ -262,7 +251,7 @@ const remindAddressDetailsRequirement = async (
 const remindRecipientPhoneRequirement = async (ctx: BotContext): Promise<void> => {
   await ui.step(ctx, {
     id: DELIVERY_RECIPIENT_PHONE_ERROR_STEP_ID,
-    text: 'Введите номер телефона целиком, начиная с +7 или 8. Допускаются только цифры.',
+    text: copy.invalidPhone(),
     cleanup: true,
   });
 };
@@ -665,6 +654,7 @@ const applyDeliveryComment = async (
 const cancelOrderDraft = async (ctx: BotContext, draft: ClientOrderDraftState): Promise<void> => {
   await clearInlineKeyboard(ctx, draft.confirmationMessageId);
   resetClientOrderDraft(draft);
+  flowComplete('delivery_order', false);
 
   const keyboard = buildOrderAgainKeyboard();
   await ui.step(ctx, {
@@ -682,6 +672,27 @@ const notifyOrderCreated = async (
   order: OrderRecord,
   publishStatus: PublishOrderStatus,
 ): Promise<void> => {
+  flowComplete('delivery_order', true);
+
+  const statusLabel =
+    publishStatus === 'missing_channel'
+      ? 'Заказ создан. Оператор свяжется вручную.'
+      : 'Заказ отправлен исполнителям. Ожидаем отклика.';
+  const statusEmoji = publishStatus === 'missing_channel' ? '⚠️' : '⏳';
+  const { text: statusText, reply_markup } = buildStatusMessage(
+    statusEmoji,
+    statusLabel,
+    CLIENT_ORDERS_ACTION,
+    CLIENT_MENU_ACTION,
+  );
+
+  await ui.step(ctx, {
+    id: DELIVERY_STATUS_STEP_ID,
+    text: statusText,
+    keyboard: reply_markup,
+    cleanup: true,
+  });
+
   const lines = [
     `Заказ на доставку №${order.id} создан.`,
     `Стоимость по расчёту: ${formatPriceAmount(order.price.amount, order.price.currency)}.`,
@@ -772,6 +783,7 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
     await notifyOrderCreated(ctx, order, publishResult.status);
   } catch (error) {
     logger.error({ err: error }, 'Failed to create delivery order');
+    flowComplete('delivery_order', false);
     await ui.step(ctx, {
       id: DELIVERY_CREATE_ERROR_STEP_ID,
       text: 'Не удалось создать заказ. Попробуйте позже.',
@@ -950,6 +962,9 @@ const handleStart = async (ctx: BotContext): Promise<void> => {
   draft.stage = 'collectingPickup';
   resetClientOrderDraft(ctx.session.client.taxi);
 
+  await logClientMenuClick(ctx, 'client_home_menu:delivery');
+  flowStart('delivery_order');
+
   await requestPickupAddress(ctx, city);
 };
 
@@ -1004,7 +1019,7 @@ const handleRecentPickup = async (ctx: BotContext, locationId: string): Promise<
 
   const draft = getDraft(ctx);
   if (draft.stage !== 'collectingPickup') {
-    await ctx.answerCbQuery('Кнопка устарела…');
+    await ctx.answerCbQuery(copy.expiredButton);
     return;
   }
 
@@ -1016,7 +1031,7 @@ const handleRecentPickup = async (ctx: BotContext, locationId: string): Promise<
 
   const location = await findRecentLocation(ctx.auth.user.telegramId, city, 'pickup', locationId);
   if (!location) {
-    await ctx.answerCbQuery('Кнопка устарела…');
+    await ctx.answerCbQuery(copy.expiredButton);
     return;
   }
 
@@ -1031,7 +1046,7 @@ const handleRecentDropoff = async (ctx: BotContext, locationId: string): Promise
 
   const draft = getDraft(ctx);
   if (draft.stage !== 'collectingDropoff') {
-    await ctx.answerCbQuery('Кнопка устарела…');
+    await ctx.answerCbQuery(copy.expiredButton);
     return;
   }
 
@@ -1043,7 +1058,7 @@ const handleRecentDropoff = async (ctx: BotContext, locationId: string): Promise
 
   const location = await findRecentLocation(ctx.auth.user.telegramId, city, 'dropoff', locationId);
   if (!location) {
-    await ctx.answerCbQuery('Кнопка устарела…');
+    await ctx.answerCbQuery(copy.expiredButton);
     return;
   }
 
@@ -1082,7 +1097,7 @@ export const registerDeliveryOrderFlow = (bot: Telegraf<BotContext>): void => {
     const match = ctx.match as RegExpMatchArray | undefined;
     const locationId = match?.[1];
     if (!locationId) {
-      await ctx.answerCbQuery('Кнопка устарела…');
+      await ctx.answerCbQuery(copy.expiredButton);
       return;
     }
 
@@ -1093,7 +1108,7 @@ export const registerDeliveryOrderFlow = (bot: Telegraf<BotContext>): void => {
     const match = ctx.match as RegExpMatchArray | undefined;
     const locationId = match?.[1];
     if (!locationId) {
-      await ctx.answerCbQuery('Кнопка устарела…');
+      await ctx.answerCbQuery(copy.expiredButton);
       return;
     }
 

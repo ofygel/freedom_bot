@@ -147,6 +147,7 @@ export interface UiSessionState {
   steps: Record<string, UiTrackedStepState | undefined>;
   homeActions: string[];
   pendingCityAction?: 'clientMenu' | 'executorMenu';
+  clientMenuVariant?: 'A' | 'B';
 }
 
 export type SupportRequestStatus = 'idle' | 'awaiting_message';

@@ -11,7 +11,8 @@
     "check": "tsc --noEmit",
     "test": "node --require ts-node/register --test --test-concurrency=1 $(find tests -name '*.test.ts')",
     "migrate": "ts-node db/migrate.ts",
-    "backup": "bash db/backup.sh"
+    "backup": "bash db/backup.sh",
+    "ctr:report": "node dist/scripts/ctrReport.js"
   },
   "dependencies": {
     "dotenv": "^16.4.0",

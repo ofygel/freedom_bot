@@ -10,6 +10,7 @@ import { wrapCallbackData } from '../bot/services/callbackTokens';
 import { config, logger } from '../config';
 import { pool } from '../db';
 import { markNudged, type SessionKey } from '../db/sessions';
+import { copy } from '../bot/copy';
 
 interface PendingSessionRow {
   scope: string;
@@ -64,7 +65,7 @@ const buildNudgeKeyboard = (
   if (payload.homeAction) {
     rows.push([
       {
-        label: '🔄 Продолжить',
+        label: copy.resume,
         action: bindAction(payload.homeAction, userId, keyboardNonce),
       },
     ]);
@@ -80,7 +81,7 @@ const buildNudgeKeyboard = (
   if (fallbackAction) {
     rows.push([
       {
-        label: '🏠 Главное меню',
+        label: copy.home,
         action: bindAction(fallbackAction, userId, keyboardNonce),
       },
     ]);
@@ -150,7 +151,7 @@ export const startInactivityNudger = (bot: Telegraf<BotContext>): void => {
         }
 
         try {
-          await bot.telegram.sendMessage(chatIdNumber, 'Что дальше? Выберите действие ниже.', {
+          await bot.telegram.sendMessage(chatIdNumber, copy.nudge, {
             reply_markup: keyboard,
           });
         } catch (error) {

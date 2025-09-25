@@ -1,6 +1,7 @@
 import type { MiddlewareFn } from 'telegraf';
 
 import type { BotContext } from '../types';
+import { copy } from '../copy';
 
 const WINDOW_MS = 3000;
 const MAX_EVENTS = 6;
@@ -23,7 +24,7 @@ export const antiFlood = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   if (recent.length > MAX_EVENTS) {
     if (typeof ctx.answerCbQuery === 'function') {
       try {
-        await ctx.answerCbQuery('Слишком часто. Попробуйте через секунду.');
+        await ctx.answerCbQuery(copy.tooFrequent);
       } catch {
         // ignore answer errors
       }
