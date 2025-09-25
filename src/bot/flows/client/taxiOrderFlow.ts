@@ -33,8 +33,8 @@ import { buildOrderLocationsKeyboard } from '../../keyboards/orders';
 import type { BotContext, ClientOrderDraftState } from '../../types';
 import { ui } from '../../ui';
 import { CLIENT_MENU, isClientChat, sendClientMenu } from '../../../ui/clientMenu';
-import { CLIENT_MENU_ACTION } from './menu';
-import { CLIENT_TAXI_ORDER_AGAIN_ACTION } from './orderActions';
+import { CLIENT_MENU_ACTION, logClientMenuClick } from './menu';
+import { CLIENT_TAXI_ORDER_AGAIN_ACTION, CLIENT_ORDERS_ACTION } from './orderActions';
 import { ensureCitySelected } from '../common/citySelect';
 import type { AppCity } from '../../../domain/cities';
 import { dgBase } from '../../../utils/2gis';
@@ -44,6 +44,9 @@ import {
   loadRecentLocations,
   rememberLocation,
 } from '../../services/recentLocations';
+import { copy } from '../../copy';
+import { buildStatusMessage } from '../../ui/status';
+import { flowStart, flowComplete } from '../../../metrics/agg';
 
 export const START_TAXI_ORDER_ACTION = 'client:order:taxi:start';
 const CONFIRM_TAXI_ORDER_ACTION = 'client:order:taxi:confirm';
@@ -61,6 +64,7 @@ const TAXI_CONFIRMATION_HINT_STEP_ID = 'client:taxi:hint:confirmation';
 const TAXI_GEOCODE_ERROR_STEP_ID = 'client:taxi:error:geocode';
 const TAXI_CANCELLED_STEP_ID = 'client:taxi:cancelled';
 const TAXI_CREATED_STEP_ID = 'client:taxi:created';
+const TAXI_STATUS_STEP_ID = 'client:taxi:status';
 const TAXI_CONFIRM_ERROR_STEP_ID = 'client:taxi:error:confirm';
 const TAXI_CREATE_ERROR_STEP_ID = 'client:taxi:error:create';
 
@@ -305,6 +309,7 @@ const applyDropoffLocation = async (
 const cancelOrderDraft = async (ctx: BotContext, draft: ClientOrderDraftState): Promise<void> => {
   await clearInlineKeyboard(ctx, draft.confirmationMessageId);
   resetClientOrderDraft(draft);
+  flowComplete('taxi_order', false);
 
   const keyboard = buildOrderAgainKeyboard();
   await ui.step(ctx, {
@@ -322,6 +327,27 @@ const notifyOrderCreated = async (
   order: OrderRecord,
   publishStatus: PublishOrderStatus,
 ): Promise<void> => {
+  flowComplete('taxi_order', true);
+
+  const statusLabel =
+    publishStatus === 'missing_channel'
+      ? 'Заказ создан. Оператор свяжется вручную.'
+      : 'Заказ отправлен водителям. Ожидаем отклика.';
+  const statusEmoji = publishStatus === 'missing_channel' ? '⚠️' : '⏳';
+  const { text: statusText, reply_markup } = buildStatusMessage(
+    statusEmoji,
+    statusLabel,
+    CLIENT_ORDERS_ACTION,
+    CLIENT_MENU_ACTION,
+  );
+
+  await ui.step(ctx, {
+    id: TAXI_STATUS_STEP_ID,
+    text: statusText,
+    keyboard: reply_markup,
+    cleanup: true,
+  });
+
   const lines = [
     `Заказ №${order.id} успешно создан.`,
     `Стоимость по расчёту: ${formatPriceAmount(order.price.amount, order.price.currency)}.`,
@@ -399,6 +425,7 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
     await notifyOrderCreated(ctx, order, publishResult.status);
   } catch (error) {
     logger.error({ err: error }, 'Failed to create taxi order');
+    flowComplete('taxi_order', false);
     await ui.step(ctx, {
       id: TAXI_CREATE_ERROR_STEP_ID,
       text: 'Не удалось создать заказ. Попробуйте позже.',
@@ -523,6 +550,9 @@ const handleStart = async (ctx: BotContext): Promise<void> => {
   draft.stage = 'collectingPickup';
   resetClientOrderDraft(ctx.session.client.delivery);
 
+  await logClientMenuClick(ctx, 'client_home_menu:taxi');
+  flowStart('taxi_order');
+
   await requestPickupAddress(ctx, city);
 };
 
@@ -553,7 +583,7 @@ const handleRecentPickup = async (ctx: BotContext, locationId: string): Promise<
 
   const draft = getDraft(ctx);
   if (draft.stage !== 'collectingPickup') {
-    await ctx.answerCbQuery('Кнопка устарела…');
+    await ctx.answerCbQuery(copy.expiredButton);
     return;
   }
 
@@ -565,7 +595,7 @@ const handleRecentPickup = async (ctx: BotContext, locationId: string): Promise<
 
   const location = await findRecentLocation(ctx.auth.user.telegramId, city, 'pickup', locationId);
   if (!location) {
-    await ctx.answerCbQuery('Кнопка устарела…');
+    await ctx.answerCbQuery(copy.expiredButton);
     return;
   }
 
@@ -580,7 +610,7 @@ const handleRecentDropoff = async (ctx: BotContext, locationId: string): Promise
 
   const draft = getDraft(ctx);
   if (draft.stage !== 'collectingDropoff') {
-    await ctx.answerCbQuery('Кнопка устарела…');
+    await ctx.answerCbQuery(copy.expiredButton);
     return;
   }
 
@@ -592,7 +622,7 @@ const handleRecentDropoff = async (ctx: BotContext, locationId: string): Promise
 
   const location = await findRecentLocation(ctx.auth.user.telegramId, city, 'dropoff', locationId);
   if (!location) {
-    await ctx.answerCbQuery('Кнопка устарела…');
+    await ctx.answerCbQuery(copy.expiredButton);
     return;
   }
 
@@ -621,7 +651,7 @@ export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
     const match = ctx.match as RegExpMatchArray | undefined;
     const locationId = match?.[1];
     if (!locationId) {
-      await ctx.answerCbQuery('Кнопка устарела…');
+      await ctx.answerCbQuery(copy.expiredButton);
       return;
     }
 
@@ -632,7 +662,7 @@ export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
     const match = ctx.match as RegExpMatchArray | undefined;
     const locationId = match?.[1];
     if (!locationId) {
-      await ctx.answerCbQuery('Кнопка устарела…');
+      await ctx.answerCbQuery(copy.expiredButton);
       return;
     }
 

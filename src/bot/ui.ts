@@ -11,8 +11,10 @@ import { updateFlowMeta } from '../db/sessions';
 import { mergeInlineKeyboards, buildInlineKeyboard } from './keyboards/common';
 import type { BotContext, UiSessionState } from './types';
 import { resolveSessionKey } from './middlewares/session';
+import { bindInlineKeyboardToUser } from './services/callbackTokens';
+import { copy } from './copy';
 
-const HOME_BUTTON_LABEL = '🏠 На главную';
+const HOME_BUTTON_LABEL = copy.home;
 
 const ensureUiState = (ctx: BotContext): UiSessionState => {
   if (!ctx.session.ui) {
@@ -20,6 +22,7 @@ const ensureUiState = (ctx: BotContext): UiSessionState => {
       steps: {},
       homeActions: [],
       pendingCityAction: undefined,
+      clientMenuVariant: undefined,
     } satisfies UiSessionState;
   }
 
@@ -162,6 +165,9 @@ export const ui = {
     }
 
     const existing = state.steps[options.id];
+    if (isInlineKeyboard(replyMarkup)) {
+      replyMarkup = bindInlineKeyboardToUser(ctx, replyMarkup);
+    }
     if (existing && existing.chatId === chatId && isInlineKeyboard(replyMarkup)) {
       try {
         await ctx.telegram.editMessageText(chatId, existing.messageId, undefined, options.text, {
@@ -191,7 +197,9 @@ export const ui = {
     }
 
     const extra = {
-      reply_markup: replyMarkup,
+      reply_markup: isInlineKeyboard(replyMarkup)
+        ? bindInlineKeyboardToUser(ctx, replyMarkup)
+        : replyMarkup,
       parse_mode: options.parseMode,
       link_preview_options: options.linkPreviewOptions,
     };

@@ -2,6 +2,7 @@ import type { MiddlewareFn } from 'telegraf';
 
 import { config, logger } from '../../config';
 import { withLatencyLog } from '../../metrics/latency';
+import { sampleLatency } from '../../metrics/agg';
 import type { BotContext } from '../types';
 import { renderMenuFor } from '../ui/menus';
 import {
@@ -9,6 +10,7 @@ import {
   verifyCallbackData,
   verifyCallbackForUser,
 } from '../services/callbackTokens';
+import { copy } from '../copy';
 
 const resolveSecret = (): string => config.bot.callbackSignSecret ?? config.bot.token;
 
@@ -36,7 +38,7 @@ export const callbackDecoder = (): MiddlewareFn<BotContext> => async (ctx, next)
   if (!isValid) {
     if (typeof ctx.answerCbQuery === 'function') {
       try {
-        await ctx.answerCbQuery('Кнопка устарела…', { show_alert: false });
+        await ctx.answerCbQuery(copy.expiredButton, { show_alert: false });
       } catch (error) {
         logger.debug({ err: error }, 'Failed to answer callback query in callbackDecoder');
       }
@@ -55,8 +57,13 @@ export const callbackDecoder = (): MiddlewareFn<BotContext> => async (ctx, next)
   state.callbackPayload = decoded.wrapped;
   (query as { data?: string }).data = decoded.wrapped.raw;
 
-  await withLatencyLog(`callback:${decoded.wrapped.raw}`, async () => {
-    await next();
-  });
+  const startedAt = Date.now();
+  try {
+    await withLatencyLog(`callback:${decoded.wrapped.raw}`, async () => {
+      await next();
+    });
+  } finally {
+    sampleLatency('callback', Date.now() - startedAt);
+  }
 };
 

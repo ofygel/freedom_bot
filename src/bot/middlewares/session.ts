@@ -56,6 +56,7 @@ const createUiState = (): UiSessionState => ({
   steps: {},
   homeActions: [],
   pendingCityAction: undefined,
+  clientMenuVariant: undefined,
 });
 
 const createSupportState = (): SupportSessionState => ({

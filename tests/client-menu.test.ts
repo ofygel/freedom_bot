@@ -37,7 +37,7 @@ before(async () => {
 
 const ROLE_CLIENT_ACTION = 'role:client';
 
-const expectedMenuText = 'Добро пожаловать! Чем можем помочь?';
+const expectedMenuText = '🏙️ Город: Алматы\n\nДобро пожаловать! Чем можем помочь?';
 const DEFAULT_CITY: AppCity = 'almaty';
 
 const createSessionState = (): SessionState => ({

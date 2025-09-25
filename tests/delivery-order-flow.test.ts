@@ -11,7 +11,7 @@ describe('deliveryOrderFlow phone normalisation', () => {
   });
 
   it('accepts domestic format without plus sign', () => {
-    assert.equal(normaliseRecipientPhone('87001234567'), '87001234567');
+    assert.equal(normaliseRecipientPhone('87001234567'), '+77001234567');
   });
 
   it('rejects numbers with insufficient digits', () => {

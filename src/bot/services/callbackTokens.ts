@@ -1,5 +1,8 @@
 import crypto from 'crypto';
 
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
+
+import { config } from '../../config';
 import type { BotContext } from '../types';
 
 const VERSION = '1';
@@ -142,5 +145,59 @@ export const verifyCallbackForUser = (
   const encodedNonce = String(user.keyboardNonce ?? '').replace(/-/g, '').slice(0, 10);
 
   return wrapped.user === encodedUser && wrapped.nonce === encodedNonce;
+};
+
+const hasCallbackData = (
+  button: InlineKeyboardMarkup['inline_keyboard'][number][number],
+): button is InlineKeyboardMarkup['inline_keyboard'][number][number] & { callback_data: string } =>
+  Object.prototype.hasOwnProperty.call(button, 'callback_data');
+
+export const bindInlineKeyboardToUser = (
+  ctx: BotContext,
+  keyboard: InlineKeyboardMarkup | undefined,
+): InlineKeyboardMarkup | undefined => {
+  if (!keyboard || !keyboard.inline_keyboard || keyboard.inline_keyboard.length === 0) {
+    return keyboard;
+  }
+
+  const user = ctx.auth?.user;
+  if (!user?.telegramId || !user.keyboardNonce) {
+    return keyboard;
+  }
+
+  const secret = config.bot.callbackSignSecret ?? config.bot.token;
+  if (!secret) {
+    return keyboard;
+  }
+
+  let changed = false;
+  const inline_keyboard = keyboard.inline_keyboard.map((row) =>
+    row.map((button) => {
+      if (!hasCallbackData(button) || !button.callback_data) {
+        return button;
+      }
+
+      if (tryDecodeCallbackData(button.callback_data).ok) {
+        return button;
+      }
+
+      changed = true;
+      return {
+        ...button,
+        callback_data: wrapCallbackData(button.callback_data, {
+          secret,
+          userId: user.telegramId,
+          keyboardNonce: user.keyboardNonce,
+          bindToUser: true,
+        }),
+      };
+    }),
+  );
+
+  if (!changed) {
+    return keyboard;
+  }
+
+  return { ...keyboard, inline_keyboard };
 };
 

@@ -16,10 +16,43 @@ import type { BotContext } from '../../types';
 import { presentRoleSelection } from '../../commands/start';
 import { promptClientSupport } from './support';
 import { askCity, getCityFromContext, CITY_ACTION_PATTERN } from '../common/citySelect';
+import { CLIENT_ORDERS_ACTION } from './orderActions';
+import { START_TAXI_ORDER_ACTION } from './taxiOrderFlow';
+import { START_DELIVERY_ORDER_ACTION } from './deliveryOrderFlow';
+import { buildInlineKeyboard } from '../../keyboards/common';
+import { bindInlineKeyboardToUser } from '../../services/callbackTokens';
+import { copy } from '../../copy';
+import { getVariant, logUiEvent, type Variant } from '../../../experiments/ab';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
 const CLIENT_MENU_CITY_ACTION = 'clientMenu' as const;
+const CLIENT_MENU_REFRESH_ACTION = 'client:menu:refresh';
+const HOME_MENU_EXPERIMENT = 'client_home_menu_v1';
+
+export const logClientMenuClick = async (
+  ctx: BotContext,
+  target: string,
+  extra: Record<string, unknown> = {},
+) => {
+  const variant = ctx.session.ui?.clientMenuVariant as Variant | undefined;
+  if (!variant) {
+    return;
+  }
+
+  const callbackData =
+    ctx.callbackQuery && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
+  const context = callbackData ? { ...extra, cb: callbackData } : extra;
+
+  await logUiEvent(
+    ctx.auth.user.telegramId,
+    'click',
+    target,
+    HOME_MENU_EXPERIMENT,
+    variant,
+    context,
+  );
+};
 
 const applyClientCommands = async (ctx: BotContext): Promise<void> => {
   if (ctx.chat?.type !== 'private') {
@@ -129,7 +162,47 @@ const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
 
   uiState.pendingCityAction = undefined;
   const cityLabel = CITY_LABEL[city];
-  await sendClientMenu(ctx, prompt ?? clientMenuText(cityLabel));
+  const trialEndsAt = ctx.auth.user.trialEndsAt;
+  const trialDaysLeft = trialEndsAt
+    ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / 86400000))
+    : undefined;
+  const baseText = prompt ?? clientMenuText(cityLabel);
+  const miniStatus = copy.clientMiniStatus(cityLabel, trialDaysLeft);
+  const header = miniStatus ? `${miniStatus}\n\n${baseText}` : baseText;
+
+  if (ctx.callbackQuery) {
+    const variant = await getVariant(ctx.auth.user.telegramId, HOME_MENU_EXPERIMENT);
+    uiState.clientMenuVariant = variant;
+
+    const rowsVariantA = [
+      [{ label: '🚕 Такси', action: START_TAXI_ORDER_ACTION }],
+      [{ label: '📦 Доставка', action: START_DELIVERY_ORDER_ACTION }],
+    ];
+    const rowsVariantB = [
+      [{ label: '📦 Доставка', action: START_DELIVERY_ORDER_ACTION }],
+      [{ label: '🚕 Такси', action: START_TAXI_ORDER_ACTION }],
+    ];
+
+    const rows = (variant === 'A' ? rowsVariantA : rowsVariantB).concat([
+      [{ label: '📋 Мои заказы', action: CLIENT_ORDERS_ACTION }],
+      [{ label: copy.refresh, action: CLIENT_MENU_REFRESH_ACTION }],
+    ]);
+
+    const keyboard = bindInlineKeyboardToUser(ctx, buildInlineKeyboard(rows));
+
+    await logUiEvent(ctx.auth.user.telegramId, 'expose', 'client_home_menu', HOME_MENU_EXPERIMENT, variant, {
+      city,
+    });
+
+    try {
+      await ctx.editMessageText(header, { reply_markup: keyboard });
+    } catch (error) {
+      logger.debug({ err: error, chatId: ctx.chat?.id }, 'Failed to edit client menu message');
+    }
+    return;
+  }
+
+  await sendClientMenu(ctx, header);
 };
 
 export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
@@ -164,6 +237,23 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
       await ctx.answerCbQuery();
     } catch (error) {
       logger.debug({ err: error }, 'Failed to answer client menu callback');
+    }
+
+    await showMenu(ctx);
+  });
+
+  bot.action(CLIENT_MENU_REFRESH_ACTION, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      await showMenu(ctx);
+      return;
+    }
+
+    await logClientMenuClick(ctx, 'client_home_menu:refresh');
+
+    try {
+      await ctx.answerCbQuery();
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to answer client menu refresh callback');
     }
 
     await showMenu(ctx);

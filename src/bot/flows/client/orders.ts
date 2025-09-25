@@ -15,7 +15,7 @@ import type { BotContext } from '../../types';
 import type { OrderStatus, OrderWithExecutor } from '../../../types';
 import { ui } from '../../ui';
 import { CLIENT_MENU, isClientChat, sendClientMenu } from '../../../ui/clientMenu';
-import { CLIENT_MENU_ACTION } from './menu';
+import { CLIENT_MENU_ACTION, logClientMenuClick } from './menu';
 import {
   CLIENT_CANCEL_ORDER_ACTION_PATTERN,
   CLIENT_CANCEL_ORDER_ACTION_PREFIX,
@@ -342,6 +342,8 @@ export const registerClientOrdersFlow = (bot: Telegraf<BotContext>): void => {
     if (!(await ensurePrivateCallback(ctx))) {
       return;
     }
+
+    await logClientMenuClick(ctx, 'client_home_menu:orders');
 
     await renderOrdersList(ctx);
   });
