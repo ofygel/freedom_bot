@@ -305,7 +305,7 @@ export const loadConfig = (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   logLevel: resolveLogLevel(process.env.PINO_LEVEL ?? process.env.LOG_LEVEL),
   logTransport: resolveLogTransport(process.env.PINO_TRANSPORT),
-  logRateLimit: parsePositiveInt('PINO_RATE_LIMIT', 50),
+  logRateLimit: 50,
   bot: {
     token: process.env.BOT_TOKEN as string,
     callbackSignSecret: getOptionalString('CALLBACK_SIGN_SECRET'),

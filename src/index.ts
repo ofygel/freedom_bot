@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import type { Server } from 'http';
 
 import {
@@ -99,7 +100,15 @@ const closeServer = (server: Server): Promise<void> =>
 const startServer = async (webhookPath: string, port: number): Promise<Server> => {
   const serverApp = express();
 
-  serverApp.use(express.json());
+  serverApp.use(express.json({ limit: '1mb' }));
+  serverApp.use(
+    rateLimit({
+      windowMs: 60_000,
+      max: 100,
+      standardHeaders: true,
+      legacyHeaders: false,
+    }),
+  );
 
   serverApp.post(webhookPath, (req, res) => {
     void app.handleUpdate(req.body);
