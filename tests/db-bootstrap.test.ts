@@ -2,11 +2,23 @@ import './helpers/setup-env';
 
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it } from 'node:test';
+import { readdir } from 'node:fs/promises';
+import path from 'node:path';
 
 import { ensureDatabaseSchema, resetDatabaseSchemaCache } from '../src/db/bootstrap';
 import { pool } from '../src/db';
 
-type QueryHandler = (text: string) => Promise<{ rows: unknown[] }>;
+const MIGRATIONS_DIR = path.resolve(__dirname, '../db/sql');
+
+const loadMigrationFiles = async (): Promise<string[]> => {
+  const entries = await readdir(MIGRATIONS_DIR, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.sql') && entry.name !== 'all_migrations.sql')
+    .map((entry) => entry.name)
+    .sort();
+};
+
+type QueryHandler = (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }>;
 
 const originalConnect = pool.connect.bind(pool);
 
@@ -19,15 +31,28 @@ describe('database bootstrap', () => {
     (pool as unknown as { connect: typeof originalConnect }).connect = originalConnect;
   });
 
-  it('skips schema application when sessions table is present', async () => {
-    const queries: string[] = [];
+  it('skips migration execution when all migrations are recorded', async () => {
+    const migrations = await loadMigrationFiles();
+    const executed = new Set(migrations);
+    let createTableCount = 0;
+    let existenceChecks = 0;
 
     (pool as unknown as { connect: () => Promise<{ query: QueryHandler; release: () => void }> }).connect =
       async () => ({
-        query: async (text) => {
-          queries.push(text);
-          if (text.includes('to_regclass')) {
-            return { rows: [{ oid: 'sessions' }] };
+        query: async (text, params) => {
+          if (text.includes('CREATE TABLE IF NOT EXISTS schema_migrations')) {
+            createTableCount += 1;
+            return { rows: [] };
+          }
+
+          if (text.startsWith('SELECT EXISTS')) {
+            existenceChecks += 1;
+            const [fileName] = params ?? [];
+            return { rows: [{ exists: executed.has(fileName as string) }] };
+          }
+
+          if (text.includes('INSERT INTO schema_migrations')) {
+            throw new Error('No migrations should be recorded when all are already applied');
           }
 
           throw new Error(`Unexpected SQL during bootstrap test: ${text}`);
@@ -37,39 +62,62 @@ describe('database bootstrap', () => {
 
     await ensureDatabaseSchema();
 
-    assert.equal(queries.length, 1);
-    assert.ok(
-      queries[0]?.includes('to_regclass'),
-      'bootstrap should only check the sessions table when it already exists',
+    assert.equal(createTableCount, 1, 'bootstrap should initialise the migrations table once');
+    assert.equal(
+      existenceChecks,
+      migrations.length,
+      'bootstrap should verify the status of every migration file',
     );
   });
 
-  it('applies the schema snapshot when sessions table is missing', async () => {
-    const queries: string[] = [];
-    let snapshotExecuted = false;
+  it('applies pending migrations when they are not recorded', async () => {
+    const migrations = await loadMigrationFiles();
+    const alreadyExecuted = new Set<string>([migrations[0]!]);
+    const applied: string[] = [];
+    const recorded: string[] = [];
+    let createTableCount = 0;
+    const pendingQueue: string[] = [];
 
     (pool as unknown as { connect: () => Promise<{ query: QueryHandler; release: () => void }> }).connect =
       async () => ({
-        query: async (text) => {
-          queries.push(text);
-
-          if (text.includes('to_regclass')) {
-            return { rows: [{ oid: null }] };
+        query: async (text, params) => {
+          if (text.includes('CREATE TABLE IF NOT EXISTS schema_migrations')) {
+            createTableCount += 1;
+            return { rows: [] };
           }
 
-          snapshotExecuted = true;
-          assert.ok(
-            text.includes('CREATE TABLE IF NOT EXISTS sessions'),
-            'snapshot should create the sessions table',
-          );
-          return { rows: [] };
+          if (text.startsWith('SELECT EXISTS')) {
+            const [fileName] = params ?? [];
+            const name = fileName as string;
+            const exists = alreadyExecuted.has(name);
+            if (!exists) {
+              pendingQueue.push(name);
+            }
+            return { rows: [{ exists }] };
+          }
+
+          if (text.includes('INSERT INTO schema_migrations')) {
+            const [fileName] = params ?? [];
+            recorded.push(fileName as string);
+            return { rows: [] };
+          }
+
+          if (pendingQueue.length > 0) {
+            const current = pendingQueue.shift()!;
+            applied.push(current);
+            return { rows: [] };
+          }
+
+          throw new Error(`Unexpected SQL during bootstrap test: ${text}`);
         },
         release: () => {},
       });
 
     await ensureDatabaseSchema();
 
-    assert.equal(snapshotExecuted, true, 'bootstrap should execute the schema snapshot');
-    assert.equal(queries.length, 2, 'bootstrap should perform a check and one snapshot execution');
+    const expectedApplied = migrations.filter((name) => !alreadyExecuted.has(name));
+    assert.deepEqual(applied, expectedApplied, 'bootstrap should apply every pending migration exactly once');
+    assert.deepEqual(recorded, expectedApplied, 'bootstrap should record executed migrations');
+    assert.equal(createTableCount, 1, 'bootstrap should initialise the migrations table once');
   });
 });
