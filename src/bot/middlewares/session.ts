@@ -169,9 +169,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   let nextError: unknown;
 
   try {
-    await client.query('BEGIN');
-
-    const existing = await loadSessionState(client, key, { forUpdate: true });
+    const existing = await loadSessionState(client, key);
     const state = existing ?? createDefaultState();
 
     if (!('city' in state)) {
@@ -199,16 +197,6 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     } else {
       await saveSessionState(client, key, ctx.session);
     }
-
-    await client.query('COMMIT');
-  } catch (error) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (rollbackError) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to rollback session transaction', rollbackError);
-    }
-    throw error;
   } finally {
     setSessionMeta(ctx, undefined);
     client.release();
