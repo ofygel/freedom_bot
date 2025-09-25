@@ -30,6 +30,7 @@ import {
 import { CITY_LABEL } from '../../../domain/cities';
 import { buildStatusMessage } from '../../ui/status';
 import { registerFlowRecovery } from '../recovery';
+import { sendProcessingFeedback } from '../../services/feedback';
 
 const CLIENT_ORDERS_LIST_STEP_ID = 'client:orders:list';
 const CLIENT_ORDER_DETAIL_STEP_ID = 'client:orders:detail';
@@ -404,6 +405,7 @@ const confirmClientOrderCancellation = async (
   orderId: number,
 ): Promise<void> => {
   const clientId = ctx.auth.user.telegramId;
+  await sendProcessingFeedback(ctx);
   const cancelled = await cancelClientOrder(orderId, clientId);
 
   if (!cancelled) {
