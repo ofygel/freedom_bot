@@ -1,16 +1,18 @@
 import { Markup, type Telegraf } from 'telegraf';
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { CITIES_ORDER, CITY_LABEL, isAppCity, type AppCity } from '../../../domain/cities';
 import { setUserCitySelected } from '../../../services/users';
 import type { BotContext } from '../../types';
 import { resetClientOrderDraft } from '../../services/orders';
+import { bindInlineKeyboardToUser } from '../../services/callbackTokens';
 
 export const CITY_ACTION_PATTERN = /^city:([a-z]+)$/i;
 
-const buildCityKeyboard = () =>
+const buildCityKeyboard = (): InlineKeyboardMarkup =>
   Markup.inlineKeyboard(
     CITIES_ORDER.map((city) => [Markup.button.callback(CITY_LABEL[city], `city:${city}`)]),
-  );
+  ).reply_markup as InlineKeyboardMarkup;
 
 const applyCitySelection = (ctx: BotContext, city: AppCity): void => {
   const previousCity = ctx.auth.user.citySelected;
@@ -42,7 +44,9 @@ export const askCity = async (
     return;
   }
 
-  await ctx.reply(title, buildCityKeyboard());
+  const keyboard = buildCityKeyboard();
+  const replyMarkup = bindInlineKeyboardToUser(ctx, keyboard) ?? keyboard;
+  await ctx.reply(title, { reply_markup: replyMarkup });
 };
 
 export const ensureCitySelected = async (

@@ -15,6 +15,22 @@ interface SessionRow {
 
 type Queryable = Pick<PoolClient, 'query'>;
 
+const parseJsonValue = <T>(value: T | string | null | undefined): T | null => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    return (JSON.parse(value) as T) ?? null;
+  }
+
+  if (typeof value === 'object') {
+    return value as T;
+  }
+
+  return null;
+};
+
 const parseSessionState = (value: SessionRow['state']): SessionState => {
   if (value === null || value === undefined) {
     throw new Error('Session payload is empty');
@@ -106,6 +122,41 @@ const serialisePayload = (payload: unknown): string => {
       error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error';
     throw new Error(`Failed to serialise session flow payload: ${reason}`);
   }
+};
+
+interface FlowMetaRow {
+  flow_state: string | null;
+  flow_payload: unknown;
+}
+
+export interface FlowMeta {
+  stepId: string | null;
+  payload: unknown;
+}
+
+export const loadFlowMeta = async (
+  queryable: Queryable,
+  key: SessionKey,
+): Promise<FlowMeta | null> => {
+  const { rows } = await queryable.query<FlowMetaRow>(
+    `
+      SELECT flow_state, flow_payload
+      FROM sessions
+      WHERE scope = $1 AND scope_id = $2
+    `,
+    [key.scope, key.scopeId],
+  );
+
+  const [row] = rows;
+  if (!row) {
+    return null;
+  }
+
+  const payload = parseJsonValue<unknown>(row.flow_payload);
+  return {
+    stepId: row.flow_state ?? null,
+    payload: payload ?? {},
+  } satisfies FlowMeta;
 };
 
 export const updateFlowMeta = async (

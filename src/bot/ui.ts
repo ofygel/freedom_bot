@@ -15,6 +15,14 @@ import { bindInlineKeyboardToUser } from './services/callbackTokens';
 import { copy } from './copy';
 
 const HOME_BUTTON_LABEL = copy.home;
+<<<<<<< HEAD
+=======
+
+export interface FlowRecoveryDescriptor {
+  type: string;
+  payload?: unknown;
+}
+>>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
 
 const ensureUiState = (ctx: BotContext): UiSessionState => {
   if (!ctx.session.ui) {
@@ -94,6 +102,7 @@ const trackFlowStep = async (ctx: BotContext, options: UiStepOptions): Promise<v
 
     await updateFlowMeta(pool, key, options.id, {
       homeAction: options.homeAction ?? null,
+      recovery: options.recovery ?? null,
     });
   } catch (error) {
     logger.debug({ err: error, stepId: options.id }, 'Failed to update flow metadata');
@@ -125,6 +134,8 @@ export interface UiStepOptions {
   homeLabel?: string;
   /** Whether the step should be removed when navigating home. */
   cleanup?: boolean;
+  /** Information that allows restoring the step after a failure. */
+  recovery?: FlowRecoveryDescriptor;
 }
 
 export interface UiStepResult {

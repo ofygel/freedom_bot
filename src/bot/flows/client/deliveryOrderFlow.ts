@@ -51,6 +51,10 @@ import { copy } from '../../copy';
 import { normalizeE164 } from '../../../utils/phone';
 import { buildStatusMessage } from '../../ui/status';
 import { flowStart, flowComplete } from '../../../metrics/agg';
+<<<<<<< HEAD
+=======
+import { registerFlowRecovery } from '../recovery';
+>>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
 
 export const START_DELIVERY_ORDER_ACTION = 'client:order:delivery:start';
 const CONFIRM_DELIVERY_ORDER_ACTION = 'client:order:delivery:confirm';
@@ -96,6 +100,7 @@ const updateDeliveryStep = async (
     text,
     keyboard,
     homeAction: CLIENT_MENU_ACTION,
+    recovery: { type: 'client:delivery:step' },
   });
 };
 
@@ -679,6 +684,10 @@ const notifyOrderCreated = async (
       ? 'Заказ создан. Оператор свяжется вручную.'
       : 'Заказ отправлен исполнителям. Ожидаем отклика.';
   const statusEmoji = publishStatus === 'missing_channel' ? '⚠️' : '⏳';
+<<<<<<< HEAD
+=======
+  const statusPayload = { emoji: statusEmoji, label: statusLabel };
+>>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
   const { text: statusText, reply_markup } = buildStatusMessage(
     statusEmoji,
     statusLabel,
@@ -691,6 +700,11 @@ const notifyOrderCreated = async (
     text: statusText,
     keyboard: reply_markup,
     cleanup: true,
+<<<<<<< HEAD
+=======
+    homeAction: CLIENT_MENU_ACTION,
+    recovery: { type: 'client:delivery:status', payload: statusPayload },
+>>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
   });
 
   const lines = [
@@ -943,6 +957,88 @@ const handleIncomingLocation = async (
       await next();
   }
 };
+
+const resolveDeliveryCity = (ctx: BotContext): AppCity | undefined =>
+  ctx.session.city ?? ctx.auth.user.citySelected ?? undefined;
+
+const resumeDeliveryFlowStep = async (ctx: BotContext): Promise<boolean> => {
+  const draft = getDraft(ctx);
+
+  switch (draft.stage) {
+    case 'collectingPickup': {
+      const city = resolveDeliveryCity(ctx);
+      if (!city) {
+        return false;
+      }
+      await requestPickupAddress(ctx, city);
+      return true;
+    }
+    case 'collectingDropoff': {
+      const city = resolveDeliveryCity(ctx);
+      if (!city || !draft.pickup) {
+        return false;
+      }
+      await requestDropoffAddress(ctx, city, draft.pickup);
+      return true;
+    }
+    case 'selectingAddressType':
+      await requestAddressType(ctx, draft);
+      return true;
+    case 'collectingApartment':
+      await requestApartment(ctx, draft);
+      return true;
+    case 'collectingEntrance':
+      await requestEntrance(ctx, draft);
+      return true;
+    case 'collectingFloor':
+      await requestFloor(ctx, draft);
+      return true;
+    case 'collectingRecipientPhone':
+      await requestRecipientPhone(ctx, draft);
+      return true;
+    case 'collectingComment':
+      await requestDeliveryComment(ctx, draft);
+      return true;
+    case 'awaitingConfirmation':
+      if (isOrderDraftComplete(draft)) {
+        await showConfirmation(ctx, draft as CompletedOrderDraft);
+        return true;
+      }
+      return false;
+    default:
+      return false;
+  }
+};
+
+registerFlowRecovery('client:delivery:step', async (ctx) => resumeDeliveryFlowStep(ctx));
+
+registerFlowRecovery('client:delivery:status', async (ctx, payload) => {
+  const details =
+    payload && typeof payload === 'object'
+      ? (payload as { emoji?: unknown; label?: unknown })
+      : {};
+  const emoji = typeof details.emoji === 'string' ? details.emoji : '⏳';
+  const label =
+    typeof details.label === 'string' ? details.label : 'Заказ отправлен исполнителям. Ожидаем отклика.';
+
+  const { text, reply_markup } = buildStatusMessage(
+    emoji,
+    label,
+    CLIENT_ORDERS_ACTION,
+    CLIENT_MENU_ACTION,
+  );
+
+  await ui.step(ctx, {
+    id: DELIVERY_STATUS_STEP_ID,
+    text,
+    keyboard: reply_markup,
+    cleanup: true,
+    homeAction: CLIENT_MENU_ACTION,
+    recovery: { type: 'client:delivery:status', payload: { emoji, label } },
+  });
+
+  return true;
+});
 
 const handleStart = async (ctx: BotContext): Promise<void> => {
   if (!(await ensurePrivateCallback(ctx, undefined, 'Оформление заказа доступно только в личном чате с ботом.'))) {

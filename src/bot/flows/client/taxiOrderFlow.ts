@@ -47,6 +47,10 @@ import {
 import { copy } from '../../copy';
 import { buildStatusMessage } from '../../ui/status';
 import { flowStart, flowComplete } from '../../../metrics/agg';
+<<<<<<< HEAD
+=======
+import { registerFlowRecovery } from '../recovery';
+>>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
 
 export const START_TAXI_ORDER_ACTION = 'client:order:taxi:start';
 const CONFIRM_TAXI_ORDER_ACTION = 'client:order:taxi:confirm';
@@ -80,6 +84,7 @@ const updateTaxiStep = async (
     text,
     keyboard,
     homeAction: CLIENT_MENU_ACTION,
+    recovery: { type: 'client:taxi:step' },
   });
 };
 
@@ -334,6 +339,10 @@ const notifyOrderCreated = async (
       ? 'Заказ создан. Оператор свяжется вручную.'
       : 'Заказ отправлен водителям. Ожидаем отклика.';
   const statusEmoji = publishStatus === 'missing_channel' ? '⚠️' : '⏳';
+<<<<<<< HEAD
+=======
+  const statusPayload = { emoji: statusEmoji, label: statusLabel };
+>>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
   const { text: statusText, reply_markup } = buildStatusMessage(
     statusEmoji,
     statusLabel,
@@ -346,6 +355,11 @@ const notifyOrderCreated = async (
     text: statusText,
     keyboard: reply_markup,
     cleanup: true,
+<<<<<<< HEAD
+=======
+    homeAction: CLIENT_MENU_ACTION,
+    recovery: { type: 'client:taxi:status', payload: statusPayload },
+>>>>>>> 27d236d (Add recovery flow handlers and sign inline keyboards)
   });
 
   const lines = [
@@ -531,6 +545,72 @@ const handleIncomingLocation = async (
       await next();
   }
 };
+
+const resolveTaxiCity = (ctx: BotContext): AppCity | undefined =>
+  ctx.session.city ?? ctx.auth.user.citySelected ?? undefined;
+
+const resumeTaxiFlowStep = async (ctx: BotContext): Promise<boolean> => {
+  const draft = getDraft(ctx);
+
+  switch (draft.stage) {
+    case 'collectingPickup': {
+      const city = resolveTaxiCity(ctx);
+      if (!city) {
+        return false;
+      }
+      await requestPickupAddress(ctx, city);
+      return true;
+    }
+    case 'collectingDropoff': {
+      const city = resolveTaxiCity(ctx);
+      if (!city || !draft.pickup) {
+        return false;
+      }
+      await requestDropoffAddress(ctx, city, draft.pickup);
+      return true;
+    }
+    case 'awaitingConfirmation': {
+      const city = resolveTaxiCity(ctx);
+      if (!city || !isOrderDraftComplete(draft)) {
+        return false;
+      }
+      await showConfirmation(ctx, draft as CompletedOrderDraft, city);
+      return true;
+    }
+    default:
+      return false;
+  }
+};
+
+registerFlowRecovery('client:taxi:step', async (ctx) => resumeTaxiFlowStep(ctx));
+
+registerFlowRecovery('client:taxi:status', async (ctx, payload) => {
+  const details =
+    payload && typeof payload === 'object'
+      ? (payload as { emoji?: unknown; label?: unknown })
+      : {};
+  const emoji = typeof details.emoji === 'string' ? details.emoji : '⏳';
+  const label =
+    typeof details.label === 'string' ? details.label : 'Заказ отправлен водителям. Ожидаем отклика.';
+
+  const { text, reply_markup } = buildStatusMessage(
+    emoji,
+    label,
+    CLIENT_ORDERS_ACTION,
+    CLIENT_MENU_ACTION,
+  );
+
+  await ui.step(ctx, {
+    id: TAXI_STATUS_STEP_ID,
+    text,
+    keyboard: reply_markup,
+    cleanup: true,
+    homeAction: CLIENT_MENU_ACTION,
+    recovery: { type: 'client:taxi:status', payload: { emoji, label } },
+  });
+
+  return true;
+});
 
 const handleStart = async (ctx: BotContext): Promise<void> => {
   if (!(await ensurePrivateCallback(ctx, undefined, 'Оформление заказа доступно только в личном чате с ботом.'))) {
