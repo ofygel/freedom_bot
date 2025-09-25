@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import type { PoolConfig } from 'pg';
 
 import { config, logger } from '../config';
+import { observeDatabaseError } from '../metrics/prometheus';
 
 const createSslOptions = (): PoolConfig['ssl'] => {
   if (!config.database.ssl) {
@@ -23,6 +24,7 @@ const pool = new Pool({
 
 pool.on('error', (error) => {
   logger.error({ err: error }, 'Unexpected error from the database pool');
+  observeDatabaseError();
 });
 
 export { pool };           // Named export (import { pool } from ...)

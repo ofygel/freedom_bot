@@ -40,6 +40,7 @@ import { unknownHandler } from './bot/middlewares/unknown';
 import { callbackDecoder } from './bot/middlewares/callbackDecoder';
 import { savePhone } from './bot/middlewares/askPhone';
 import { ensurePhone } from './bot/middlewares/ensurePhone';
+import { metricsCollector } from './bot/middlewares/metrics';
 import type { BotContext } from './bot/types';
 import { config, logger } from './config';
 import { pool } from './db';
@@ -53,6 +54,7 @@ app.catch((error, ctx) => {
 
 app.use(errorBoundary());
 app.use(session());
+app.use(metricsCollector());
 app.use(antiFlood());
 app.use(autoDelete());
 app.use(auth());

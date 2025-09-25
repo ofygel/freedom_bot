@@ -9,6 +9,9 @@ import {
   setupGracefulShutdown,
 } from './app';
 import { config, logger } from './config';
+import { healthHandler, readinessHandler } from './http/health';
+import { metricsHandler } from './http/metrics';
+import { openApiHandler } from './http/docs';
 import { registerJobs, stopJobs } from './jobs';
 
 const gracefulShutdownErrorPatterns = [
@@ -103,9 +106,11 @@ const startServer = async (webhookPath: string, port: number): Promise<Server> =
     res.sendStatus(200);
   });
 
-  serverApp.get('/health', (_req, res) => {
-    res.status(200).send('ok');
-  });
+  serverApp.get('/health', healthHandler);
+  serverApp.get('/healthz', healthHandler);
+  serverApp.get('/readyz', readinessHandler);
+  serverApp.get('/metrics', metricsHandler);
+  serverApp.get('/openapi.json', openApiHandler);
 
   return await new Promise<Server>((resolve, reject) => {
     const httpServer = serverApp.listen(port, '0.0.0.0', () => {
