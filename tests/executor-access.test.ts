@@ -137,16 +137,6 @@ const mapKeyboard = (
   );
 };
 
-const mapReplyKeyboard = (keyboard: ReplyKeyboardMarkup | undefined): string[][] => {
-  if (!keyboard || !('keyboard' in keyboard)) {
-    return [];
-  }
-
-  return keyboard.keyboard.map((row) =>
-    row.map((button) => (typeof button === 'string' ? button : button.text)),
-  );
-};
-
 let originalStep: typeof uiHelper.step;
 let recordedSteps: UiStepOptions[];
 
@@ -238,24 +228,6 @@ describe('executor access control', () => {
           callback_data: EXECUTOR_MENU_ACTION,
         },
       ],
-    ]);
-  });
-
-  it('shows the quick action reply keyboard when rendering the executor menu', async () => {
-    const { ctx } = createContext();
-    ensureExecutorState(ctx);
-
-    await showExecutorMenu(ctx, { skipAccessCheck: true });
-
-    const actionsStep = recordedSteps.find((step) => step.id === 'executor:menu:actions');
-    assert.ok(actionsStep, 'quick action step should be displayed');
-
-    const layout = mapReplyKeyboard(actionsStep.keyboard as ReplyKeyboardMarkup | undefined);
-    assert.deepEqual(layout, [
-      [EXECUTOR_MENU_TEXT_LABELS.documents, EXECUTOR_MENU_TEXT_LABELS.subscription],
-      [EXECUTOR_MENU_TEXT_LABELS.orders],
-      [EXECUTOR_MENU_TEXT_LABELS.support],
-      [EXECUTOR_MENU_TEXT_LABELS.refresh],
     ]);
   });
 

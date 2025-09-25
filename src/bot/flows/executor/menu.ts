@@ -1,5 +1,5 @@
 import { Markup, Telegraf } from 'telegraf';
-import type { InlineKeyboardMarkup, ReplyKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import {
   EXECUTOR_ROLES,
@@ -24,7 +24,6 @@ export const EXECUTOR_ORDERS_ACTION = 'executor:orders:link';
 export const EXECUTOR_SUPPORT_ACTION = 'support:contact';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
 const EXECUTOR_MENU_STEP_ID = 'executor:menu:main';
-const EXECUTOR_MENU_REPLY_STEP_ID = 'executor:menu:actions';
 const EXECUTOR_MENU_CITY_ACTION = 'executorMenu';
 
 export const EXECUTOR_MENU_TEXT_LABELS = {
@@ -217,16 +216,6 @@ const buildMenuKeyboard = (
     [Markup.button.callback('🔄 Обновить меню', EXECUTOR_MENU_ACTION)],
   ]).reply_markup;
 };
-
-const buildMenuReplyKeyboard = (): ReplyKeyboardMarkup =>
-  Markup.keyboard([
-    [EXECUTOR_MENU_TEXT_LABELS.documents, EXECUTOR_MENU_TEXT_LABELS.subscription],
-    [EXECUTOR_MENU_TEXT_LABELS.orders],
-    [EXECUTOR_MENU_TEXT_LABELS.support],
-    [EXECUTOR_MENU_TEXT_LABELS.refresh],
-  ])
-    .resize()
-    .persistent().reply_markup;
 
 const formatTimestamp = (timestamp: number): string => {
   return new Intl.DateTimeFormat('ru-RU', {
@@ -512,15 +501,6 @@ export const showExecutorMenu = async (
 
   const text = buildMenuText(state, access, CITY_LABEL[city], ctx.auth.user);
   const keyboard = buildMenuKeyboard(state, access);
-
-  if (ctx.chat.type === 'private') {
-    await ui.step(ctx, {
-      id: EXECUTOR_MENU_REPLY_STEP_ID,
-      text: 'Быстрые действия доступны через клавиатуру ниже.',
-      keyboard: buildMenuReplyKeyboard(),
-      cleanup: false,
-    });
-  }
 
   await ui.step(ctx, {
     id: EXECUTOR_MENU_STEP_ID,
