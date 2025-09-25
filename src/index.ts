@@ -1,6 +1,11 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import type { Server } from 'http';
+import type { Request, Response, NextFunction } from 'express';
+import helmet from 'helmet';
+import cors from 'cors';
+import * as Sentry from '@sentry/node';
+import type { Update } from 'telegraf/types';
 
 import {
   app,
@@ -14,12 +19,16 @@ import { healthHandler, readinessHandler } from './http/health';
 import { metricsHandler } from './http/metrics';
 import { openApiHandler } from './http/docs';
 import { registerJobs, stopJobs } from './jobs';
+import { initSentry } from './infra/sentry';
 
 const gracefulShutdownErrorPatterns = [
   /bot is not running/i,
   /bot has not been started/i,
   /stop\s+.*before\s+start/i,
 ];
+
+const normaliseError = (error: unknown): Error =>
+  error instanceof Error ? error : new Error(String(error));
 
 const isAbortSignalError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') {
@@ -97,9 +106,18 @@ const closeServer = (server: Server): Promise<void> =>
     });
   });
 
+const asyncHandler = (handler: (req: Request, res: Response) => Promise<void>) =>
+  (req: Request, res: Response, next: NextFunction): void => {
+    // eslint-disable-next-line promise/no-callback-in-promise
+    void handler(req, res).catch(next);
+  };
+
 const startServer = async (webhookPath: string, port: number): Promise<Server> => {
   const serverApp = express();
 
+  serverApp.use(Sentry.Handlers.requestHandler());
+  serverApp.use(helmet());
+  serverApp.use(cors({ origin: false }));
   serverApp.use(express.json({ limit: '1mb' }));
   serverApp.use(
     rateLimit({
@@ -110,16 +128,19 @@ const startServer = async (webhookPath: string, port: number): Promise<Server> =
     }),
   );
 
-  serverApp.post(webhookPath, (req, res) => {
+  serverApp.post(webhookPath, (req: Request<unknown, unknown, Update>, res: Response) => {
     void app.handleUpdate(req.body);
     res.sendStatus(200);
   });
 
   serverApp.get('/health', healthHandler);
   serverApp.get('/healthz', healthHandler);
-  serverApp.get('/readyz', readinessHandler);
-  serverApp.get('/metrics', metricsHandler);
+  serverApp.get('/readiness', asyncHandler(readinessHandler));
+  serverApp.get('/readyz', asyncHandler(readinessHandler));
+  serverApp.get('/metrics', asyncHandler(metricsHandler));
   serverApp.get('/openapi.json', openApiHandler);
+
+  serverApp.use(Sentry.Handlers.errorHandler());
 
   return await new Promise<Server>((resolve, reject) => {
     const httpServer = serverApp.listen(port, '0.0.0.0', () => {
@@ -136,6 +157,7 @@ const startServer = async (webhookPath: string, port: number): Promise<Server> =
 const start = async (): Promise<void> => {
   let server: Server | null = null;
   try {
+    initSentry(process.env.SENTRY_DSN);
     await initialiseAppState();
     const { url, path } = buildWebhookConfig(config.webhook.domain, config.webhook.secret);
     const port = parsePort(process.env.PORT);
@@ -148,7 +170,7 @@ const start = async (): Promise<void> => {
       await app.telegram.setWebhook(url);
     } catch (webhookError) {
       await closeServer(httpServer).catch((error) => {
-        logger.error({ err: error }, 'Failed to close webhook server after registration error');
+        logger.error({ err: normaliseError(error) }, 'Failed to close webhook server after registration error');
       });
       server = null;
       throw webhookError;
@@ -166,7 +188,7 @@ const start = async (): Promise<void> => {
   } catch (error) {
     if (server) {
       await closeServer(server).catch((closeError) => {
-        logger.error({ err: closeError }, 'Failed to close webhook server during startup failure');
+        logger.error({ err: normaliseError(closeError) }, 'Failed to close webhook server during startup failure');
       });
     }
 
