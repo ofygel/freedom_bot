@@ -24,7 +24,7 @@ export const EXECUTOR_ORDERS_ACTION = 'executor:orders:link';
 export const EXECUTOR_SUPPORT_ACTION = 'support:contact';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
 const EXECUTOR_MENU_STEP_ID = 'executor:menu:main';
-const EXECUTOR_MENU_CITY_ACTION = 'executorMenu';
+export const EXECUTOR_MENU_CITY_ACTION = 'executorMenu';
 
 export const EXECUTOR_MENU_TEXT_LABELS = {
   documents: '📸 Документы',

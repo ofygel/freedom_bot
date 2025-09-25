@@ -6,7 +6,8 @@ import { updateUserRole } from '../../../db/users';
 import { EXECUTOR_COMMANDS } from '../../commands/sets';
 import { setChatCommands } from '../../services/commands';
 import type { BotContext, ExecutorRole } from '../../types';
-import { ensureExecutorState, showExecutorMenu } from './menu';
+import { askCity } from '../common/citySelect';
+import { ensureExecutorState, EXECUTOR_MENU_CITY_ACTION } from './menu';
 import { getExecutorRoleCopy } from './roleCopy';
 
 const ROLE_COURIER_ACTION = 'role:courier';
@@ -64,8 +65,9 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
 
   await setChatCommands(ctx.telegram, ctx.chat.id, EXECUTOR_COMMANDS, { showMenuButton: true });
 
-  await hideClientMenu(ctx, 'Переключаемся в режим исполнителя…');
-  await showExecutorMenu(ctx);
+  await hideClientMenu(ctx, 'Переключаемся…');
+  ctx.session.ui.pendingCityAction = EXECUTOR_MENU_CITY_ACTION;
+  await askCity(ctx, 'Сначала выбери город для работы');
 };
 
 export const registerExecutorRoleSelect = (bot: Telegraf<BotContext>): void => {
