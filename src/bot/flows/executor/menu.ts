@@ -375,6 +375,47 @@ const buildSubscriptionSection = (
   ];
 };
 
+const buildNextStepsSection = (
+  state: ExecutorFlowState,
+  access: ExecutorAccessStatus,
+): string[] => {
+  const copy = getExecutorRoleCopy(state.role);
+
+  if (!access.isVerified) {
+    return [
+      'Нажмите «📸 Отправить документы» и загрузите все требуемые фотографии.',
+      'Дождитесь решения модератора — уведомление придёт в этот чат.',
+      'После одобрения оформите подписку через кнопку «📨 Получить ссылку на канал».',
+    ];
+  }
+
+  if (!access.hasActiveSubscription) {
+    if (state.subscription.status === 'awaitingReceipt') {
+      return [
+        'Оплатите выбранный период подписки по реквизитам Kaspi.',
+        'Пришлите чек сюда, чтобы модератор подтвердил оплату и выдал ссылку.',
+      ];
+    }
+
+    if (state.subscription.status === 'pendingModeration') {
+      return [
+        'Мы проверяем ваш чек. Как только модератор подтвердит оплату, вы получите ссылку.',
+      ];
+    }
+
+    return [
+      'Откройте «📨 Получить ссылку на канал» и выберите период подписки.',
+      'Оплатите подписку и отправьте чек в этот чат — модератор выдаст ссылку.',
+      `После подтверждения ссылка на канал ${copy.pluralGenitive} появится в меню «Заказы».`,
+    ];
+  }
+
+  return [
+    'Нажмите «Заказы», чтобы получить актуальную ссылку и смотреть задания.',
+    'Если возникнут вопросы — используйте кнопку «🆘 Поддержка».',
+  ];
+};
+
 const buildMenuText = (
   state: ExecutorFlowState,
   access: ExecutorAccessStatus,
@@ -418,7 +459,20 @@ const buildMenuText = (
     parts.push(...statusLines);
   }
 
-  parts.push('', ...buildVerificationSection(state, access), '', ...buildSubscriptionSection(state, access));
+  parts.push(
+    '',
+    ...buildVerificationSection(state, access),
+    '',
+    ...buildSubscriptionSection(state, access),
+  );
+
+  const nextSteps = buildNextStepsSection(state, access);
+  if (nextSteps.length > 0) {
+    parts.push('', '👉 Что дальше:');
+    nextSteps.forEach((step, index) => {
+      parts.push(`${index + 1}. ${step}`);
+    });
+  }
 
   return parts.join('\n');
 };
