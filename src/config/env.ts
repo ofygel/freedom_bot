@@ -152,6 +152,9 @@ const getRequiredString = (key: RequiredEnvVar): string => {
 
 const getOptionalString = (key: string): string | undefined => getTrimmedEnv(key);
 
+const getCronExpression = (key: string, defaultValue: string): string =>
+  getTrimmedEnv(key) ?? defaultValue;
+
 export interface TariffConfig {
   baseFare: number;
   perKm: number;
@@ -250,6 +253,11 @@ export interface AppConfig {
   city: {
     default?: string;
   };
+  jobs: {
+    nudger: string;
+    subscription: string;
+    metrics: string;
+  };
   tariff: TariffRates | null;
   subscriptions: {
     warnHoursBefore: number;
@@ -274,7 +282,7 @@ export interface AppConfig {
 
 export const loadConfig = (): AppConfig => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
-  logLevel: resolveLogLevel(process.env.LOG_LEVEL),
+  logLevel: resolveLogLevel(process.env.PINO_LEVEL ?? process.env.LOG_LEVEL),
   bot: {
     token: process.env.BOT_TOKEN as string,
     callbackSignSecret: getOptionalString('CALLBACK_SIGN_SECRET'),
@@ -302,6 +310,11 @@ export const loadConfig = (): AppConfig => ({
   city: {
     default: getOptionalString('CITY_DEFAULT'),
   },
+  jobs: {
+    nudger: getCronExpression('JOBS_NUDGER_CRON', '*/1 * * * *'),
+    subscription: getCronExpression('JOBS_SUBSCRIPTION_CRON', '*/10 * * * *'),
+    metrics: getCronExpression('JOBS_METRICS_CRON', '*/60 * * * * *'),
+  },
   tariff: parseGeneralTariff(),
   subscriptions: {
     warnHoursBefore: parseWarnHours(process.env.SUB_WARN_HOURS_BEFORE),
@@ -327,6 +340,7 @@ Object.freeze(config.webhook);
 Object.freeze(config.database.pool);
 Object.freeze(config.database);
 Object.freeze(config.city);
+Object.freeze(config.jobs);
 if (config.tariff) {
   Object.freeze(config.tariff);
 }

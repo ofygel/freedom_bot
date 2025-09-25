@@ -7,7 +7,7 @@ import type { BotContext } from '../src/bot/types';
 import { EXECUTOR_COMMANDS, CLIENT_COMMANDS } from '../src/bot/commands/sets';
 
 let registerStartCommand: typeof import('../src/bot/commands/start')['registerStartCommand'];
-let phoneCollectModule: typeof import('../src/bot/flows/common/phoneCollect');
+let askPhoneModule: typeof import('../src/bot/middlewares/askPhone');
 let commandsService: typeof import('../src/bot/services/commands');
 
 before(async () => {
@@ -24,18 +24,18 @@ before(async () => {
   process.env.SUB_PRICE_15 = process.env.SUB_PRICE_15 ?? '9000';
   process.env.SUB_PRICE_30 = process.env.SUB_PRICE_30 ?? '16000';
 
-  phoneCollectModule = await import('../src/bot/flows/common/phoneCollect');
+  askPhoneModule = await import('../src/bot/middlewares/askPhone');
   commandsService = await import('../src/bot/services/commands');
   ({ registerStartCommand } = await import('../src/bot/commands/start'));
 });
 
-let phoneCollectMock: ReturnType<typeof mock.method> | undefined;
+let askPhoneMock: ReturnType<typeof mock.method> | undefined;
 let setChatCommandsMock: ReturnType<typeof mock.method> | undefined;
 
 afterEach(() => {
-  phoneCollectMock?.mock.restore();
+  askPhoneMock?.mock.restore();
   setChatCommandsMock?.mock.restore();
-  phoneCollectMock = undefined;
+  askPhoneMock = undefined;
   setChatCommandsMock = undefined;
 });
 
@@ -73,6 +73,7 @@ const createContext = (role: BotContext['auth']['user']['role']): BotContext => 
         firstName: 'User',
         lastName: undefined,
         phone: undefined,
+        phoneVerified: false,
         role,
         status: role === 'client' ? 'active_client' : 'active_executor',
         isVerified: false,
@@ -89,6 +90,7 @@ const createContext = (role: BotContext['auth']['user']['role']): BotContext => 
       ephemeralMessages: [],
       isAuthenticated: false,
       awaitingPhone: false,
+      user: { id: 9001, phoneVerified: false },
       executor: { role: 'courier', verification: {} as any, subscription: { status: 'idle' } },
       client: { taxi: { stage: 'idle' }, delivery: { stage: 'idle' } },
       ui: { steps: {}, homeActions: [] },
@@ -105,9 +107,8 @@ const createContext = (role: BotContext['auth']['user']['role']): BotContext => 
 };
 
 describe('/start command', () => {
-  it('installs client commands for client role', async () => {
-    phoneCollectMock = mock.method(phoneCollectModule, 'phoneCollect', async () => '+7 (700) 000-00-00');
-    setChatCommandsMock = mock.method(commandsService, 'setChatCommands', async () => undefined);
+  it('requests phone number when user is not verified', async () => {
+    askPhoneMock = mock.method(askPhoneModule, 'askPhone', async () => undefined);
 
     const { bot, getStartHandler } = createMockBot();
     registerStartCommand(bot);
@@ -117,7 +118,24 @@ describe('/start command', () => {
     const ctx = createContext('client');
     await handler(ctx);
 
-    assert.equal(phoneCollectMock.mock.callCount(), 1);
+    assert.equal(askPhoneMock.mock.callCount(), 1);
+  });
+
+  it('installs client commands for client role', async () => {
+    askPhoneMock = mock.method(askPhoneModule, 'askPhone', async () => undefined);
+    setChatCommandsMock = mock.method(commandsService, 'setChatCommands', async () => undefined);
+
+    const { bot, getStartHandler } = createMockBot();
+    registerStartCommand(bot);
+    const handler = getStartHandler();
+    assert.ok(handler, 'start handler should be registered');
+
+    const ctx = createContext('client');
+    ctx.session.user!.phoneVerified = true;
+    ctx.auth.user.phoneVerified = true;
+    await handler(ctx);
+
+    assert.equal(askPhoneMock.mock.callCount(), 0);
     assert.equal(setChatCommandsMock.mock.callCount(), 1);
     const call = setChatCommandsMock.mock.calls[0];
     assert.ok(call);
@@ -126,7 +144,7 @@ describe('/start command', () => {
   });
 
   it('installs executor commands for courier role', async () => {
-    phoneCollectMock = mock.method(phoneCollectModule, 'phoneCollect', async () => '+7 (700) 000-00-01');
+    askPhoneMock = mock.method(askPhoneModule, 'askPhone', async () => undefined);
     setChatCommandsMock = mock.method(commandsService, 'setChatCommands', async () => undefined);
 
     const { bot, getStartHandler } = createMockBot();
@@ -135,9 +153,11 @@ describe('/start command', () => {
     assert.ok(handler, 'start handler should be registered');
 
     const ctx = createContext('courier');
+    ctx.session.user!.phoneVerified = true;
+    ctx.auth.user.phoneVerified = true;
     await handler(ctx);
 
-    assert.equal(phoneCollectMock.mock.callCount(), 1);
+    assert.equal(askPhoneMock.mock.callCount(), 0);
     assert.equal(setChatCommandsMock.mock.callCount(), 1);
     const call = setChatCommandsMock.mock.calls[0];
     assert.ok(call);

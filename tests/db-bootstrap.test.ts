@@ -9,13 +9,20 @@ import { ensureDatabaseSchema, resetDatabaseSchemaCache } from '../src/db/bootst
 import { pool } from '../src/db';
 
 const MIGRATIONS_DIR = path.resolve(__dirname, '../db/sql');
+const SNAPSHOT_FILE = 'all_migrations.sql';
 
 const loadMigrationFiles = async (): Promise<string[]> => {
   const entries = await readdir(MIGRATIONS_DIR, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.sql') && entry.name !== 'all_migrations.sql')
+  const sqlFiles = entries
+    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.sql'))
     .map((entry) => entry.name)
     .sort();
+
+  if (sqlFiles.includes(SNAPSHOT_FILE)) {
+    return [SNAPSHOT_FILE];
+  }
+
+  return sqlFiles;
 };
 
 type QueryHandler = (text: string, params?: unknown[]) => Promise<{ rows: unknown[] }>;
@@ -72,7 +79,7 @@ describe('database bootstrap', () => {
 
   it('applies pending migrations when they are not recorded', async () => {
     const migrations = await loadMigrationFiles();
-    const alreadyExecuted = new Set<string>([migrations[0]!]);
+    const alreadyExecuted = new Set<string>();
     const applied: string[] = [];
     const recorded: string[] = [];
     let createTableCount = 0;

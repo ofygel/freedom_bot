@@ -49,7 +49,7 @@ export const renderMenuFor = async (
   const user = ctx.auth?.user;
   const text = prompt ?? 'Выберите действие из меню ниже.';
 
-  if (!user || user.status === 'awaiting_phone' || !user.phone) {
+  if (!user || user.status === 'awaiting_phone' || !user.phoneVerified) {
     await ctx.reply(text, onboardingKeyboard());
     return;
   }

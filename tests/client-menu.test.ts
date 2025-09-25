@@ -78,6 +78,7 @@ const createAuthState = (
     firstName: undefined,
     lastName: undefined,
     phone: undefined,
+    phoneVerified: false,
     role,
     status: role === 'client' || role === 'moderator' ? 'active_client' : 'active_executor',
     isVerified: false,
@@ -295,6 +296,7 @@ describe('client menu role selection', () => {
       username: 'executor_user',
       firstName: 'Exec',
       lastName: 'Utor',
+      phoneVerified: true,
     });
 
     assert.equal(deleteMessageCalls.length, 1);

@@ -35,6 +35,7 @@ const createAuthState = (status: BotContext['auth']['user']['status']) => ({
     isVerified: false,
     isBlocked: false,
     phone: '+7 (700) 000-00-00',
+    phoneVerified: true,
   },
   executor: { verifiedRoles: { courier: false, driver: false }, hasActiveSubscription: false, isVerified: false },
   isModerator: false,
@@ -107,16 +108,8 @@ describe('stateGate middleware', () => {
       nextCalled = true;
     });
 
-    assert.equal(nextCalled, false, 'middleware should stop processing for expired trials');
-    assert.equal(answerCbQuery.mock.callCount(), 1, 'callback query should be answered');
-    const answerCall = answerCbQuery.mock.calls[0];
-    assert.ok(answerCall, 'answerCbQuery should be invoked');
-    assert.equal(
-      answerCall.arguments[0],
-      'Пробный период завершён. Продлите подписку, чтобы продолжить получать заказы.',
-    );
-    assert.deepEqual(answerCall.arguments[1], { show_alert: false });
-
+    assert.equal(nextCalled, true, 'middleware should ignore non-private chats');
+    assert.equal(answerCbQuery.mock.callCount(), 0, 'callback query should not be answered');
     assert.equal(reply.mock.callCount(), 0, 'should not reply into channels for gated callbacks');
   });
 
@@ -140,6 +133,7 @@ describe('stateGate middleware', () => {
           isVerified: false,
           isBlocked: false,
           phone: undefined,
+          phoneVerified: false,
         },
         executor: { verifiedRoles: { courier: false, driver: false }, hasActiveSubscription: false, isVerified: false },
         isModerator: false,

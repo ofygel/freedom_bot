@@ -121,6 +121,7 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   authUser.lastName = lastName ?? undefined;
   if (phone) {
     authUser.phone = phone;
+    authUser.phoneVerified = true;
   }
   ctx.auth.isModerator = false;
 
@@ -130,6 +131,7 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
     username: username ?? undefined,
     firstName: firstName ?? undefined,
     lastName: lastName ?? undefined,
+    phoneVerified: authUser.phoneVerified,
   };
   if (phone && !ctx.session.phoneNumber) {
     ctx.session.phoneNumber = phone;

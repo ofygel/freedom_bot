@@ -23,6 +23,7 @@ interface AuthQueryRow {
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
+  phone_verified: boolean | null;
   role: string | null;
   status: string | null;
   is_verified: boolean | null;
@@ -141,9 +142,9 @@ const deriveUserStatus = (row: AuthQueryRow, status: UserStatus): UserStatus => 
   }
 
   const role = normaliseRole(row.role);
-  const hasPhone = Boolean(normaliseString(row.phone));
+  const hasVerifiedPhone = Boolean(row.phone_verified);
 
-  if (!hasPhone) {
+  if (!hasVerifiedPhone) {
     return 'awaiting_phone';
   }
 
@@ -177,6 +178,7 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
           first_name,
           last_name,
           phone,
+          phone_verified,
           role,
           status,
           is_verified,
@@ -192,6 +194,7 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
         u.first_name,
         u.last_name,
         u.phone,
+        u.phone_verified,
         u.role,
         u.status,
         u.is_verified,
@@ -251,6 +254,7 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
       firstName: normaliseString(row.first_name),
       lastName: normaliseString(row.last_name),
       phone: normaliseString(row.phone),
+      phoneVerified: Boolean(row.phone_verified),
       role,
       status,
       isVerified: Boolean(row.is_verified),
@@ -297,6 +301,7 @@ const applyAuthState = (ctx: BotContext, authState: AuthState): void => {
     username: authState.user.username,
     firstName: authState.user.firstName,
     lastName: authState.user.lastName,
+    phoneVerified: authState.user.phoneVerified,
   };
   if (authState.user.phone && !ctx.session.phoneNumber) {
     ctx.session.phoneNumber = authState.user.phone;

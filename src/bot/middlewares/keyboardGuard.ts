@@ -36,6 +36,11 @@ const getMessageText = (ctx: BotContext): string | undefined => {
 };
 
 export const keyboardGuard = (): MiddlewareFn<BotContext> => async (ctx, next) => {
+  if (ctx.chat && ctx.chat.type !== 'private') {
+    await next();
+    return;
+  }
+
   const text = getMessageText(ctx);
   if (!text || !hasKnownButtonText(text)) {
     await next();
@@ -43,7 +48,7 @@ export const keyboardGuard = (): MiddlewareFn<BotContext> => async (ctx, next) =
   }
 
   const user = ctx.auth?.user;
-  if (!user || user.status === 'awaiting_phone' || !user.phone) {
+  if (!user || user.status === 'awaiting_phone' || !user.phoneVerified) {
     await ctx.reply('Нужно авторизоваться, чтобы продолжить.', onboardingKeyboard());
     return;
   }

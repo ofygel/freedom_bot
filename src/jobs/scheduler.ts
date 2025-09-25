@@ -16,8 +16,6 @@ import {
   type SubscriptionIdentity,
 } from '../bot/services/reports';
 
-const CRON_EXPRESSION = '*/10 * * * *';
-
 let task: ScheduledTask | null = null;
 let running = false;
 
@@ -273,7 +271,7 @@ export const startSubscriptionScheduler = (
     return;
   }
 
-  task = cron.schedule(CRON_EXPRESSION, () => {
+  task = cron.schedule(config.jobs.subscription, () => {
     if (running) {
       logger.warn('Previous subscription maintenance is still running, skipping');
       return;
