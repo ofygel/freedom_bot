@@ -7,7 +7,7 @@ import type { BotContext } from '../src/bot/types';
 
 let registerStartCommand: typeof import('../src/bot/commands/start')['registerStartCommand'];
 let registerClientMenu: typeof import('../src/bot/flows/client/menu')['registerClientMenu'];
-let savePhone: typeof import('../src/bot/middlewares/askPhone')['savePhone'];
+let savePhone: typeof import('../src/bot/flows/common/phoneCollect')['savePhone'];
 let askCityModule: typeof import('../src/bot/flows/common/citySelect');
 let usersDb: typeof import('../src/db/users');
 let dbClient: typeof import('../src/db/client');
@@ -15,7 +15,7 @@ let dbClient: typeof import('../src/db/client');
 before(async () => {
   registerStartCommand = (await import('../src/bot/commands/start')).registerStartCommand;
   registerClientMenu = (await import('../src/bot/flows/client/menu')).registerClientMenu;
-  savePhone = (await import('../src/bot/middlewares/askPhone')).savePhone;
+  savePhone = (await import('../src/bot/flows/common/phoneCollect')).savePhone;
   askCityModule = await import('../src/bot/flows/common/citySelect');
   usersDb = await import('../src/db/users');
   dbClient = await import('../src/db/client');
