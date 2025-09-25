@@ -1,7 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import type { PoolConfig } from 'pg';
 
-import { config } from '../config';
+import { config, logger } from '../config';
 
 const createSslOptions = (): PoolConfig['ssl'] => {
   if (!config.database.ssl) {
@@ -14,6 +14,15 @@ const createSslOptions = (): PoolConfig['ssl'] => {
 const pool = new Pool({
   connectionString: config.database.url,
   ssl: createSslOptions(),
+  max: config.database.pool.max,
+  idleTimeoutMillis: config.database.pool.idleTimeoutMs,
+  connectionTimeoutMillis: config.database.pool.connectionTimeoutMs,
+  statement_timeout: config.database.pool.statementTimeoutMs,
+  query_timeout: config.database.pool.queryTimeoutMs,
+});
+
+pool.on('error', (error) => {
+  logger.error({ err: error }, 'Unexpected error from the database pool');
 });
 
 export { pool };           // Named export (import { pool } from ...)
