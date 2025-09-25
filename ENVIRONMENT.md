@@ -23,6 +23,18 @@ are missing or blank.
 - `DATABASE_SSL` – Enables TLS for the PostgreSQL connection when set to `true`,
   `1` or `yes`. The connection negotiates SSL with certificate validation. Leave
   the variable unset (or explicitly set it to `false`) to connect without TLS.
+- `DATABASE_POOL_MAX` – Maximum number of concurrent client connections in the
+  PostgreSQL pool. Defaults to `10` when not specified.
+- `DATABASE_POOL_IDLE_TIMEOUT_MS` – Time (in milliseconds) after which idle
+  connections are closed. The default is `30000` (30 seconds).
+- `DATABASE_POOL_CONNECTION_TIMEOUT_MS` – Maximum time (in milliseconds) the
+  driver waits for an available connection before failing. Defaults to `5000`.
+- `DATABASE_STATEMENT_TIMEOUT_MS` – Upper bound (in milliseconds) enforced for
+  individual SQL statements. Defaults to `15000` to ensure the bot responds
+  before Telegram retries the update delivery.
+- `DATABASE_QUERY_TIMEOUT_MS` – Safety timeout (in milliseconds) applied by the
+  driver to each query. Defaults to `20000` and should be equal to or greater
+  than the statement timeout.
 
 ## Subscription settings
 

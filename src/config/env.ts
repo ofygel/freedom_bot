@@ -126,6 +126,21 @@ const parseOptionalPositiveNumber = (envKey: string): number | undefined => {
   return parsed;
 };
 
+const parsePositiveInt = (envKey: string, defaultValue: number): number => {
+  const raw = getTrimmedEnv(envKey);
+
+  if (!raw) {
+    return defaultValue;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${envKey} must be a positive integer`);
+  }
+
+  return parsed;
+};
+
 const getRequiredString = (key: RequiredEnvVar): string => {
   const value = getTrimmedEnv(key);
   if (!value) {
@@ -224,6 +239,13 @@ export interface AppConfig {
   database: {
     url: string;
     ssl: boolean;
+    pool: {
+      max: number;
+      idleTimeoutMs: number;
+      connectionTimeoutMs: number;
+      statementTimeoutMs: number;
+      queryTimeoutMs: number;
+    };
   };
   city: {
     default?: string;
@@ -269,6 +291,13 @@ export const loadConfig = (): AppConfig => ({
   database: {
     url: process.env.DATABASE_URL as string,
     ssl: parseBoolean(process.env.DATABASE_SSL),
+    pool: {
+      max: parsePositiveInt('DATABASE_POOL_MAX', 10),
+      idleTimeoutMs: parsePositiveInt('DATABASE_POOL_IDLE_TIMEOUT_MS', 30000),
+      connectionTimeoutMs: parsePositiveInt('DATABASE_POOL_CONNECTION_TIMEOUT_MS', 5000),
+      statementTimeoutMs: parsePositiveInt('DATABASE_STATEMENT_TIMEOUT_MS', 15000),
+      queryTimeoutMs: parsePositiveInt('DATABASE_QUERY_TIMEOUT_MS', 20000),
+    },
   },
   city: {
     default: getOptionalString('CITY_DEFAULT'),
@@ -295,6 +324,7 @@ export const config: AppConfig = loadConfig();
 Object.freeze(config.bot);
 Object.freeze(config.features);
 Object.freeze(config.webhook);
+Object.freeze(config.database.pool);
 Object.freeze(config.database);
 Object.freeze(config.city);
 if (config.tariff) {

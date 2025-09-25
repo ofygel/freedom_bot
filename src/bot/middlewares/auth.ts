@@ -3,6 +3,7 @@ import type { MiddlewareFn } from 'telegraf';
 import { logger } from '../../config';
 import { hasUsersCitySelectedColumn, pool } from '../../db';
 import { isAppCity } from '../../domain/cities';
+import { copy } from '../copy';
 import {
   EXECUTOR_ROLES,
   type AuthExecutorState,
@@ -384,6 +385,21 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     applyAuthState(ctx, authState);
   } catch (error) {
     logger.error({ err: error, update: ctx.update }, 'Failed to authenticate update');
+    if (typeof ctx.answerCbQuery === 'function') {
+      try {
+        await ctx.answerCbQuery(copy.serviceUnavailable, { show_alert: false });
+      } catch (answerError) {
+        logger.debug({ err: answerError }, 'Failed to answer callback query after auth failure');
+      }
+    }
+
+    if (ctx.chat?.type === 'private') {
+      try {
+        await ctx.reply(copy.serviceUnavailable);
+      } catch (replyError) {
+        logger.debug({ err: replyError }, 'Failed to notify user about auth failure');
+      }
+    }
     return;
   }
 

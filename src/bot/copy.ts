@@ -42,4 +42,5 @@ export const copy = {
   orderAlreadyTakenToast: 'Увы, заказ уже принят другим исполнителем.',
   orderReleasedToast: 'Вы сняты с заказа.',
   noAccess: 'Недостаточно прав для действия.',
+  serviceUnavailable: 'Сервис временно недоступен. Попробуйте позже.',
 };
