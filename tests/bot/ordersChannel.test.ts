@@ -3,6 +3,7 @@ import '../helpers/setup-env';
 import assert from 'node:assert/strict';
 import { afterEach, before, beforeEach, describe, it, mock } from 'node:test';
 
+import type { Telegraf } from 'telegraf';
 import type { BotContext } from '../../src/bot/types';
 import type { OrderRecord } from '../../src/types';
 import * as dbClient from '../../src/db/client';
@@ -11,6 +12,7 @@ import * as bindings from '../../src/bot/channels/bindings';
 import * as feedback from '../../src/bot/services/feedback';
 import * as reports from '../../src/bot/services/reports';
 import { copy } from '../../src/bot/copy';
+import * as idempotency from '../../src/bot/middlewares/idempotency';
 
 let ordersChannel: typeof import('../../src/bot/channels/ordersChannel');
 
@@ -299,5 +301,55 @@ describe('orders channel callbacks', () => {
     assert.equal(withTxMock.mock.callCount(), 0);
     assert.equal(lockOrderByIdMock.mock.callCount(), 0);
     assert.equal(tryClaimOrderMock.mock.callCount(), 0);
+  });
+});
+
+describe('registerOrdersChannel', () => {
+  let withIdempotencyMock: ReturnType<typeof mock.method> | undefined;
+
+  before(async () => {
+    ordersChannel = await import('../../src/bot/channels/ordersChannel');
+  });
+
+  afterEach(() => {
+    withIdempotencyMock?.mock.restore();
+    withIdempotencyMock = undefined;
+  });
+
+  it('answers callback with service unavailable when idempotency guard fails', async () => {
+    const actions: Array<{ pattern: RegExp; handler: (ctx: BotContext) => Promise<void> }> = [];
+    const bot = {
+      action: (pattern: RegExp, handler: (ctx: BotContext) => Promise<void>) => {
+        actions.push({ pattern, handler });
+        return bot;
+      },
+    };
+
+    ordersChannel.registerOrdersChannel(bot as unknown as Telegraf<BotContext>);
+
+    const acceptAction = actions.find(({ pattern }) => pattern.test('order:accept:42'));
+    assert.ok(acceptAction, 'accept handler should be registered');
+
+    const answerCbQuery = mock.fn<(text?: string, extra?: { show_alert?: boolean }) => Promise<void>>(
+      async () => undefined,
+    );
+    const ctx = {
+      match: ['order:accept:42', '42'] as unknown as RegExpMatchArray,
+      answerCbQuery,
+      from: { id: 12345 },
+    } as unknown as BotContext;
+
+    withIdempotencyMock = mock.method(idempotency, 'withIdempotency', async () => ({ status: 'error' }));
+
+    await acceptAction.handler(ctx);
+
+    assert.ok(withIdempotencyMock);
+    assert.equal(withIdempotencyMock.mock.callCount(), 1);
+
+    assert.equal(answerCbQuery.mock.callCount(), 1);
+    const [answerCall] = answerCbQuery.mock.calls;
+    assert.ok(answerCall, 'answerCbQuery should be invoked');
+    assert.equal(answerCall.arguments[0], copy.serviceUnavailable);
+    assert.deepEqual(answerCall.arguments[1], { show_alert: true });
   });
 });
