@@ -19,13 +19,17 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subscription_status') THEN
-    CREATE TYPE subscription_status AS ENUM ('active', 'grace', 'expired');
+    CREATE TYPE subscription_status AS ENUM ('pending', 'active', 'rejected', 'expired');
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'verification_status') THEN
-    CREATE TYPE verification_status AS ENUM ('pending', 'approved', 'rejected');
+    CREATE TYPE verification_status AS ENUM ('pending', 'active', 'rejected', 'expired');
   END IF;
 END $$;
+
+/* ---------- SEQUENCES ---------- */
+CREATE SEQUENCE IF NOT EXISTS orders_short_id_seq START WITH 1;
+CREATE SEQUENCE IF NOT EXISTS support_thread_short_id_seq START WITH 1;
 
 /* ---------- CORE TABLES ---------- */
 CREATE TABLE IF NOT EXISTS users (
@@ -39,6 +43,14 @@ CREATE TABLE IF NOT EXISTS users (
   username         TEXT,
   city             TEXT,
   consent          BOOLEAN      NOT NULL   DEFAULT FALSE,
+  status           TEXT         NOT NULL   DEFAULT 'guest',
+  is_verified      BOOLEAN      NOT NULL   DEFAULT FALSE,
+  is_blocked       BOOLEAN      NOT NULL   DEFAULT FALSE,
+  verified_at      TIMESTAMPTZ,
+  trial_ends_at    TIMESTAMPTZ,
+  last_menu_role   TEXT,
+  keyboard_nonce   TEXT,
+  city_selected    TEXT,
   created_at       TIMESTAMPTZ  NOT NULL   DEFAULT now(),
   updated_at       TIMESTAMPTZ  NOT NULL   DEFAULT now()
 );
@@ -71,104 +83,180 @@ CREATE TABLE IF NOT EXISTS sessions (
   PRIMARY KEY (scope, scope_id)
 );
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM   information_schema.table_constraints
-    WHERE  constraint_name = 'sessions_scope_id_fkey'
-    AND    table_name = 'sessions'
-  ) THEN
-    ALTER TABLE sessions
-      ADD CONSTRAINT sessions_scope_id_fkey
-        FOREIGN KEY (scope_id) REFERENCES users(tg_id) ON DELETE CASCADE;
-  END IF;
-END $$;
-
 CREATE INDEX IF NOT EXISTS idx_sessions_scope_id ON sessions (scope_id);
 
 --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS recent_actions (
-  idempotency_key  TEXT        PRIMARY KEY,
-  user_id          BIGINT      NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
-  action           TEXT        NOT NULL,
-  hash             TEXT,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  user_id          BIGINT      NOT NULL,
+  key              TEXT        NOT NULL,
+  expires_at       TIMESTAMPTZ NOT NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_recent_actions_user ON recent_actions (user_id);
+CREATE INDEX IF NOT EXISTS idx_recent_actions_expires_at ON recent_actions (expires_at);
 
 --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS orders (
-  id               BIGSERIAL PRIMARY KEY,
-  kind             order_kind      NOT NULL,
-  status           order_status    NOT NULL DEFAULT 'open',
-  client_id        BIGINT          NOT NULL REFERENCES users(tg_id),
-  executor_id      BIGINT          REFERENCES users(tg_id),
-  route_from       POINT,
-  route_to         POINT,
-  payload          JSONB,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                 BIGSERIAL PRIMARY KEY,
+  short_id           TEXT        NOT NULL DEFAULT (
+                      'ORD-' || LPAD(nextval('orders_short_id_seq')::TEXT, 5, '0')
+                    ),
+  kind               order_kind      NOT NULL,
+  status             order_status    NOT NULL DEFAULT 'open',
+  client_id          BIGINT          REFERENCES users(tg_id),
+  client_phone       TEXT,
+  recipient_phone    TEXT,
+  customer_name      TEXT,
+  customer_username  TEXT,
+  client_comment     TEXT,
+  pickup_query       TEXT        NOT NULL,
+  pickup_address     TEXT        NOT NULL,
+  pickup_lat         DOUBLE PRECISION NOT NULL,
+  pickup_lon         DOUBLE PRECISION NOT NULL,
+  pickup_2gis_url    TEXT,
+  dropoff_query      TEXT        NOT NULL,
+  dropoff_address    TEXT        NOT NULL,
+  dropoff_lat        DOUBLE PRECISION NOT NULL,
+  dropoff_lon        DOUBLE PRECISION NOT NULL,
+  dropoff_2gis_url   TEXT,
+  dropoff_apartment  TEXT,
+  dropoff_entrance   TEXT,
+  dropoff_floor      TEXT,
+  is_private_house   BOOLEAN,
+  city               TEXT        NOT NULL,
+  price_amount       NUMERIC(12,2) NOT NULL,
+  price_currency     TEXT        NOT NULL,
+  distance_km        NUMERIC(10,2) NOT NULL,
+  claimed_by         BIGINT          REFERENCES users(tg_id),
+  claimed_at         TIMESTAMPTZ,
+  completed_at       TIMESTAMPTZ,
+  channel_message_id BIGINT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (short_id)
 );
+
+ALTER SEQUENCE orders_short_id_seq OWNED BY orders.short_id;
 
 CREATE INDEX IF NOT EXISTS idx_orders_status       ON orders (status);
 CREATE INDEX IF NOT EXISTS idx_orders_client_id    ON orders (client_id);
-CREATE INDEX IF NOT EXISTS idx_orders_executor_id  ON orders (executor_id);
-/* Spatial indexes are intentionally omitted because the schema avoids
-   PostGIS dependencies by using the native POINT type. */
+CREATE INDEX IF NOT EXISTS idx_orders_claimed_by   ON orders (claimed_by);
 
 --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS subscriptions (
-  id               BIGSERIAL PRIMARY KEY,
-  short_id         TEXT        UNIQUE,
-  user_id          BIGINT      NOT NULL REFERENCES users(tg_id),
-  chat_id          BIGINT      NOT NULL,     -- id чата-канала с заказами
-  status           subscription_status NOT NULL DEFAULT 'active',
-  days             INT         NOT NULL,
-  next_billing_at  TIMESTAMPTZ,
-  grace_until      TIMESTAMPTZ,
-  last_warning_at  TIMESTAMPTZ,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                 BIGSERIAL PRIMARY KEY,
+  short_id           TEXT        UNIQUE,
+  user_id            BIGINT      NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+  chat_id            BIGINT      NOT NULL,
+  plan               TEXT        NOT NULL DEFAULT 'manual',
+  tier               TEXT,
+  status             subscription_status NOT NULL DEFAULT 'pending',
+  currency           TEXT,
+  amount             NUMERIC(12,2),
+  interval           TEXT        NOT NULL DEFAULT 'day',
+  interval_count     INT         NOT NULL DEFAULT 1,
+  days               INT,
+  next_billing_at    TIMESTAMPTZ,
+  grace_until        TIMESTAMPTZ,
+  cancel_at_period_end BOOLEAN  NOT NULL DEFAULT FALSE,
+  cancelled_at       TIMESTAMPTZ,
+  ended_at           TIMESTAMPTZ,
+  metadata           JSONB,
+  last_warning_at    TIMESTAMPTZ,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions (user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user_chat ON subscriptions (user_id, chat_id);
 
 --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS payments (
+  id                   BIGSERIAL PRIMARY KEY,
+  subscription_id      BIGINT      REFERENCES subscriptions(id) ON DELETE SET NULL,
+  user_id              BIGINT      NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+  amount               NUMERIC(12,2) NOT NULL,
+  currency             TEXT        NOT NULL,
+  status               TEXT        NOT NULL,
+  payment_provider     TEXT        NOT NULL,
+  provider_payment_id  TEXT,
+  provider_customer_id TEXT,
+  invoice_url          TEXT,
+  receipt_url          TEXT,
+  period_start         TIMESTAMPTZ,
+  period_end           TIMESTAMPTZ,
+  paid_at              TIMESTAMPTZ,
+  days                 INT,
+  file_id              TEXT,
+  metadata             JSONB,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+--------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS verifications (
   id               BIGSERIAL PRIMARY KEY,
-  user_id          BIGINT      NOT NULL REFERENCES users(tg_id),
-  amount           NUMERIC(12,2) NOT NULL,
-  status           TEXT        NOT NULL,          -- 'pending','succeeded','failed'
-  provider_payload JSONB,
+  user_id          BIGINT      NOT NULL REFERENCES users(tg_id) ON DELETE CASCADE,
+  role             TEXT        NOT NULL,
+  status           verification_status  NOT NULL DEFAULT 'pending',
+  photos_required  INT         NOT NULL DEFAULT 0,
+  photos_uploaded  INT         NOT NULL DEFAULT 0,
+  expires_at       TIMESTAMPTZ,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE INDEX IF NOT EXISTS idx_verifications_user_role ON verifications (user_id, role);
+
 --------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS executor_verifications (
-  id               BIGSERIAL PRIMARY KEY,
-  user_id          BIGINT      UNIQUE NOT NULL REFERENCES users(tg_id),
-  status           verification_status  NOT NULL DEFAULT 'pending',
-  photo_url        TEXT,
-  comment          TEXT,
-  reviewed_at      TIMESTAMPTZ,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS callback_map (
+  token        TEXT        PRIMARY KEY,
+  action       TEXT        NOT NULL,
+  chat_id      BIGINT,
+  message_id   BIGINT,
+  payload      JSONB       NOT NULL DEFAULT '{}'::jsonb,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS idx_callback_map_action ON callback_map (action, expires_at);
+
+--------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS support_threads (
+  id                   TEXT        PRIMARY KEY,
+  short_id             TEXT        NOT NULL DEFAULT (
+                          'SUP-' || LPAD(nextval('support_thread_short_id_seq')::TEXT, 4, '0')
+                        ),
+  user_chat_id         BIGINT      NOT NULL,
+  user_tg_id           BIGINT,
+  user_message_id      BIGINT      NOT NULL,
+  moderator_chat_id    BIGINT      NOT NULL,
+  moderator_message_id BIGINT      NOT NULL,
+  status               TEXT        NOT NULL DEFAULT 'open',
+  closed_at            TIMESTAMPTZ,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (short_id)
+);
+
+ALTER SEQUENCE support_thread_short_id_seq OWNED BY support_threads.short_id;
+
+CREATE INDEX IF NOT EXISTS idx_support_threads_status ON support_threads (status);
 
 --------------------------------------------------------------------
 /* Джорнэл FSM-событий (для отладки / аналитики) */
 CREATE TABLE IF NOT EXISTS fsm_journal (
-  id               BIGSERIAL PRIMARY KEY,
-  user_id          BIGINT,
-  scope            TEXT,
-  event            TEXT,
-  payload          JSONB,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  id          BIGSERIAL PRIMARY KEY,
+  scope       TEXT        NOT NULL,
+  scope_id    TEXT        NOT NULL,
+  from_state  TEXT,
+  to_state    TEXT,
+  step_id     TEXT,
+  payload     JSONB,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_fsm_journal_user ON fsm_journal (user_id);
+CREATE INDEX IF NOT EXISTS idx_fsm_journal_scope ON fsm_journal (scope, scope_id);
 
 --------------------------------------------------------------------
 /* Вьюхи «Мои заказы» для клиента и курьера */
@@ -178,7 +266,7 @@ DROP VIEW IF EXISTS v_executor_orders;
 CREATE VIEW v_client_orders AS
 SELECT o.*, u.username AS executor_username
 FROM   orders o
-LEFT   JOIN users u ON u.tg_id = o.executor_id;
+LEFT   JOIN users u ON u.tg_id = o.claimed_by;
 
 CREATE VIEW v_executor_orders AS
 SELECT o.*, u.username AS client_username
@@ -186,10 +274,9 @@ FROM   orders o
 LEFT   JOIN users u ON u.tg_id = o.client_id;
 
 /* ---------- INITIAL DATA ---------- */
--- пример системных строк (необязательно)
-INSERT INTO users (tg_id, role, phone_verified, phone)
+INSERT INTO users (tg_id, role, phone_verified, phone, status, is_verified)
 VALUES
-  (0, 'moderator', true, '+70000000000')      -- системный админ-бот
+  (0, 'moderator', true, '+70000000000', 'active_client', true)
 ON CONFLICT (tg_id) DO NOTHING;
 
 COMMIT;
