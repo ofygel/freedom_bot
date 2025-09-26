@@ -198,10 +198,10 @@ const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
 
     try {
       await ctx.editMessageText(header, { reply_markup: keyboard });
+      return;
     } catch (error) {
       logger.debug({ err: error, chatId: ctx.chat?.id }, 'Failed to edit client menu message');
     }
-    return;
   }
 
   await sendClientMenu(ctx, header);
