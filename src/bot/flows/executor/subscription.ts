@@ -13,6 +13,7 @@ import {
   EXECUTOR_MENU_TEXT_LABELS,
   EXECUTOR_SUBSCRIPTION_ACTION,
   ensureExecutorState,
+  isExecutorRoleVerified,
   showExecutorMenu,
 } from './menu';
 import { getExecutorRoleCopy } from '../../copy';
@@ -150,7 +151,7 @@ const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
-  const isVerified = Boolean(ctx.auth.executor.verifiedRoles[state.role]) || ctx.auth.executor.isVerified;
+  const isVerified = isExecutorRoleVerified(ctx, state.role);
   if (!isVerified) {
     state.subscription.status = 'idle';
     state.subscription.selectedPeriodId = undefined;
@@ -268,7 +269,7 @@ export const startExecutorSubscription = async (
   const state = ensureExecutorState(ctx);
   const copy = getExecutorRoleCopy(state.role);
 
-  const isVerified = Boolean(ctx.auth.executor.verifiedRoles[state.role]) || ctx.auth.executor.isVerified;
+  const isVerified = isExecutorRoleVerified(ctx, state.role);
 
   if (!options.skipVerificationCheck && !isVerified) {
     state.subscription.status = 'idle';
@@ -327,7 +328,7 @@ const handlePeriodSelection = async (
   }
 
   const state = ensureExecutorState(ctx);
-  const isVerified = Boolean(ctx.auth.executor.verifiedRoles[state.role]) || ctx.auth.executor.isVerified;
+  const isVerified = isExecutorRoleVerified(ctx, state.role);
 
   if (!isVerified) {
     state.subscription.status = 'idle';

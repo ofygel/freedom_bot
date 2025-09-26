@@ -4,9 +4,11 @@ import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram'
 import {
   EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
+  type AuthExecutorState,
   type AuthUser,
   type BotContext,
   type ExecutorFlowState,
+  type ExecutorRole,
   type ExecutorSubscriptionState,
   type ExecutorVerificationRoleState,
 } from '../../types';
@@ -257,13 +259,28 @@ interface ExecutorAccessStatus {
   hasActiveSubscription: boolean;
 }
 
+const hasRoleVerificationFlags = (verifiedRoles: AuthExecutorState['verifiedRoles']): boolean =>
+  EXECUTOR_ROLES.some((role) => Boolean(verifiedRoles[role]));
+
+export const isExecutorRoleVerified = (ctx: BotContext, role: ExecutorRole): boolean => {
+  const verifiedRoles = ctx.auth.executor.verifiedRoles;
+
+  if (Boolean(verifiedRoles[role])) {
+    return true;
+  }
+
+  if (!hasRoleVerificationFlags(verifiedRoles)) {
+    return ctx.auth.executor.isVerified;
+  }
+
+  return false;
+};
+
 const determineExecutorAccessStatus = (
   ctx: BotContext,
   state: ExecutorFlowState,
 ): ExecutorAccessStatus => {
-  const verifiedRoles = ctx.auth.executor.verifiedRoles;
-  const role = state.role;
-  const isVerified = Boolean(verifiedRoles[role]) || ctx.auth.executor.isVerified;
+  const isVerified = isExecutorRoleVerified(ctx, state.role);
 
   return {
     isVerified,

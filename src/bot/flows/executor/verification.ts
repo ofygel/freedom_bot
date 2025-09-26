@@ -17,6 +17,7 @@ import {
   EXECUTOR_SUBSCRIPTION_ACTION,
   EXECUTOR_VERIFICATION_ACTION,
   ensureExecutorState,
+  isExecutorRoleVerified,
   isExecutorMenuTextCommand,
   resetVerificationState,
   showExecutorMenu,
@@ -351,7 +352,7 @@ export const startExecutorVerification = async (
   const state = ctx.session.executor;
   const role = state.role;
   const verification = state.verification[role];
-  const alreadyVerified = Boolean(ctx.auth.executor.verifiedRoles[role]) || ctx.auth.executor.isVerified;
+  const alreadyVerified = isExecutorRoleVerified(ctx, role);
   const copy = getExecutorRoleCopy(role);
 
   if (alreadyVerified) {
@@ -407,7 +408,7 @@ const handleIncomingPhoto = async (
   const role = state.role;
   let verification = state.verification[role];
   const copy = getExecutorRoleCopy(role);
-  const alreadyVerified = Boolean(ctx.auth.executor.verifiedRoles[role]) || ctx.auth.executor.isVerified;
+  const alreadyVerified = isExecutorRoleVerified(ctx, role);
 
   if (alreadyVerified) {
     await ui.step(ctx, {
