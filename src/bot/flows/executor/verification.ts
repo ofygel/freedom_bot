@@ -505,6 +505,64 @@ const handleTextDuringCollection = async (ctx: BotContext, next: () => Promise<v
   });
 };
 
+const collectMediaGroupPhotos = (
+  update: unknown,
+  mediaGroupId?: string,
+): Message.PhotoMessage[] => {
+  if (!update) {
+    return [];
+  }
+
+  const stack: unknown[] = [update];
+  const found: Message.PhotoMessage[] = [];
+  const seenMessageIds = new Set<number>();
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+
+    if (!current) {
+      continue;
+    }
+
+    if (Array.isArray(current)) {
+      for (const value of current) {
+        stack.push(value);
+      }
+      continue;
+    }
+
+    if (typeof current !== 'object') {
+      continue;
+    }
+
+    if (
+      'media_group_id' in current &&
+      typeof (current as { media_group_id?: unknown }).media_group_id === 'string' &&
+      'photo' in current &&
+      Array.isArray((current as { photo?: unknown }).photo)
+    ) {
+      const message = current as Message.PhotoMessage;
+
+      if (!mediaGroupId || message.media_group_id === mediaGroupId) {
+        const messageId = message.message_id;
+
+        if (!seenMessageIds.has(messageId)) {
+          seenMessageIds.add(messageId);
+          found.push(message);
+        }
+      }
+    }
+
+    for (const value of Object.values(current)) {
+      if (value && (typeof value === 'object' || Array.isArray(value))) {
+        stack.push(value);
+      }
+    }
+  }
+
+  return found;
+};
+
 export const registerExecutorVerification = (bot: Telegraf<BotContext>): void => {
   bot.action(EXECUTOR_VERIFICATION_ACTION, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
@@ -533,25 +591,30 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
   });
 
   bot.on('media_group' as any, async (ctx, next) => {
-    const updateWithMediaGroup = ctx.update as {
-      message?: { media_group?: Message.PhotoMessage[] };
-    };
-    const mediaGroup = updateWithMediaGroup.message?.media_group;
+    const message = ctx.message;
+    const mediaGroupId =
+      typeof message === 'object' && message !== null && 'media_group_id' in message
+        ? (message as Message.PhotoMessage).media_group_id
+        : undefined;
 
-    if (!Array.isArray(mediaGroup) || mediaGroup.length === 0) {
-      await next();
-      return;
+    const albumMembers = collectMediaGroupPhotos(ctx.update, mediaGroupId);
+    const processedIds = new Set<number>();
+    let handledAny = false;
+
+    if (message && typeof message === 'object' && 'photo' in message) {
+      const photoMessage = message as Message.PhotoMessage;
+      processedIds.add(photoMessage.message_id);
+      handledAny = (await handleIncomingPhoto(ctx as BotContext, photoMessage)) || handledAny;
     }
 
-    let handledAny = false;
-    for (const media of mediaGroup) {
-      if (media && typeof media === 'object' && 'photo' in media) {
-        const handled = await handleIncomingPhoto(
-          ctx as unknown as BotContext,
-          media as Message.PhotoMessage,
-        );
-        handledAny = handledAny || handled;
+    for (const media of albumMembers) {
+      if (processedIds.has(media.message_id)) {
+        continue;
       }
+
+      const handled = await handleIncomingPhoto(ctx as BotContext, media);
+      handledAny = handledAny || handled;
+      processedIds.add(media.message_id);
     }
 
     if (!handledAny) {
