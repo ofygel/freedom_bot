@@ -106,7 +106,7 @@ const gatherReminderDescriptors = async (
       FROM sessions s
       JOIN users u ON u.tg_id = s.scope_id
       WHERE s.scope = 'chat'
-        AND u.role = ANY($3::text[])
+        AND u.role = ANY($3::user_role[])
         AND u.trial_ends_at IS NOT NULL
         AND u.trial_ends_at > $1
         AND u.trial_ends_at <= $2
