@@ -51,6 +51,9 @@ const SUBSCRIPTION_TRIAL_ACTION = 'executor:subscription:trial';
 const SUBSCRIPTION_TRIAL_UNAVAILABLE_STEP_ID = 'executor:subscription:trial-unavailable';
 const SUBSCRIPTION_TRIAL_ERROR_STEP_ID = 'executor:subscription:trial-error';
 
+const VERIFICATION_REQUIRED_MESSAGE =
+  'Вы пока не прошли модерацию. Отправьте 2 фотографии удостоверения личности с обеих сторон, чтобы мы выдали доступ.';
+
 const formatKaspiDetails = (): string[] => [
   'Оплатите через Kaspi по реквизитам:',
   `Получатель: ${config.subscriptions.payment.kaspi.name}`,
@@ -147,10 +150,10 @@ const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
     state.subscription.status = 'idle';
     state.subscription.selectedPeriodId = undefined;
     state.subscription.pendingPaymentId = undefined;
-    await ctx.answerCbQuery('Сначала завершите проверку документов.');
+    await ctx.answerCbQuery(VERIFICATION_REQUIRED_MESSAGE);
     await ui.step(ctx, {
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
-      text: 'Сначала завершите проверку документов, чтобы получить ссылку на канал.',
+      text: VERIFICATION_REQUIRED_MESSAGE,
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
@@ -267,7 +270,7 @@ export const startExecutorSubscription = async (
     state.subscription.pendingPaymentId = undefined;
     await ui.step(ctx, {
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
-      text: 'Сначала завершите проверку документов, чтобы получить ссылку на канал.',
+      text: VERIFICATION_REQUIRED_MESSAGE,
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
@@ -323,10 +326,10 @@ const handlePeriodSelection = async (
     state.subscription.status = 'idle';
     state.subscription.selectedPeriodId = undefined;
     state.subscription.pendingPaymentId = undefined;
-    await ctx.answerCbQuery('Сначала завершите проверку документов.');
+    await ctx.answerCbQuery(VERIFICATION_REQUIRED_MESSAGE);
     await ui.step(ctx, {
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
-      text: 'Сначала завершите проверку документов, чтобы получить ссылку на канал.',
+      text: VERIFICATION_REQUIRED_MESSAGE,
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
