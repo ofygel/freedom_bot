@@ -6,8 +6,14 @@ module.exports = {
     'eslint:recommended',
     'plugin:@typescript-eslint/recommended',
     'plugin:@typescript-eslint/recommended-requiring-type-checking',
-    'plugin:promise/recommended'
+    'plugin:promise/recommended',
   ],
   parserOptions: { project: ['./tsconfig.json'] },
-  ignorePatterns: ['dist/**']
+  ignorePatterns: ['dist/**'],
+  rules: {
+    '@typescript-eslint/explicit-function-return-type': [
+      'error',
+      { allowExpressions: true, allowTypedFunctionExpressions: true },
+    ],
+  },
 };

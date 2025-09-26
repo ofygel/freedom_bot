@@ -235,11 +235,16 @@ const parseGeneralTariff = (): TariffRates | null => {
   } satisfies TariffRates;
 };
 
-const parseSubscriptionPrices = () => ({
+const parseSubscriptionPrices = (): {
+  sevenDays: number;
+  fifteenDays: number;
+  thirtyDays: number;
+  currency: 'KZT';
+} => ({
   sevenDays: parsePositiveNumber('SUB_PRICE_7', 5000),
   fifteenDays: parsePositiveNumber('SUB_PRICE_15', 9000),
   thirtyDays: parsePositiveNumber('SUB_PRICE_30', 16000),
-  currency: 'KZT' as const,
+  currency: 'KZT',
 });
 
 export interface AppConfig {

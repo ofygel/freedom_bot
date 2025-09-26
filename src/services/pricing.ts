@@ -80,15 +80,22 @@ const buildQuote = (
   } satisfies OrderPriceDetails;
 };
 
-const createEstimator =
-  (tariff: TariffConfig, generalTariff: TariffRates | null) =>
-  (from: OrderLocation, to: OrderLocation): OrderPriceDetails =>
-    buildQuote(from, to, tariff, generalTariff);
+type PricingEstimator = (from: OrderLocation, to: OrderLocation) => OrderPriceDetails;
+
+interface PricingService {
+  estimateTaxiPrice: PricingEstimator;
+  estimateDeliveryPrice: PricingEstimator;
+}
+
+const createEstimator = (
+  tariff: TariffConfig,
+  generalTariff: TariffRates | null,
+): PricingEstimator => (from, to) => buildQuote(from, to, tariff, generalTariff);
 
 export const createPricingService = (
   pricing: PricingConfig,
   generalTariff: TariffRates | null = null,
-) => ({
+): PricingService => ({
   estimateTaxiPrice: createEstimator(pricing.taxi, generalTariff),
   estimateDeliveryPrice: createEstimator(pricing.delivery, null),
 });

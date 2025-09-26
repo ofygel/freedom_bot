@@ -4,7 +4,6 @@ import type { Server } from 'http';
 import type { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-import * as Sentry from '@sentry/node';
 import type { Update } from 'telegraf/types';
 
 import {
@@ -72,7 +71,10 @@ const isGracefulShutdownError = (error: unknown): boolean => {
 
 const removeTrailingSlashes = (value: string): string => value.replace(/\/+$/, '');
 
-const buildWebhookConfig = (domain: string, secret: string) => {
+const buildWebhookConfig = (
+  domain: string,
+  secret: string,
+): { path: string; url: string } => {
   const trimmedDomain = removeTrailingSlashes(domain);
   const path = `/bot/${secret}`;
   return {
@@ -94,6 +96,19 @@ const parsePort = (value: string | undefined): number => {
   return parsed;
 };
 
+const parseTracesSampleRate = (value: string | undefined): number | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error('SENTRY_TRACES_SAMPLE_RATE must be a number between 0 and 1');
+  }
+
+  return parsed;
+};
+
 const closeServer = (server: Server): Promise<void> =>
   new Promise((resolve, reject) => {
     server.close((error) => {
@@ -106,7 +121,9 @@ const closeServer = (server: Server): Promise<void> =>
     });
   });
 
-const asyncHandler = (handler: (req: Request, res: Response) => Promise<void>) =>
+const asyncHandler = (
+  handler: (req: Request, res: Response) => Promise<void>,
+): ((req: Request, res: Response, next: NextFunction) => void) =>
   (req: Request, res: Response, next: NextFunction): void => {
     // eslint-disable-next-line promise/no-callback-in-promise
     void handler(req, res).catch(next);
@@ -115,7 +132,19 @@ const asyncHandler = (handler: (req: Request, res: Response) => Promise<void>) =
 const startServer = async (webhookPath: string, port: number): Promise<Server> => {
   const serverApp = express();
 
-  serverApp.use(Sentry.Handlers.requestHandler());
+  const sentryHandlers = initSentry({
+    dsn: process.env.SENTRY_DSN,
+    expressApp: serverApp,
+    tracesSampleRate: parseTracesSampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE),
+    environment: process.env.NODE_ENV,
+    release: process.env.RELEASE,
+  });
+
+  if (sentryHandlers) {
+    serverApp.use(sentryHandlers.requestHandler);
+    serverApp.use(sentryHandlers.tracingHandler);
+  }
+
   serverApp.use(helmet());
   serverApp.use(cors({ origin: false }));
   serverApp.use(express.json({ limit: '1mb' }));
@@ -140,7 +169,9 @@ const startServer = async (webhookPath: string, port: number): Promise<Server> =
   serverApp.get('/metrics', asyncHandler(metricsHandler));
   serverApp.get('/openapi.json', openApiHandler);
 
-  serverApp.use(Sentry.Handlers.errorHandler());
+  if (sentryHandlers) {
+    serverApp.use(sentryHandlers.errorHandler);
+  }
 
   return await new Promise<Server>((resolve, reject) => {
     const httpServer = serverApp.listen(port, '0.0.0.0', () => {
@@ -157,7 +188,6 @@ const startServer = async (webhookPath: string, port: number): Promise<Server> =
 const start = async (): Promise<void> => {
   let server: Server | null = null;
   try {
-    initSentry(process.env.SENTRY_DSN);
     await initialiseAppState();
     const { url, path } = buildWebhookConfig(config.webhook.domain, config.webhook.secret);
     const port = parsePort(process.env.PORT);

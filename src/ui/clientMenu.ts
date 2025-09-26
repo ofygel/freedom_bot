@@ -14,7 +14,7 @@ export const CLIENT_MENU = {
   refresh: '🔄 Обновить меню',
 } as const;
 
-const buildKeyboard = () =>
+const buildKeyboard = (): ReturnType<typeof Markup.keyboard> =>
   Markup.keyboard([
     [CLIENT_MENU.taxi, CLIENT_MENU.delivery],
     [CLIENT_MENU.orders],
@@ -72,7 +72,7 @@ export const hideClientMenu = async (
 export const isClientChat = (ctx: BotContext, role?: UserRole): boolean =>
   ctx.chat?.type === 'private' && (role === 'client' || role === undefined);
 
-export const clientMenuText = (city?: string) =>
+export const clientMenuText = (city?: string): string =>
   [
     '🎯 Меню клиента',
     city ? `Текущий город: ${city}.` : undefined,
