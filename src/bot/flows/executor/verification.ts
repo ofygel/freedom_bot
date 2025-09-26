@@ -21,10 +21,13 @@ import {
   resetVerificationState,
   showExecutorMenu,
 } from './menu';
+import { presentRoleSelection } from '../../commands/start';
 import { publishVerificationApplication, type VerificationApplication } from '../../moderation/verifyQueue';
 import { getExecutorRoleCopy } from '../../copy';
 import { ui } from '../../ui';
 import { reportVerificationSubmitted, type UserIdentity } from '../../services/reports';
+import { setChatCommands } from '../../services/commands';
+import { CLIENT_COMMANDS } from '../../commands/sets';
 
 const ROLE_PROMPTS: Record<ExecutorRole, string[]> = {
   courier: [
@@ -54,10 +57,16 @@ const VERIFICATION_START_REMINDER_STEP_ID = 'executor:verification:start-reminde
 const VERIFICATION_PROGRESS_STEP_ID = 'executor:verification:progress';
 const VERIFICATION_PHOTO_REMINDER_STEP_ID = 'executor:verification:photo-reminder';
 const VERIFICATION_ALREADY_APPROVED_STEP_ID = 'executor:verification:approved';
+export const EXECUTOR_ROLE_SWITCH_ACTION = 'executor:verification:switch-role';
 
 const buildSubscriptionShortcutKeyboard = () =>
   Markup.inlineKeyboard([
     [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
+  ]).reply_markup;
+
+const buildVerificationPromptKeyboard = () =>
+  Markup.inlineKeyboard([
+    [Markup.button.callback('↩️ Сменить роль', EXECUTOR_ROLE_SWITCH_ACTION)],
   ]).reply_markup;
 
 const buildVerificationApprovedText = (
@@ -337,6 +346,7 @@ export const startExecutorVerification = async (
   await ui.step(ctx, {
     id: VERIFICATION_PROMPT_STEP_ID,
     text: promptText,
+    keyboard: buildVerificationPromptKeyboard(),
     cleanup: true,
     homeAction: EXECUTOR_MENU_ACTION,
   });
@@ -413,6 +423,7 @@ const handleIncomingPhoto = async (
     await ui.step(ctx, {
       id: VERIFICATION_PROMPT_STEP_ID,
       text: promptText,
+      keyboard: buildVerificationPromptKeyboard(),
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
@@ -572,6 +583,27 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
 
     await ctx.answerCbQuery();
     await startExecutorVerification(ctx);
+  });
+
+  bot.action(EXECUTOR_ROLE_SWITCH_ACTION, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      await ctx.answerCbQuery('Пожалуйста, продолжите в личных сообщениях с ботом.');
+      return;
+    }
+
+    await ctx.answerCbQuery();
+
+    const state = ensureExecutorState(ctx);
+    resetVerificationState(state);
+
+    const roleState = state.verification[state.role];
+    roleState.status = 'idle';
+
+    if (ctx.chat?.id) {
+      await setChatCommands(ctx.telegram, ctx.chat.id, CLIENT_COMMANDS, { showMenuButton: true });
+    }
+
+    await presentRoleSelection(ctx);
   });
 
   bot.hears(EXECUTOR_MENU_TEXT_LABELS.documents, async (ctx) => {
