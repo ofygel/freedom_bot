@@ -80,6 +80,11 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   const shouldEnsureRole = authUser.role !== 'client';
   const shouldUpdatePhone = Boolean(phone && authPhone !== phone);
 
+  const restrictedStatuses = new Set(['suspended', 'banned']);
+  const shouldPreserveStatus = restrictedStatuses.has(authUser.status);
+
+  const nextStatus = shouldPreserveStatus ? authUser.status : 'active_client';
+
   if (shouldEnsureRole || shouldUpdatePhone) {
     try {
       await ensureClientRole({
@@ -98,7 +103,7 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   }
 
   authUser.role = 'client';
-  authUser.status = 'active_client';
+  authUser.status = nextStatus;
   authUser.username = username ?? undefined;
   authUser.firstName = firstName ?? undefined;
   authUser.lastName = lastName ?? undefined;
@@ -108,7 +113,9 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   }
   ctx.auth.isModerator = false;
 
-  ctx.session.isAuthenticated = true;
+  if (!shouldPreserveStatus) {
+    ctx.session.isAuthenticated = true;
+  }
   ctx.session.user = {
     id: authUser.telegramId,
     username: username ?? undefined,

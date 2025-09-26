@@ -312,6 +312,35 @@ describe('client menu role selection', () => {
     assert.equal(setChatCommandsMock.mock.callCount(), 1);
   });
 
+  it('keeps suspended users restricted when selecting the client role', async () => {
+    const ensureClientRoleMock = mock.method(usersDb, 'ensureClientRole', async () => undefined);
+    const setChatCommandsMock = mock.method(
+      commandsService,
+      'setChatCommands',
+      async () => undefined,
+    );
+
+    const { bot, getAction } = createMockBot();
+    registerClientMenu(bot);
+
+    const handler = getAction(ROLE_CLIENT_ACTION);
+    assert.ok(handler, 'Client role action should be registered');
+
+    const { ctx } = createMockContext();
+    ctx.auth.user.status = 'suspended';
+
+    try {
+      await handler(ctx);
+    } finally {
+      ensureClientRoleMock.mock.restore();
+      setChatCommandsMock.mock.restore();
+    }
+
+    assert.equal(ensureClientRoleMock.mock.callCount(), 0);
+    assert.equal(ctx.auth.user.status, 'suspended');
+    assert.equal(ctx.session.isAuthenticated, false);
+  });
+
   it('prompts to choose a city when none is selected', async () => {
     const setChatCommandsMock = mock.method(
       commandsService,
