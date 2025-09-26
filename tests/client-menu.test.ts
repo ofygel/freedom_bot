@@ -132,6 +132,8 @@ interface MockContextOptions {
   role?: BotContext['auth']['user']['role'];
   from?: Partial<ContextFrom>;
   phoneNumber?: string;
+  withCallbackQuery?: boolean;
+  editMessageTextError?: Error;
 }
 
 const createMockContext = (options: MockContextOptions = {}) => {
@@ -143,6 +145,7 @@ const createMockContext = (options: MockContextOptions = {}) => {
   const replyCalls: Array<{ text: string; extra?: unknown; messageId: number }> = [];
   const editMarkupCalls: Array<unknown> = [];
   const deleteMessageCalls: Array<unknown> = [];
+  const editMessageTextCalls: Array<{ text: string; extra?: unknown }> = [];
   let answerCbQueryCount = 0;
 
   const from: ContextFrom = {
@@ -162,6 +165,13 @@ const createMockContext = (options: MockContextOptions = {}) => {
       replyCalls.push({ text, extra, messageId });
       return { message_id: messageId, chat: { id: 99 }, text };
     },
+    editMessageText: async (text: string, extra?: unknown) => {
+      editMessageTextCalls.push({ text, extra });
+      if (options.editMessageTextError) {
+        throw options.editMessageTextError;
+      }
+      return true;
+    },
     telegram: {
       editMessageText: async () => true,
       deleteMessage: async () => true,
@@ -180,11 +190,22 @@ const createMockContext = (options: MockContextOptions = {}) => {
     },
   } as unknown as BotContext;
 
+  if (options.withCallbackQuery) {
+    Object.assign(ctx as unknown as Record<string, unknown>, {
+      callbackQuery: {
+        id: 'cb-id',
+        data: 'role:client',
+        message: { message_id: 1, chat: { id: 99, type: 'private' as const } },
+      },
+    });
+  }
+
   return {
     ctx,
     replyCalls,
     editMarkupCalls,
     deleteMessageCalls,
+    editMessageTextCalls,
     getAnswerCbQueryCount: () => answerCbQueryCount,
   };
 };
@@ -237,6 +258,37 @@ describe('client menu role selection', () => {
     assert.ok(call);
     assert.equal(call.arguments[1], ctx.chat!.id);
     assert.deepEqual(call.arguments[2], CLIENT_COMMANDS);
+  });
+
+  it('sends a fresh client menu message when editing the role prompt fails', async () => {
+    const setChatCommandsMock = mock.method(
+      commandsService,
+      'setChatCommands',
+      async () => undefined,
+    );
+    const { bot, getAction } = createMockBot();
+    registerClientMenu(bot);
+
+    const handler = getAction(ROLE_CLIENT_ACTION);
+    assert.ok(handler, 'Client role action should be registered');
+
+    const { ctx, replyCalls, editMessageTextCalls, deleteMessageCalls, getAnswerCbQueryCount } =
+      createMockContext({
+        withCallbackQuery: true,
+        editMessageTextError: new Error('message is deleted'),
+      });
+
+    try {
+      await handler(ctx);
+    } finally {
+      setChatCommandsMock.mock.restore();
+    }
+
+    assert.equal(deleteMessageCalls.length, 1);
+    assert.equal(editMessageTextCalls.length, 1);
+    assert.equal(getAnswerCbQueryCount(), 1);
+    assert.equal(replyCalls.length, 1);
+    assert.equal(replyCalls[0].text, expectedMenuText);
   });
 
   it('updates executor role to client and shows the persistent menu immediately', async () => {
