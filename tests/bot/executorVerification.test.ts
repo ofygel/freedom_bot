@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, it, mock } from 'node:test';
 
 import { registerExecutorVerification } from '../../src/bot/flows/executor/verification';
 import type { BotContext, SessionState } from '../../src/bot/types';
+import type { Message } from 'telegraf/typings/core/types/typegram';
 import { EXECUTOR_VERIFICATION_PHOTO_COUNT } from '../../src/bot/types';
 import { ui, type UiStepOptions } from '../../src/bot/ui';
 import * as menuModule from '../../src/bot/flows/executor/menu';
@@ -145,12 +146,11 @@ describe('executor verification media group handler', () => {
     const { handleMediaGroup } = registerHandlers();
     const { ctx } = createContext();
 
-    ctx.session.executor.verification.courier.requiredPhotos = 4;
     ctx.session.executor.verification.courier.status = 'collecting';
 
-    const createAlbumMessage = (index: number) => ({
+    const createAlbumMessage = (index: number): Message.PhotoMessage => ({
       message_id: 500 + index,
-      chat: { id: ctx.chat!.id, type: 'private' as const },
+      chat: { id: ctx.chat!.id, type: 'private' as const, first_name: 'Tester' },
       date: Date.now(),
       media_group_id: 'album-1',
       photo: [
@@ -160,10 +160,13 @@ describe('executor verification media group handler', () => {
     });
 
     const album = [createAlbumMessage(1), createAlbumMessage(2)];
-    (ctx as unknown as { update: { message: { media_group: typeof album } } }).update = {
-      message: { media_group: album } as { media_group: typeof album },
-    };
-    (ctx as unknown as { message: (typeof album)[number] }).message = album[0];
+    const updates = album.map((message, index) => ({
+      update_id: 800 + index,
+      message,
+    }));
+
+    (ctx as unknown as { update: BotContext['update'] }).update = updates as unknown as BotContext['update'];
+    (ctx as unknown as { message: Message.PhotoMessage }).message = album[0];
 
     let nextCalled = false;
     await handleMediaGroup(ctx, async () => {
@@ -175,6 +178,11 @@ describe('executor verification media group handler', () => {
     const verification = ctx.session.executor.verification.courier;
     assert.equal(verification.status, 'submitted');
     assert.equal(verification.uploadedPhotos.length, 0);
+    const persistCall =
+      persistMock.mock.calls[0]?.arguments[0] as Parameters<
+        typeof verificationsDb.persistVerificationSubmission
+      >[0];
+    assert.equal(persistCall.photosUploaded, EXECUTOR_VERIFICATION_PHOTO_COUNT);
     assert.equal(persistMock.mock.callCount(), 1);
     assert.equal(publishMock.mock.callCount(), 1);
   });
