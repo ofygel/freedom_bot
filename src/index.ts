@@ -131,6 +131,7 @@ const asyncHandler = (
 
 const startServer = async (webhookPath: string, port: number): Promise<Server> => {
   const serverApp = express();
+  serverApp.set('trust proxy', 1);
 
   const sentryHandlers = initSentry({
     dsn: process.env.SENTRY_DSN,
