@@ -108,10 +108,6 @@ const submitForModeration = async (
     },
     photoCount: verification.uploadedPhotos.length,
     submittedAt,
-    approvalNotification: {
-      text: buildVerificationApprovedText(copy),
-      keyboard: buildSubscriptionShortcutKeyboard(),
-    },
     sessionContext: {
       scope: 'chat',
       scopeId: applicantId.toString(10),

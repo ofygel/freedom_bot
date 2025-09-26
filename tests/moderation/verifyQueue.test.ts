@@ -13,6 +13,7 @@ import {
   TrialSubscriptionUnavailableError,
   type CreateTrialSubscriptionParams,
 } from '../../src/db/subscriptions';
+import { EXECUTOR_ORDERS_ACTION } from '../../src/bot/flows/executor/menu';
 
 const createTelegram = () => {
   const sendMessage = mock.fn<
@@ -91,6 +92,58 @@ describe('notifyVerificationApproval', () => {
       const [button] = row;
       assert.ok(button);
       assert.equal(button.text, 'Заказы');
+      if ('callback_data' in button) {
+        assert.equal(button.callback_data, EXECUTOR_ORDERS_ACTION);
+      } else {
+        assert.fail('Expected callback button for trial activation');
+      }
+    }
+  });
+
+  it('prefers the trial notification over a custom approval payload', async () => {
+    getChannelBindingMock = mock.method(bindings, 'getChannelBinding', async () => ({
+      type: 'drivers',
+      chatId: -100502,
+    }));
+
+    const trialExpiresAt = new Date('2024-05-02T15:00:00Z');
+    createTrialMock = mock.method(subscriptionsDb, 'createTrialSubscription', async () => ({
+      subscriptionId: 98765,
+      expiresAt: trialExpiresAt,
+    }));
+
+    const { telegram, sendMessage } = createTelegram();
+
+    await notifyVerificationApproval(telegram, {
+      ...baseApplication,
+      approvalNotification: {
+        text: 'Custom approval message',
+        keyboard: {
+          inline_keyboard: [[{ text: 'Custom button', callback_data: 'custom:action' }]],
+        },
+      },
+    });
+
+    assert.equal(createTrialMock.mock.callCount(), 1);
+    const [messageCall] = sendMessage.mock.calls;
+    assert.ok(messageCall);
+    const [, text, extra] = messageCall.arguments;
+    assert.equal(typeof text, 'string');
+    if (typeof text === 'string') {
+      assert.ok(text.includes('бесплатный доступ на 2 дня'));
+    }
+
+    const replyMarkup = extra?.reply_markup as InlineKeyboardMarkup | undefined;
+    assert.ok(replyMarkup?.inline_keyboard);
+    const [row] = replyMarkup.inline_keyboard ?? [];
+    assert.ok(row);
+    const [button] = row;
+    assert.ok(button);
+    assert.equal(button.text, 'Заказы');
+    if ('callback_data' in button) {
+      assert.equal(button.callback_data, EXECUTOR_ORDERS_ACTION);
+    } else {
+      assert.fail('Expected callback button for trial activation');
     }
   });
 
