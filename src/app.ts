@@ -16,6 +16,7 @@ import { registerExecutorRoleSelect } from './bot/flows/executor/roleSelect';
 import { registerExecutorSubscription } from './bot/flows/executor/subscription';
 import { registerExecutorVerification } from './bot/flows/executor/verification';
 import { registerJoinRequests } from './bot/channels/joinRequests';
+import { registerMembershipSync } from './bot/channels/membership';
 import { registerOrdersChannel } from './bot/channels/ordersChannel';
 import {
   registerPaymentModerationQueue,
@@ -85,6 +86,7 @@ registerPaymentModerationQueue(app);
 registerSupportModerationBridge(app);
 registerOrdersChannel(app);
 registerJoinRequests(app);
+registerMembershipSync(app);
 
 app.on('message', unknownHandler);
 
