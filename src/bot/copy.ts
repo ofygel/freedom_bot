@@ -1,5 +1,7 @@
+import type { ExecutorRole } from './types';
+
 export const copy = {
-  nudge: 'Что дальше? Выберите действие ниже.',
+  // nudge убран — мешал пользователям.
   expiredButton: 'Кнопка устарела — отправляю актуальное меню…',
   tooFrequent: 'Слишком часто. Попробуйте через секунду.',
   waiting: 'Принял. Обрабатываю…',
@@ -44,3 +46,30 @@ export const copy = {
   noAccess: 'Недостаточно прав для действия.',
   serviceUnavailable: 'Сервис временно недоступен. Попробуйте позже.',
 };
+
+interface ExecutorRoleCopy {
+  emoji: string;
+  noun: string;
+  genitive: string;
+  pluralGenitive: string;
+}
+
+const EXECUTOR_ROLE_COPY: Record<ExecutorRole, ExecutorRoleCopy> = {
+  courier: {
+    emoji: '🚚',
+    noun: 'курьер',
+    genitive: 'курьера',
+    pluralGenitive: 'курьеров',
+  },
+  driver: {
+    emoji: '🚗',
+    noun: 'водитель',
+    genitive: 'водителя',
+    pluralGenitive: 'водителей',
+  },
+};
+
+export const getExecutorRoleCopy = (role: ExecutorRole): ExecutorRoleCopy =>
+  EXECUTOR_ROLE_COPY[role] ?? EXECUTOR_ROLE_COPY.courier;
+
+export type { ExecutorRoleCopy };

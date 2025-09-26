@@ -22,7 +22,6 @@
     "src/types/**/*.ts",
     "src/utils/**/*.ts",
     "src/lib/**/*.ts",
-    "src/experiments/**/*.ts",
     "src/metrics/**/*.ts",
     "src/scripts/**/*.ts",
     "src/ui/**/*.ts",

@@ -12,7 +12,7 @@ import {
   ensureExecutorState,
   showExecutorMenu,
 } from './menu';
-import { getExecutorRoleCopy } from './roleCopy';
+import { getExecutorRoleCopy } from '../../copy';
 
 const ORDERS_LINK_STEP_ID = 'executor:orders:link';
 

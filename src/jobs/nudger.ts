@@ -134,71 +134,8 @@ export const startInactivityNudger = (bot: Telegraf<BotContext>): void => {
     return;
   }
 
-  task = cron.schedule(config.jobs.nudger, async () => {
-    try {
-      for (;;) {
-        const { rows } = await pool.query<PendingSessionRow>(
-          `
-            SELECT s.scope, s.scope_id, s.flow_state, s.flow_payload, u.role, u.keyboard_nonce
-            FROM sessions s
-            LEFT JOIN users u ON u.tg_id = s.scope_id
-            WHERE s.scope = 'chat'
-              AND s.flow_state IS NOT NULL
-              AND s.last_step_at IS NOT NULL
-              AND (s.nudge_sent_at IS NULL OR s.nudge_sent_at < s.last_step_at)
-              AND s.last_step_at < now() - interval '90 seconds'
-            ORDER BY s.last_step_at
-            LIMIT $1
-          `,
-          [BATCH_LIMIT],
-        );
-
-        if (rows.length === 0) {
-          break;
-        }
-
-        for (const row of rows) {
-          const key = buildSessionKey(row);
-          if (!key) {
-            continue;
-          }
-
-          const chatIdNumber = Number(row.scope_id);
-          if (!Number.isFinite(chatIdNumber) || chatIdNumber <= 0) {
-            await markNudged(pool, key);
-            continue;
-          }
-
-          const payload = parseFlowPayload(row.flow_payload);
-          const keyboard = buildNudgeKeyboard(payload, row.role, row.scope_id, row.keyboard_nonce);
-          if (!keyboard) {
-            await markNudged(pool, key);
-            continue;
-          }
-
-          try {
-            await bot.telegram.sendMessage(chatIdNumber, copy.nudge, {
-              reply_markup: keyboard,
-            });
-          } catch (error) {
-            logger.debug({ err: error, chatId: chatIdNumber }, 'Failed to send inactivity nudge');
-          } finally {
-            try {
-              await markNudged(pool, key);
-            } catch (markError) {
-              logger.debug({ err: markError, scope: key.scope, scopeId: key.scopeId }, 'Failed to mark nudge sent');
-            }
-          }
-        }
-
-        if (rows.length < BATCH_LIMIT) {
-          break;
-        }
-      }
-    } catch (error) {
-      logger.error({ err: error }, 'Inactivity nudger tick failed');
-    }
-  });
+  // cron disabled: UX-spam, включать после доработки.
+  logger.info('Inactivity nudger disabled until UX improvements are implemented');
 };
 
 export const stopInactivityNudger = (): void => {
