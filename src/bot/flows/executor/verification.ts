@@ -1,5 +1,6 @@
 import { Markup } from 'telegraf';
 import type { Telegraf } from 'telegraf';
+import { TelegramError } from 'telegraf';
 import type { Message } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../../../config';
@@ -160,7 +161,6 @@ const submitForModeration = async (
     };
 
     const moderationChatId = result.chatId;
-    const sourceChatId = ctx.chat?.id;
     const storedPhotos = [...verification.uploadedPhotos];
 
     if (storedPhotos.length > 0) {
@@ -169,21 +169,60 @@ const submitForModeration = async (
           { applicationId, role, applicantId, moderationChatId },
           'Cannot forward verification photos without moderation chat id',
         );
-      } else if (typeof sourceChatId !== 'number') {
-        logger.warn(
-          { applicationId, role, applicantId, sourceChatId },
-          'Cannot forward verification photos without source chat id',
-        );
       } else {
+        const baseAnnotationLines = [
+          `📎 Фотографии документов для заявки ${applicationId}.`,
+        ];
+
+        const applicant = application.applicant;
+
+        if (applicant.username) {
+          baseAnnotationLines.push(`Пользователь: @${applicant.username}`);
+        }
+
+        const fullName = [applicant.firstName, applicant.lastName]
+          .map((value) => value?.trim())
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+
+        if (fullName) {
+          baseAnnotationLines.push(`Имя: ${fullName}`);
+        }
+
+        baseAnnotationLines.push(`Роль: ${copy.noun} (${role}).`);
+
         const failedPhotos: typeof verification.uploadedPhotos = [];
         let forwardedCount = 0;
 
-        for (const photo of storedPhotos) {
+        for (const [index, photo] of storedPhotos.entries()) {
+          const caption = index === 0 ? baseAnnotationLines.join('\n') : undefined;
+
           try {
-            await ctx.telegram.copyMessage(moderationChatId, sourceChatId, photo.messageId);
+            await ctx.telegram.sendPhoto(
+              moderationChatId,
+              photo.fileId,
+              caption ? { caption } : undefined,
+            );
             forwardedCount += 1;
           } catch (error) {
             failedPhotos.push(photo);
+
+            if (error instanceof TelegramError) {
+              logger.error(
+                {
+                  err: error,
+                  applicationId,
+                  role,
+                  applicantId,
+                  moderationChatId,
+                  fileId: photo.fileId,
+                },
+                'Failed to send verification photo to moderation chat',
+              );
+              continue;
+            }
+
             logger.error(
               {
                 err: error,
@@ -191,39 +230,19 @@ const submitForModeration = async (
                 role,
                 applicantId,
                 moderationChatId,
-                sourceChatId,
-                messageId: photo.messageId,
+                fileId: photo.fileId,
               },
-              'Failed to forward verification photo to moderation chat',
+              'Unexpected error while sending verification photo to moderation chat',
             );
           }
         }
 
         if (forwardedCount > 0) {
-          const applicant = application.applicant;
-          const annotationLines = [
-            `📎 Фотографии документов для заявки ${applicationId}.`,
-          ];
-
-          if (applicant.username) {
-            annotationLines.push(`Пользователь: @${applicant.username}`);
-          }
-
-          const fullName = [applicant.firstName, applicant.lastName]
-            .map((value) => value?.trim())
-            .filter(Boolean)
-            .join(' ')
-            .trim();
-
-          if (fullName) {
-            annotationLines.push(`Имя: ${fullName}`);
-          }
-
-          annotationLines.push(`Роль: ${copy.noun} (${role}).`);
+          const annotationLines = [...baseAnnotationLines];
 
           if (failedPhotos.length > 0) {
             annotationLines.push(
-              `⚠️ Не удалось скопировать ${failedPhotos.length} из ${storedPhotos.length} фото, они останутся в заявке для повторной отправки.`,
+              `⚠️ Не удалось отправить ${failedPhotos.length} из ${storedPhotos.length} фото, они останутся в заявке для повторной отправки.`,
             );
           }
 
