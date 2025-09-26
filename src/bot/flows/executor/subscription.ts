@@ -25,6 +25,7 @@ import {
 } from './subscriptionPlans';
 import { createShortId } from '../../../utils/ids';
 import { submitSubscriptionPaymentReview } from '../../moderation/paymentQueue';
+import { failedPaymentsCounter } from '../../../metrics/business';
 import { getChannelBinding } from '../../channels/bindings';
 import {
   createTrialSubscription,
@@ -487,6 +488,7 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<boolean> => {
     await showExecutorMenu(ctx, { skipAccessCheck: true });
     return true;
   } catch (error) {
+    failedPaymentsCounter.inc();
     logger.error(
       { err: error, paymentId, telegramId: ctx.auth.user.telegramId },
       'Failed to submit subscription payment for moderation',

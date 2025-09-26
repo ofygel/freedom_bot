@@ -7,10 +7,24 @@ service:
   type: ClusterIP
   port: 3000
 env:
-  BOT_TOKEN: ""
-  WEBHOOK_DOMAIN: ""
-  WEBHOOK_SECRET: ""
-  DATABASE_URL: ""
+  - name: BOT_TOKEN
+    value: ""
+  - name: WEBHOOK_DOMAIN
+    value: ""
+  - name: WEBHOOK_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: freedom-bot
+        key: webhookSecret
+  - name: DATABASE_URL
+    value: ""
+  - name: SENTRY_DSN
+    valueFrom:
+      secretKeyRef:
+        name: freedom-bot
+        key: sentryDsn
+  - name: SENTRY_TRACES_SAMPLE_RATE
+    value: '0.1'
 ingress:
   enabled: false
   className: ""
@@ -21,7 +35,15 @@ ingress:
         - path: /
           pathType: Prefix
   tls: []
-resources: {}
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+loki:
+  url: http://loki:3100
 nodeSelector: {}
 tolerations: []
 affinity: {}

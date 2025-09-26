@@ -1,0 +1,26 @@
+name: 'DB migrations'
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'db/migrations/**'
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Postgres
+        uses: ikalnytskyi/action-setup-postgres@v5
+        with:
+          postgres-version: '16'
+          username: user
+          password: pass
+          database: db
+      - name: Install dbmate
+        run: |
+          curl -fsSL https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 -o /usr/local/bin/dbmate
+          chmod +x /usr/local/bin/dbmate
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgres://user:pass@localhost:5432/db?sslmode=disable
+        run: dbmate --migrations-dir=db/migrations up

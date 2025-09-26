@@ -1,5 +1,7 @@
 import type { PoolClient } from './client';
 import { pool } from './client';
+import { logger } from '../config';
+import { activeOrdersGauge } from '../metrics/business';
 
 import type {
   OrderInsertInput,
@@ -170,6 +172,20 @@ const mapOrderWithExecutorRow = (row: OrderWithExecutorRow): OrderWithExecutor =
   } satisfies OrderWithExecutor;
 };
 
+const updateActiveOrdersGauge = async (queryable: Pick<PoolClient, 'query'>): Promise<void> => {
+  try {
+    const { rows } = await queryable.query<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM orders WHERE status IN ('open', 'claimed')",
+    );
+    const [row] = rows;
+    if (row && typeof row.count === 'number') {
+      activeOrdersGauge.set(row.count);
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to update active orders gauge');
+  }
+};
+
 export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord> => {
   const { rows } = await pool.query<OrderRow>(
     `
@@ -273,6 +289,8 @@ export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord>
     throw new Error('Failed to insert order');
   }
 
+  await updateActiveOrdersGauge(pool);
+
   return mapOrderRow(row);
 };
 
@@ -329,7 +347,12 @@ export const tryClaimOrder = async (
   );
 
   const [row] = rows;
-  return row ? mapOrderRow(row) : null;
+  if (!row) {
+    return null;
+  }
+
+  await updateActiveOrdersGauge(client);
+  return mapOrderRow(row);
 };
 
 export const tryReleaseOrder = async (
@@ -351,7 +374,12 @@ export const tryReleaseOrder = async (
   );
 
   const [row] = rows;
-  return row ? mapOrderRow(row) : null;
+  if (!row) {
+    return null;
+  }
+
+  await updateActiveOrdersGauge(client);
+  return mapOrderRow(row);
 };
 
 export const tryReclaimOrder = async (
@@ -373,7 +401,12 @@ export const tryReclaimOrder = async (
   );
 
   const [row] = rows;
-  return row ? mapOrderRow(row) : null;
+  if (!row) {
+    return null;
+  }
+
+  await updateActiveOrdersGauge(client);
+  return mapOrderRow(row);
 };
 
 export const tryCompleteOrder = async (
@@ -393,7 +426,12 @@ export const tryCompleteOrder = async (
   );
 
   const [row] = rows;
-  return row ? mapOrderRow(row) : null;
+  if (!row) {
+    return null;
+  }
+
+  await updateActiveOrdersGauge(client);
+  return mapOrderRow(row);
 };
 
 export const tryRestoreCompletedOrder = async (
@@ -413,7 +451,12 @@ export const tryRestoreCompletedOrder = async (
   );
 
   const [row] = rows;
-  return row ? mapOrderRow(row) : null;
+  if (!row) {
+    return null;
+  }
+
+  await updateActiveOrdersGauge(client);
+  return mapOrderRow(row);
 };
 
 export const tryCancelOrder = async (
@@ -426,7 +469,12 @@ export const tryCancelOrder = async (
   );
 
   const [row] = rows;
-  return row ? mapOrderRow(row) : null;
+  if (!row) {
+    return null;
+  }
+
+  await updateActiveOrdersGauge(client);
+  return mapOrderRow(row);
 };
 
 export interface ListClientOrdersOptions {
