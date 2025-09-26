@@ -36,6 +36,7 @@ before(async () => {
 });
 
 const ROLE_CLIENT_ACTION = 'role:client';
+const CLIENT_MENU_ACTION = 'client:menu:show';
 
 const expectedMenuText = '🏙️ Город: Алматы\n\nДобро пожаловать! Чем можем помочь?';
 const DEFAULT_CITY: AppCity = 'almaty';
@@ -289,6 +290,28 @@ describe('client menu role selection', () => {
     assert.equal(getAnswerCbQueryCount(), 1);
     assert.equal(replyCalls.length, 1);
     assert.equal(replyCalls[0].text, expectedMenuText);
+  });
+
+  it('renders the default client menu without repeating the city label', async () => {
+    const { bot, getAction } = createMockBot();
+    registerClientMenu(bot);
+
+    const handler = getAction(CLIENT_MENU_ACTION);
+    assert.ok(handler, 'Client menu action should be registered');
+
+    const { ctx, editMessageTextCalls } = createMockContext({ withCallbackQuery: true });
+
+    await handler(ctx);
+
+    assert.equal(editMessageTextCalls.length, 1);
+    const [call] = editMessageTextCalls;
+    assert.ok(call);
+    const { text } = call;
+    assert.equal((text.match(/🏙️ Город:/g) ?? []).length, 1);
+    assert.ok(
+      !text.includes('Текущий город:'),
+      'Default client menu body should not duplicate the city label',
+    );
   });
 
   it('updates executor role to client and shows the persistent menu immediately', async () => {
