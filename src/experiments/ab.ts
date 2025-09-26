@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-import { pool } from '../db';
+import { hasUiEventsTable, hasUserExperimentsTable, pool } from '../db';
 
 export type Variant = 'A' | 'B';
 
@@ -10,6 +10,10 @@ const decideVariant = (userId: number, experiment: string): Variant => {
 };
 
 export async function getVariant(userId: number, experiment: string): Promise<Variant> {
+  if (!(await hasUserExperimentsTable())) {
+    return decideVariant(userId, experiment);
+  }
+
   const existing = await pool.query<{ variant: Variant }>(
     'SELECT variant FROM user_experiments WHERE user_id = $1 AND experiment = $2',
     [userId, experiment],
@@ -36,6 +40,10 @@ export async function logUiEvent(
   variant?: Variant,
   context: unknown = {},
 ): Promise<void> {
+  if (!(await hasUiEventsTable())) {
+    return;
+  }
+
   await pool.query(
     'INSERT INTO ui_events(user_id, experiment, variant, event, target, context) VALUES ($1, $2, $3, $4, $5, $6::jsonb)',
     [userId, experiment ?? null, variant ?? null, event, target, JSON.stringify(context ?? {})],
