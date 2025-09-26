@@ -151,6 +151,38 @@ describe('geocoding 2ГИС firm links', () => {
     await expectTwoGisResolution(query, `${firmUrl}, `);
   });
 
+  it('normalizes map links to canonical geo URLs', async () => {
+    globalThis.fetch = async (input: unknown): Promise<Response> => {
+      const url =
+        typeof input === 'string'
+          ? new URL(input)
+          : input instanceof URL
+          ? input
+          : new URL((input as Request).url);
+
+      assert.equal(url.hostname, 'nominatim.test');
+      assert.equal(url.pathname, '/reverse');
+      assert.equal(Number(url.searchParams.get('lat')), 43.23979);
+      assert.equal(Number(url.searchParams.get('lon')), 76.914014);
+
+      const body = JSON.stringify({ display_name: 'Test address' });
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    const mapUrl =
+      'https://2gis.kz/almaty?m=76.914014,43.239790/18&q=52/1,%20%D0%90%D0%B1%D0%B0%D0%B9%20%D0%B4%D0%B0%D2%A3%D2%93%D1%8B%D0%BB%D1%8B';
+    const result = await geocodeAddress(`Ресторан ${mapUrl}`);
+
+    assert.ok(result, 'expected map link to resolve');
+    assert.equal(result?.latitude, 43.23979);
+    assert.equal(result?.longitude, 76.914014);
+    assert.equal(result?.address, 'Test address');
+    assert.equal(result?.twoGisUrl, 'https://2gis.kz/almaty/geo/0/76.914014,43.23979');
+  });
+
   it('includes selected city when resolving manual addresses', async () => {
     const seenUrls: string[] = [];
     installSuccessfulFetchMock(seenUrls, (url) => {
