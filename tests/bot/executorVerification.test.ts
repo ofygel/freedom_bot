@@ -15,6 +15,7 @@ import * as startModule from '../../src/bot/commands/start';
 import * as clientMenu from '../../src/ui/clientMenu';
 import * as phoneCollect from '../../src/bot/flows/common/phoneCollect';
 import * as subscriptionModule from '../../src/bot/flows/executor/subscription';
+import * as reportsModule from '../../src/bot/services/reports';
 import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from '../../src/bot/commands/sets';
 
 const DEFAULT_CITY = 'almaty' as const;
@@ -145,6 +146,7 @@ describe('executor verification media group handler', () => {
   let showMenuMock: ReturnType<typeof mock.method>;
   let persistMock: ReturnType<typeof mock.method>;
   let publishMock: ReturnType<typeof mock.method>;
+  let reportMock: ReturnType<typeof mock.method>;
 
   beforeEach(() => {
     recordedSteps = [];
@@ -160,6 +162,7 @@ describe('executor verification media group handler', () => {
       messageId: 1,
       token: 'token',
     }));
+    reportMock = mock.method(reportsModule, 'reportVerificationSubmitted', async () => undefined);
   });
 
   afterEach(() => {
@@ -167,6 +170,7 @@ describe('executor verification media group handler', () => {
     showMenuMock.mock.restore();
     persistMock.mock.restore();
     publishMock.mock.restore();
+    reportMock.mock.restore();
   });
 
   it('processes multiple photos within a single media group album', async () => {
@@ -212,6 +216,11 @@ describe('executor verification media group handler', () => {
     assert.equal(persistCall.photosUploaded, EXECUTOR_VERIFICATION_PHOTO_COUNT);
     assert.equal(persistMock.mock.callCount(), 1);
     assert.equal(publishMock.mock.callCount(), 1);
+    assert.equal(reportMock.mock.callCount(), 1);
+    assert.equal(
+      reportMock.mock.calls[0]?.arguments[3],
+      EXECUTOR_VERIFICATION_PHOTO_COUNT,
+    );
   });
 
   it('allows switching executor role during verification and shows role picker on next /start', async () => {
