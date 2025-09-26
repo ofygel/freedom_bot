@@ -46,6 +46,12 @@ are missing or blank.
 - `DRIVERS_CHANNEL_INVITE` – Optional fallback invite link delivered to executors when
   an automatic invite cannot be created.
 
+## Feature toggles
+
+- `FEATURE_TRIAL_ENABLED` – Controls whether executors can activate the free trial
+  subscription period from the bot. Enabled by default; set to `false` to disable
+  the trial offer entirely.
+
 ## Location and geocoding
 
 - `CITY_DEFAULT` – Optional default city appended to short address queries.
