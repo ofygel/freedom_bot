@@ -31,7 +31,10 @@ import {
 } from '../../db';
 import { getChannelBinding } from '../channels/bindings';
 import { getExecutorRoleCopy } from '../copy';
-import { EXECUTOR_SUBSCRIPTION_ACTION } from '../flows/executor/menu';
+import {
+  EXECUTOR_ORDERS_ACTION,
+  EXECUTOR_SUBSCRIPTION_ACTION,
+} from '../flows/executor/menu';
 import {
   createTrialSubscription,
   TrialSubscriptionUnavailableError,
@@ -292,6 +295,9 @@ const buildApprovalKeyboard = (): InlineKeyboardMarkup =>
     [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
   ]).reply_markup;
 
+const buildTrialApprovalKeyboard = (): InlineKeyboardMarkup =>
+  Markup.inlineKeyboard([[Markup.button.callback('Заказы', EXECUTOR_ORDERS_ACTION)]]).reply_markup;
+
 const buildFallbackApprovalNotification = (
   application: VerificationApplication,
 ): { text: string; keyboard: InlineKeyboardMarkup } => {
@@ -309,7 +315,6 @@ const buildFallbackApprovalNotification = (
 
 const activateVerificationTrial = async (
   application: VerificationApplication,
-  keyboard: InlineKeyboardMarkup,
 ): Promise<{ text: string; keyboard: InlineKeyboardMarkup } | null> => {
   const applicantId = application.applicant.telegramId;
   if (!applicantId) {
@@ -363,7 +368,7 @@ const activateVerificationTrial = async (
     lines.push(`Нажмите кнопку ниже, чтобы получить ссылку на канал ${copy.genitive}.`);
     lines.push('Если потребуется помощь, напишите в поддержку.');
 
-    return { text: lines.join('\n'), keyboard };
+    return { text: lines.join('\n'), keyboard: buildTrialApprovalKeyboard() };
   } catch (error) {
     if (error instanceof TrialSubscriptionUnavailableError) {
       logger.info(
@@ -396,7 +401,7 @@ export const notifyVerificationApproval = async (
 
   const fallback = buildFallbackApprovalNotification(application);
   const notification = application.approvalNotification;
-  const trialNotification = await activateVerificationTrial(application, fallback.keyboard);
+  const trialNotification = await activateVerificationTrial(application);
   const text = notification?.text?.trim() || trialNotification?.text || fallback.text;
   const keyboard = notification?.keyboard ?? trialNotification?.keyboard ?? fallback.keyboard;
 
