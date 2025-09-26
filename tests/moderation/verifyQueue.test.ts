@@ -3,6 +3,7 @@ import '../helpers/setup-env';
 import assert from 'node:assert/strict';
 import { afterEach, describe, it, mock } from 'node:test';
 
+import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 import type { Telegram } from 'telegraf';
 
 import { notifyVerificationApproval, type VerificationApplication } from '../../src/bot/moderation/verifyQueue';
@@ -83,6 +84,13 @@ describe('notifyVerificationApproval', () => {
     assert.ok(extra && typeof extra === 'object');
     if (extra && typeof extra === 'object') {
       assert.ok('reply_markup' in extra);
+      const replyMarkup = extra.reply_markup as InlineKeyboardMarkup;
+      assert.ok(replyMarkup?.inline_keyboard);
+      const [row] = replyMarkup.inline_keyboard ?? [];
+      assert.ok(row);
+      const [button] = row;
+      assert.ok(button);
+      assert.equal(button.text, 'Заказы');
     }
   });
 
@@ -103,10 +111,17 @@ describe('notifyVerificationApproval', () => {
     assert.equal(createTrialMock.mock.callCount(), 1);
     const [messageCall] = sendMessage.mock.calls;
     assert.ok(messageCall);
-    const [, text] = messageCall.arguments;
+    const [, text, extra] = messageCall.arguments;
     assert.equal(typeof text, 'string');
     if (typeof text === 'string') {
       assert.ok(text.includes('оформите подписку'));
     }
+    const replyMarkup = extra?.reply_markup as InlineKeyboardMarkup | undefined;
+    assert.ok(replyMarkup?.inline_keyboard);
+    const [row] = replyMarkup.inline_keyboard ?? [];
+    assert.ok(row);
+    const [button] = row;
+    assert.ok(button);
+    assert.equal(button.text, '📨 Получить ссылку на канал');
   });
 });
