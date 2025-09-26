@@ -22,36 +22,19 @@ import { START_DELIVERY_ORDER_ACTION } from './deliveryOrderFlow';
 import { buildInlineKeyboard } from '../../keyboards/common';
 import { bindInlineKeyboardToUser } from '../../services/callbackTokens';
 import { copy } from '../../copy';
-import { getVariant, logUiEvent, type Variant } from '../../../experiments/ab';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
 const CLIENT_MENU_CITY_ACTION = 'clientMenu' as const;
 const CLIENT_MENU_REFRESH_ACTION = 'client:menu:refresh';
-const HOME_MENU_EXPERIMENT = 'client_home_menu_v1';
-
 export const logClientMenuClick = async (
   ctx: BotContext,
   target: string,
   extra: Record<string, unknown> = {},
 ) => {
-  const variant = ctx.session.ui?.clientMenuVariant as Variant | undefined;
-  if (!variant) {
-    return;
-  }
-
-  const callbackData =
-    ctx.callbackQuery && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
-  const context = callbackData ? { ...extra, cb: callbackData } : extra;
-
-  await logUiEvent(
-    ctx.auth.user.telegramId,
-    'click',
-    target,
-    HOME_MENU_EXPERIMENT,
-    variant,
-    context,
-  );
+  void ctx;
+  void target;
+  void extra;
 };
 
 const applyClientCommands = async (ctx: BotContext): Promise<void> => {
@@ -173,28 +156,16 @@ const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
   const header = miniStatus ? `${miniStatus}\n\n${baseText}` : baseText;
 
   if (ctx.callbackQuery) {
-    const variant = await getVariant(ctx.auth.user.telegramId, HOME_MENU_EXPERIMENT);
-    uiState.clientMenuVariant = variant;
+    uiState.clientMenuVariant = undefined;
 
-    const rowsVariantA = [
+    const rows = [
       [{ label: '🚕 Такси', action: START_TAXI_ORDER_ACTION }],
       [{ label: '📦 Доставка', action: START_DELIVERY_ORDER_ACTION }],
-    ];
-    const rowsVariantB = [
-      [{ label: '📦 Доставка', action: START_DELIVERY_ORDER_ACTION }],
-      [{ label: '🚕 Такси', action: START_TAXI_ORDER_ACTION }],
-    ];
-
-    const rows = (variant === 'A' ? rowsVariantA : rowsVariantB).concat([
       [{ label: '📋 Мои заказы', action: CLIENT_ORDERS_ACTION }],
       [{ label: copy.refresh, action: CLIENT_MENU_REFRESH_ACTION }],
-    ]);
+    ];
 
     const keyboard = bindInlineKeyboardToUser(ctx, buildInlineKeyboard(rows));
-
-    await logUiEvent(ctx.auth.user.telegramId, 'expose', 'client_home_menu', HOME_MENU_EXPERIMENT, variant, {
-      city,
-    });
 
     try {
       await ctx.editMessageText(header, { reply_markup: keyboard });

@@ -134,8 +134,11 @@ const removeUserFromChannel = async (
   }
 
   try {
-    await telegram.banChatMember(subscription.chatId, subscription.telegramId);
-    await telegram.unbanChatMember(subscription.chatId, subscription.telegramId);
+    const untilDate = Math.floor(Date.now() / 1000) + 60;
+    await telegram.kickChatMember(subscription.chatId, subscription.telegramId, untilDate);
+    await telegram.unbanChatMember(subscription.chatId, subscription.telegramId, {
+      only_if_banned: true,
+    });
     logger.info(
       {
         subscriptionId: subscription.id,

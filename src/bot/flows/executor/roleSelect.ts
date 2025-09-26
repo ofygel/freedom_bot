@@ -6,9 +6,10 @@ import { updateUserRole } from '../../../db/users';
 import { EXECUTOR_COMMANDS } from '../../commands/sets';
 import { setChatCommands } from '../../services/commands';
 import type { BotContext, ExecutorRole } from '../../types';
-import { askCity } from '../common/citySelect';
-import { ensureExecutorState, EXECUTOR_MENU_CITY_ACTION } from './menu';
-import { getExecutorRoleCopy } from './roleCopy';
+import { ui } from '../../ui';
+import { askCity, CITY_CONFIRM_STEP_ID } from '../common/citySelect';
+import { ensureExecutorState, EXECUTOR_MENU_ACTION, EXECUTOR_MENU_CITY_ACTION } from './menu';
+import { getExecutorRoleCopy } from '../../copy';
 
 const ROLE_COURIER_ACTION = 'role:courier';
 const ROLE_DRIVER_ACTION = 'role:driver';
@@ -68,6 +69,10 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
   await hideClientMenu(ctx, 'Переключаемся…');
   ctx.session.ui.pendingCityAction = EXECUTOR_MENU_CITY_ACTION;
   await askCity(ctx, 'Сначала выбери город для работы');
+  await ui.trackStep(ctx, {
+    id: CITY_CONFIRM_STEP_ID,
+    homeAction: EXECUTOR_MENU_ACTION,
+  });
 };
 
 export const registerExecutorRoleSelect = (bot: Telegraf<BotContext>): void => {

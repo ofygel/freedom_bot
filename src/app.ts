@@ -40,6 +40,7 @@ import { unknownHandler } from './bot/middlewares/unknown';
 import { callbackDecoder } from './bot/middlewares/callbackDecoder';
 import { ensurePhone, savePhone } from './bot/flows/common/phoneCollect';
 import { metricsCollector } from './bot/middlewares/metrics';
+import { ensureVerifiedExecutor } from './bot/middlewares/verificationGate';
 import type { BotContext } from './bot/types';
 import { config, logger } from './config';
 import { pool } from './db';
@@ -62,6 +63,7 @@ app.use(ensurePhone);
 app.use(keyboardGuard());
 app.use(stateGate());
 app.use(callbackDecoder());
+app.use(ensureVerifiedExecutor);
 
 registerStartCommand(app);
 registerBindCommand(app);

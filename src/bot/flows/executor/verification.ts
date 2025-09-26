@@ -20,7 +20,7 @@ import {
   showExecutorMenu,
 } from './menu';
 import { publishVerificationApplication, type VerificationApplication } from '../../moderation/verifyQueue';
-import { getExecutorRoleCopy } from './roleCopy';
+import { getExecutorRoleCopy } from '../../copy';
 import { ui } from '../../ui';
 import { reportVerificationSubmitted, type UserIdentity } from '../../services/reports';
 

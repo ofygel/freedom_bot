@@ -15,7 +15,7 @@ import {
   ensureExecutorState,
   showExecutorMenu,
 } from './menu';
-import { getExecutorRoleCopy } from './roleCopy';
+import { getExecutorRoleCopy } from '../../copy';
 import { ui } from '../../ui';
 import {
   SUBSCRIPTION_PERIOD_OPTIONS,

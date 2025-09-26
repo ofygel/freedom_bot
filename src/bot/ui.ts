@@ -21,6 +21,15 @@ export interface FlowRecoveryDescriptor {
   payload?: unknown;
 }
 
+export interface UiTrackOptions {
+  /** Identifier of the step whose metadata is being tracked. */
+  id: string;
+  /** Action triggered when the user presses the automatically added «На главную» button. */
+  homeAction?: string;
+  /** Information that allows restoring the step after a failure. */
+  recovery?: FlowRecoveryDescriptor;
+}
+
 const ensureUiState = (ctx: BotContext): UiSessionState => {
   if (!ctx.session.ui) {
     ctx.session.ui = {
@@ -90,7 +99,7 @@ const appendHomeButton = (
   return mergeInlineKeyboards(keyboard, homeKeyboard) ?? homeKeyboard;
 };
 
-const trackFlowStep = async (ctx: BotContext, options: UiStepOptions): Promise<void> => {
+const trackFlowStep = async (ctx: BotContext, options: UiTrackOptions): Promise<void> => {
   try {
     const key = resolveSessionKey(ctx);
     if (!key) {
@@ -111,9 +120,7 @@ const isInlineKeyboard = (
 ): keyboard is InlineKeyboardMarkup | undefined =>
   !keyboard || 'inline_keyboard' in keyboard;
 
-export interface UiStepOptions {
-  /** Unique identifier used to track the step message. */
-  id: string;
+export interface UiStepOptions extends UiTrackOptions {
   /** Text displayed in the step message. */
   text: string;
   /** Optional keyboard shown alongside the message. */
@@ -122,17 +129,10 @@ export interface UiStepOptions {
   parseMode?: ParseMode;
   /** Link preview behaviour configuration. */
   linkPreviewOptions?: LinkPreviewOptions;
-  /**
-   * Action triggered when the user presses the automatically added
-   * «На главную» button. When omitted, the button is not rendered.
-   */
-  homeAction?: string;
   /** Custom label for the «На главную» button. */
   homeLabel?: string;
   /** Whether the step should be removed when navigating home. */
   cleanup?: boolean;
-  /** Information that allows restoring the step after a failure. */
-  recovery?: FlowRecoveryDescriptor;
 }
 
 export interface UiStepResult {
@@ -232,6 +232,14 @@ export const ui = {
     state.steps[options.id] = { chatId, messageId, cleanup };
     await trackFlowStep(ctx, options);
     return { messageId, sent: true };
+  },
+  trackStep: async (ctx: BotContext, options: UiTrackOptions): Promise<void> => {
+    const state = ensureUiState(ctx);
+    if (options.homeAction) {
+      registerHomeAction(state, options.homeAction);
+    }
+
+    await trackFlowStep(ctx, options);
   },
   clear: async (ctx: BotContext, options: UiClearOptions = {}): Promise<void> => {
     const state = ensureUiState(ctx);

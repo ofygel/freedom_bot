@@ -1,7 +1,7 @@
 import type { BotContext, ExecutorFlowState } from '../types';
 import { EXECUTOR_VERIFICATION_PHOTO_COUNT } from '../types';
 
-import { getExecutorRoleCopy } from '../flows/executor/roleCopy';
+import { getExecutorRoleCopy } from '../copy';
 
 import { MINUTE, remainingTime } from '../../utils/time';
 

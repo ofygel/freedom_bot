@@ -6,6 +6,12 @@ import { setUserCitySelected } from '../../../services/users';
 import type { BotContext } from '../../types';
 import { resetClientOrderDraft } from '../../services/orders';
 import { bindInlineKeyboardToUser } from '../../services/callbackTokens';
+import { ui } from '../../ui';
+
+export const CITY_CONFIRM_STEP_ID = 'common:city:confirm';
+
+const CLIENT_MENU_HOME_ACTION = 'client:menu:show';
+const EXECUTOR_MENU_HOME_ACTION = 'executor:menu:refresh';
 
 export const CITY_ACTION_PATTERN = /^city:([a-z]+)$/i;
 
@@ -13,6 +19,23 @@ const buildCityKeyboard = (): InlineKeyboardMarkup =>
   Markup.inlineKeyboard(
     CITIES_ORDER.map((city) => [Markup.button.callback(CITY_LABEL[city], `city:${city}`)]),
   ).reply_markup as InlineKeyboardMarkup;
+
+const resolveHomeAction = (ctx: BotContext): string => {
+  const pending = ctx.session.ui?.pendingCityAction;
+  if (pending === 'clientMenu') {
+    return CLIENT_MENU_HOME_ACTION;
+  }
+  if (pending === 'executorMenu') {
+    return EXECUTOR_MENU_HOME_ACTION;
+  }
+
+  const role = ctx.auth?.user.role;
+  if (role === 'client' || role === 'moderator') {
+    return CLIENT_MENU_HOME_ACTION;
+  }
+
+  return EXECUTOR_MENU_HOME_ACTION;
+};
 
 const applyCitySelection = (ctx: BotContext, city: AppCity): void => {
   const previousCity = ctx.auth.user.citySelected;
@@ -104,6 +127,11 @@ export const registerCityAction = (bot: Telegraf<BotContext>): void => {
         // Ignore message errors, selection is already stored.
       }
     }
+
+    await ui.trackStep(ctx, {
+      id: CITY_CONFIRM_STEP_ID,
+      homeAction: resolveHomeAction(ctx),
+    });
 
     if (typeof next === 'function') {
       await next();

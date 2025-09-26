@@ -12,7 +12,7 @@ import {
 } from '../../types';
 import { ui } from '../../ui';
 import { startExecutorSubscription } from './subscription';
-import { getExecutorRoleCopy } from './roleCopy';
+import { getExecutorRoleCopy } from '../../copy';
 import { findSubscriptionPeriodOption } from './subscriptionPlans';
 import { startExecutorVerification } from './verification';
 import { CITY_LABEL } from '../../../domain/cities';

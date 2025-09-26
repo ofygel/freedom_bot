@@ -3,7 +3,7 @@ import { Markup, Telegraf, Telegram } from 'telegraf';
 import { config, logger } from '../../config';
 import { activateSubscription } from '../../db/subscriptions';
 import { getChannelBinding } from '../channels/bindings';
-import { getExecutorRoleCopy } from '../flows/executor/roleCopy';
+import { getExecutorRoleCopy } from '../copy';
 import type { BotContext, ExecutorRole } from '../types';
 import {
   createModerationQueue,

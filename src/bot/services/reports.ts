@@ -6,7 +6,7 @@ import { getChannelBinding } from '../channels/bindings';
 import { CITY_LABEL } from '../../domain/cities';
 import type { OrderRecord, OrderKind } from '../../types';
 import type { ExecutorRole } from '../types';
-import { getExecutorRoleCopy } from '../flows/executor/roleCopy';
+import { getExecutorRoleCopy } from '../copy';
 
 const REPORT_PREVIEW_LENGTH = 120;
 
