@@ -42,9 +42,44 @@ const ROLE_PROMPTS: Record<ExecutorRole, string[]> = {
   ],
 };
 
+const ROLE_VERIFICATION_GUIDANCE: Record<
+  ExecutorRole,
+  {
+    idlePrompt: string;
+    collectingPrompt: string;
+    nextStepsPrompt: string;
+  }
+> = {
+  courier: {
+    idlePrompt:
+      'Отправьте фото удостоверения личности (лицевая и оборотная стороны) в этот чат.',
+    collectingPrompt:
+      'Пришлите оставшиеся фото удостоверения личности: нужны и лицевая, и оборотная стороны.',
+    nextStepsPrompt: '📸 Отправьте фото удостоверения личности с обеих сторон в этот чат.',
+  },
+  driver: {
+    idlePrompt:
+      'Отправьте фото водительского удостоверения (лицевая сторона) и селфи с удостоверением в руках в этот чат.',
+    collectingPrompt:
+      'Пришлите оставшиеся фото: водительское удостоверение (лицевая сторона) и селфи с ним.',
+    nextStepsPrompt:
+      '📸 Отправьте фото водительского удостоверения (лицевая сторона) и селфи с ним в этот чат.',
+  },
+};
+
+export const VERIFICATION_ALBUM_HINT =
+  'Можно отправить оба фото одним альбомом или отдельными сообщениями в этот чат.';
+
+type VerificationRoleGuidance = (typeof ROLE_VERIFICATION_GUIDANCE)[ExecutorRole];
+
+export const getVerificationRoleGuidance = (
+  role: ExecutorRole,
+): VerificationRoleGuidance =>
+  ROLE_VERIFICATION_GUIDANCE[role] ?? ROLE_VERIFICATION_GUIDANCE.courier;
+
 const buildVerificationPrompt = (role: ExecutorRole): string => {
   const lines = ROLE_PROMPTS[role] ?? ROLE_PROMPTS.courier;
-  return [...lines, '', 'Отправляйте фотографии по одному сообщению в этот чат.'].join('\n');
+  return [...lines, '', VERIFICATION_ALBUM_HINT].join('\n');
 };
 
 const VERIFICATION_CHANNEL_MISSING_STEP_ID = 'executor:verification:channel-missing';

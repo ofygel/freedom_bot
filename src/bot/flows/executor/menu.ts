@@ -14,7 +14,11 @@ import { ui } from '../../ui';
 import { startExecutorSubscription } from './subscription';
 import { getExecutorRoleCopy } from '../../copy';
 import { findSubscriptionPeriodOption } from './subscriptionPlans';
-import { startExecutorVerification } from './verification';
+import {
+  VERIFICATION_ALBUM_HINT,
+  getVerificationRoleGuidance,
+  startExecutorVerification,
+} from './verification';
 import { CITY_LABEL } from '../../../domain/cities';
 import { CITY_ACTION_PATTERN, ensureCitySelected } from '../common/citySelect';
 
@@ -291,6 +295,7 @@ const buildVerificationSection = (
   access: ExecutorAccessStatus,
 ): string[] => {
   const copy = getExecutorRoleCopy(state.role);
+  const guidance = getVerificationRoleGuidance(state.role);
 
   if (access.isVerified) {
     return [
@@ -313,9 +318,9 @@ const buildVerificationSection = (
   const instructions = (() => {
     switch (verification.status) {
       case 'idle':
-        return 'Отправьте 2 фотографии удостоверения личности (лицевая и оборотная стороны) в этот чат, чтобы пройти проверку.';
+        return `${guidance.idlePrompt} ${VERIFICATION_ALBUM_HINT}`;
       case 'collecting':
-        return 'Пришлите оставшиеся фотографии удостоверения личности в этот чат.';
+        return `${guidance.collectingPrompt} ${VERIFICATION_ALBUM_HINT}`;
       case 'submitted':
         return 'Мы передали документы модераторам. После одобрения выдадим доступ автоматически.';
       default:
@@ -387,10 +392,11 @@ const buildNextStepsSection = (
   access: ExecutorAccessStatus,
 ): string[] => {
   const copy = getExecutorRoleCopy(state.role);
+  const guidance = getVerificationRoleGuidance(state.role);
 
   if (!access.isVerified) {
     return [
-      '📸 Отправьте 2 фотографии удостоверения личности с обеих сторон,',
+      `${guidance.nextStepsPrompt} ${VERIFICATION_ALBUM_HINT}`,
       'Дождитесь решения модератора — уведомление придёт в этот чат.',
       'После одобрения автоматически активируется 2-дневный бесплатный доступ, затем оформите подписку через «📨 Получить ссылку на канал».',
     ];
