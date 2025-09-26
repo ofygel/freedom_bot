@@ -3,7 +3,7 @@ import '../helpers/setup-env';
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it, mock } from 'node:test';
 
-import { registerExecutorVerification } from '../../src/bot/flows/executor/verification';
+import * as executorVerification from '../../src/bot/flows/executor/verification';
 import type { BotContext, SessionState } from '../../src/bot/types';
 import type { Message } from 'telegraf/typings/core/types/typegram';
 import { EXECUTOR_VERIFICATION_PHOTO_COUNT } from '../../src/bot/types';
@@ -11,6 +11,11 @@ import { ui, type UiStepOptions } from '../../src/bot/ui';
 import * as menuModule from '../../src/bot/flows/executor/menu';
 import * as verificationsDb from '../../src/db/verifications';
 import * as verifyQueue from '../../src/bot/moderation/verifyQueue';
+import * as startModule from '../../src/bot/commands/start';
+import * as clientMenu from '../../src/ui/clientMenu';
+import * as phoneCollect from '../../src/bot/flows/common/phoneCollect';
+import * as subscriptionModule from '../../src/bot/flows/executor/subscription';
+import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from '../../src/bot/commands/sets';
 
 const DEFAULT_CITY = 'almaty' as const;
 
@@ -19,6 +24,7 @@ const createSessionState = (): SessionState => ({
   isAuthenticated: false,
   awaitingPhone: false,
   city: DEFAULT_CITY,
+  user: { id: 710, phoneVerified: true },
   executor: {
     role: 'courier',
     verification: {
@@ -68,6 +74,7 @@ const createAuthState = (telegramId = 710): BotContext['auth'] => ({
 const createContext = () => {
   const session = createSessionState();
   const auth = createAuthState();
+  const commandLog: import('telegraf/typings/core/types/typegram').BotCommand[][] = [];
 
   const ctx = {
     chat: { id: 710, type: 'private' as const },
@@ -80,19 +87,36 @@ const createContext = () => {
       copyMessage: async () => true,
       sendPhoto: async () => ({ message_id: 200 }),
       sendMessage: async () => ({ message_id: 1 }),
+      setMyCommands: async (
+        commands: import('telegraf/typings/core/types/typegram').BotCommand[],
+      ) => {
+        commandLog.push(commands);
+        return true;
+      },
+      setChatMenuButton: async () => true,
     },
     answerCbQuery: async () => {},
+    reply: async () => ({ message_id: 2 }),
   } as unknown as BotContext;
 
-  return { ctx, session, auth };
+  return { ctx, session, auth, commandLog };
 };
 
 const registerHandlers = () => {
   type Handler = (ctx: BotContext, next: () => Promise<void>) => Promise<void>;
   let mediaGroupHandler: Handler | undefined;
+  const actionHandlers = new Map<
+    string,
+    (ctx: BotContext) => Promise<void>
+  >();
 
   const bot = {
-    action: () => bot,
+    action: (trigger: unknown, handler: unknown) => {
+      if (typeof trigger === 'string') {
+        actionHandlers.set(trigger, handler as (ctx: BotContext) => Promise<void>);
+      }
+      return bot;
+    },
     on: (event: string, handler: unknown) => {
       if (event === 'media_group') {
         mediaGroupHandler = handler as Handler;
@@ -103,13 +127,16 @@ const registerHandlers = () => {
     hears: () => bot,
   } as unknown as import('telegraf').Telegraf<BotContext>;
 
-  registerExecutorVerification(bot);
+  executorVerification.registerExecutorVerification(bot);
 
   if (!mediaGroupHandler) {
     throw new Error('media group handler was not registered');
   }
 
-  return { handleMediaGroup: mediaGroupHandler };
+  return {
+    handleMediaGroup: mediaGroupHandler,
+    getActionHandler: (action: string) => actionHandlers.get(action),
+  };
 };
 
 describe('executor verification media group handler', () => {
@@ -185,5 +212,80 @@ describe('executor verification media group handler', () => {
     assert.equal(persistCall.photosUploaded, EXECUTOR_VERIFICATION_PHOTO_COUNT);
     assert.equal(persistMock.mock.callCount(), 1);
     assert.equal(publishMock.mock.callCount(), 1);
+  });
+
+  it('allows switching executor role during verification and shows role picker on next /start', async () => {
+    const { getActionHandler } = registerHandlers();
+    const { ctx, commandLog } = createContext();
+
+    ctx.session.executor.verification.courier.status = 'collecting';
+    ctx.session.executor.verification.courier.uploadedPhotos.push({
+      fileId: 'file',
+      fileUniqueId: 'unique',
+      messageId: 401,
+    });
+
+    const presentRoleSelectionMock = mock.method(
+      startModule,
+      'presentRoleSelection',
+      async () => undefined,
+    );
+    const hideMenuMock = mock.method(clientMenu, 'hideClientMenu', async () => undefined);
+    const askPhoneMock = mock.method(phoneCollect, 'askPhone', async () => undefined);
+    const startVerificationMock = mock.method(
+      executorVerification,
+      'startExecutorVerification',
+      async () => undefined,
+    );
+    const startSubscriptionMock = mock.method(
+      subscriptionModule,
+      'startExecutorSubscription',
+      async () => undefined,
+    );
+
+    const switchHandler = getActionHandler(executorVerification.EXECUTOR_ROLE_SWITCH_ACTION);
+    if (!switchHandler) {
+      throw new Error('switch role handler was not registered');
+    }
+
+    try {
+      await switchHandler(ctx);
+
+      assert.equal(ctx.session.executor.verification.courier.status, 'idle');
+      assert.equal(presentRoleSelectionMock.mock.callCount(), 1);
+      assert.equal(commandLog.length >= 1, true);
+      assert.deepEqual(commandLog[0], CLIENT_COMMANDS);
+
+      let startHandler: ((ctx: BotContext) => Promise<void>) | undefined;
+      const startBot = {
+        start: (handler: (ctx: BotContext) => Promise<void>) => {
+          startHandler = handler;
+          return startBot;
+        },
+        on: () => startBot,
+      } as unknown as import('telegraf').Telegraf<BotContext>;
+
+      startModule.registerStartCommand(startBot);
+
+      if (!startHandler) {
+        throw new Error('start handler was not registered');
+      }
+
+      await startHandler(ctx);
+
+      assert.equal(startVerificationMock.mock.callCount(), 0);
+      assert.equal(startSubscriptionMock.mock.callCount(), 0);
+      assert.equal(askPhoneMock.mock.callCount(), 0);
+      assert.equal(hideMenuMock.mock.callCount(), 1);
+      assert.equal(presentRoleSelectionMock.mock.callCount(), 2);
+      assert.equal(commandLog.length >= 2, true);
+      assert.deepEqual(commandLog[1], EXECUTOR_COMMANDS);
+    } finally {
+      presentRoleSelectionMock.mock.restore();
+      hideMenuMock.mock.restore();
+      askPhoneMock.mock.restore();
+      startVerificationMock.mock.restore();
+      startSubscriptionMock.mock.restore();
+    }
   });
 });
