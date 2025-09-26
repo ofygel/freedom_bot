@@ -359,6 +359,49 @@ const expand2GisShortLink = async (url: URL): Promise<URL | null> => {
   }
 };
 
+const formatCoordinateValue = (value: number): string => {
+  const fixed = value.toFixed(6);
+  if (!fixed.includes('.')) {
+    return fixed;
+  }
+
+  return fixed.replace(/0+$/u, '').replace(/\.$/u, '');
+};
+
+const buildCanonical2GisUrl = (
+  url: URL,
+  coordinates?: Coordinates | null,
+  itemId?: string,
+): URL | null => {
+  if (!coordinates) {
+    return null;
+  }
+
+  if (/\/geo\//iu.test(url.pathname) && (!itemId || url.pathname.includes(itemId))) {
+    return url;
+  }
+
+  const segments = url.pathname
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+
+  const citySlug = segments[0];
+  if (!citySlug) {
+    return null;
+  }
+
+  const objectId = itemId ?? '0';
+  const lon = formatCoordinateValue(coordinates.longitude);
+  const lat = formatCoordinateValue(coordinates.latitude);
+
+  try {
+    return new URL(`${url.origin}/${citySlug}/geo/${objectId}/${lon},${lat}`);
+  } catch {
+    return null;
+  }
+};
+
 const parse2GisLink = async (value: string): Promise<Parsed2GisLink | null> => {
   const url = parseUrl(value);
   if (!url || !is2GisHostname(url.hostname)) {
@@ -368,8 +411,10 @@ const parse2GisLink = async (value: string): Promise<Parsed2GisLink | null> => {
   const label = extract2GisLabel(url);
   const coordinates = resolveCoordinatesFrom2GisUrl(url);
   const itemId = extract2GisItemId(url);
+  const canonicalUrl = buildCanonical2GisUrl(url, coordinates, itemId) ?? url;
+
   if (coordinates || itemId) {
-    const result: Parsed2GisLink = { url };
+    const result: Parsed2GisLink = { url: canonicalUrl };
     if (label) {
       result.label = label;
     }
@@ -387,8 +432,9 @@ const parse2GisLink = async (value: string): Promise<Parsed2GisLink | null> => {
     const expandedCoordinates = resolveCoordinatesFrom2GisUrl(expanded);
     const expandedItemId = extract2GisItemId(expanded);
     const expandedLabel = extract2GisLabel(expanded) ?? label;
+    const expandedCanonical = buildCanonical2GisUrl(expanded, expandedCoordinates, expandedItemId);
     if (expandedCoordinates || expandedItemId) {
-      const result: Parsed2GisLink = { url: expanded };
+      const result: Parsed2GisLink = { url: expandedCanonical ?? expanded };
       if (expandedLabel) {
         result.label = expandedLabel;
       }
@@ -1049,7 +1095,9 @@ export const geocodeAddress = async (
   const nominatimConfig = getNominatimConfig();
   const twoGisConfig = getTwoGisConfig();
 
-  const originalTwoGisUrl = preferredTwoGisUrl ?? (isTwoGisLink(trimmed) ? trimmed : null);
+  const candidateTwoGisUrl = preferredTwoGisUrl ?? (isTwoGisLink(trimmed) ? trimmed : null);
+  const parsedLink = candidateTwoGisUrl ? await parse2GisLink(candidateTwoGisUrl) : null;
+  const originalTwoGisUrl = parsedLink?.url.href ?? candidateTwoGisUrl;
 
   const attachTwoGisUrl = (result: GeocodingResult): GeocodingResult => {
     if (!originalTwoGisUrl) {
@@ -1086,7 +1134,6 @@ export const geocodeAddress = async (
     } satisfies GeocodingResult);
   };
 
-  const parsedLink = await parse2GisLink(preferredTwoGisUrl ?? trimmed);
   if (parsedLink?.coordinates) {
     return resolveWithFallback(
       parsedLink.coordinates.latitude,
