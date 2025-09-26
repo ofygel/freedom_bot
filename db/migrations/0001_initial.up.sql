@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_scope_id ON sessions (scope_id);
+CREATE INDEX IF NOT EXISTS sessions_scope_state_idx ON sessions (scope, scope_id);
 
 --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS recent_actions (
