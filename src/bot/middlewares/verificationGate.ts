@@ -2,6 +2,7 @@ import { type MiddlewareFn } from 'telegraf';
 
 import { logger } from '../../config';
 import { isExecutorVerified } from '../../db/verifications';
+import { CITY_ACTION_PATTERN } from '../flows/common/citySelect';
 import { startExecutorVerification } from '../flows/executor/verification';
 import type { BotContext, ExecutorRole } from '../types';
 
@@ -41,6 +42,29 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
       'Failed to check executor verification status',
     );
     await next();
+    return;
+  }
+
+  const executorState = ctx.session.executor?.verification?.[executorRole];
+
+  const callbackQuery = ctx.callbackQuery;
+  if (callbackQuery && 'data' in callbackQuery) {
+    const callbackData = callbackQuery.data;
+    if (typeof callbackData === 'string' && CITY_ACTION_PATTERN.test(callbackData)) {
+      await next();
+      return;
+    }
+  }
+
+  const message = ctx.message;
+  const hasPhoto = message && 'photo' in message && Array.isArray(message.photo) && message.photo.length > 0;
+
+  if (executorState?.status === 'collecting' && hasPhoto) {
+    await next();
+    return;
+  }
+
+  if (executorState?.status === 'collecting') {
     return;
   }
 
