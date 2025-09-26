@@ -4,20 +4,8 @@ import { config } from './env';
 
 export type Logger = pino.Logger;
 
-const buildTransport = () => {
-  if (config.logTransport === 'pretty') {
-    return pino.transport({
-      targets: [
-        {
-          target: 'pino-pretty',
-          level: config.logLevel,
-          options: { colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' },
-        },
-      ],
-    });
-  }
-
-  return pino.transport({
+const createJsonTransport = () =>
+  pino.transport({
     targets: [
       {
         target: 'pino/file',
@@ -26,6 +14,40 @@ const buildTransport = () => {
       },
     ],
   });
+
+const isMissingPrettyTransportError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.includes('pino-pretty');
+};
+
+const buildTransport = () => {
+  if (config.logTransport === 'pretty') {
+    try {
+      return pino.transport({
+        targets: [
+          {
+            target: 'pino-pretty',
+            level: config.logLevel,
+            options: { colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' },
+          },
+        ],
+      });
+    } catch (error) {
+      if (!isMissingPrettyTransportError(error)) {
+        throw error;
+      }
+
+      console.warn(
+        'pino-pretty transport is unavailable. Falling back to JSON logging. ' +
+          'Install pino-pretty or set PINO_TRANSPORT=json to silence this warning.',
+      );
+    }
+  }
+
+  return createJsonTransport();
 };
 
 const createRateLimitHook = (limit: number): LoggerOptions['hooks'] | undefined => {
