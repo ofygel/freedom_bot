@@ -8,6 +8,7 @@ import type { Telegraf } from 'telegraf';
 import type { BotContext } from '../src/bot/types';
 import { registerJobs, stopJobs } from '../src/jobs';
 import * as scheduler from '../src/jobs/scheduler';
+import * as paymentReminder from '../src/jobs/paymentReminder';
 
 const createBot = (): Telegraf<BotContext> =>
   ({ telegram: {} } as unknown as Telegraf<BotContext>);
@@ -77,20 +78,28 @@ describe('subscription scheduler lifecycle', () => {
 describe('registerJobs', () => {
   let startSchedulerMock: ReturnType<typeof mock.method>;
   let stopSchedulerMock: ReturnType<typeof mock.method>;
+  let startPaymentReminderMock: ReturnType<typeof mock.method>;
+  let stopPaymentReminderMock: ReturnType<typeof mock.method>;
 
   beforeEach(() => {
     startSchedulerMock = mock.method(scheduler, 'startSubscriptionScheduler', mock.fn());
     stopSchedulerMock = mock.method(scheduler, 'stopSubscriptionScheduler', mock.fn());
+    startPaymentReminderMock = mock.method(paymentReminder, 'startPaymentReminderJob', mock.fn());
+    stopPaymentReminderMock = mock.method(paymentReminder, 'stopPaymentReminderJob', mock.fn());
 
     stopJobs();
     startSchedulerMock.mock.resetCalls();
     stopSchedulerMock.mock.resetCalls();
+    startPaymentReminderMock.mock.resetCalls();
+    stopPaymentReminderMock.mock.resetCalls();
   });
 
   afterEach(() => {
     stopJobs();
     startSchedulerMock.mock.restore();
     stopSchedulerMock.mock.restore();
+    startPaymentReminderMock.mock.restore();
+    stopPaymentReminderMock.mock.restore();
   });
 
   it('starts background jobs only once while initialized', () => {
@@ -100,12 +109,14 @@ describe('registerJobs', () => {
     registerJobs(bot);
 
     assert.equal(startSchedulerMock.mock.callCount(), 1);
+    assert.equal(startPaymentReminderMock.mock.callCount(), 1);
   });
 
   it('does not attempt to stop jobs when they were never started', () => {
     stopJobs();
 
     assert.equal(stopSchedulerMock.mock.callCount(), 0);
+    assert.equal(stopPaymentReminderMock.mock.callCount(), 0);
   });
 
   it('stops running jobs and allows them to start again later', () => {
@@ -115,9 +126,11 @@ describe('registerJobs', () => {
     stopJobs();
 
     assert.equal(stopSchedulerMock.mock.callCount(), 1);
+    assert.equal(stopPaymentReminderMock.mock.callCount(), 1);
 
     registerJobs(bot);
 
     assert.equal(startSchedulerMock.mock.callCount(), 2);
+    assert.equal(startPaymentReminderMock.mock.callCount(), 2);
   });
 });

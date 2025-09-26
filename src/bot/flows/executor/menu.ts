@@ -137,6 +137,21 @@ const normaliseVerificationState = (
   return verification;
 };
 
+const normaliseReminderTimestamp = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+};
+
 const normaliseSubscriptionState = (
   value: Partial<ExecutorSubscriptionState> | undefined,
 ): ExecutorSubscriptionState => ({
@@ -147,6 +162,7 @@ const normaliseSubscriptionState = (
   moderationMessageId: value?.moderationMessageId,
   lastInviteLink: value?.lastInviteLink,
   lastIssuedAt: value?.lastIssuedAt,
+  lastReminderAt: normaliseReminderTimestamp(value?.lastReminderAt),
 });
 
 export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {

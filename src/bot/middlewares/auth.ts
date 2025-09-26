@@ -411,6 +411,11 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   await next();
 };
 
+export const loadAuthStateByTelegramId = async (telegramId: number): Promise<AuthState> => {
+  const from = { id: telegramId } as NonNullable<BotContext['from']>;
+  return loadAuthState(from);
+};
+
 export const __testing__ = {
   loadAuthState,
   mapAuthRow,

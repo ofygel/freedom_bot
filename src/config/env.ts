@@ -283,6 +283,7 @@ export interface AppConfig {
     nudger: string;
     subscription: string;
     metrics: string;
+    paymentReminder: string;
   };
   tariff: TariffRates | null;
   subscriptions: {
@@ -342,6 +343,7 @@ export const loadConfig = (): AppConfig => ({
     nudger: getCronExpression('JOBS_NUDGER_CRON', '*/1 * * * *'),
     subscription: getCronExpression('JOBS_SUBSCRIPTION_CRON', '*/10 * * * *'),
     metrics: getCronExpression('JOBS_METRICS_CRON', '*/60 * * * * *'),
+    paymentReminder: getCronExpression('JOBS_PAYMENT_REMINDER_CRON', '*/10 * * * *'),
   },
   tariff: parseGeneralTariff(),
   subscriptions: {
