@@ -43,12 +43,18 @@ if (missingVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
 }
 
-const parseBoolean = (value: string | undefined): boolean => {
-  if (!value) {
-    return false;
+const parseBoolean = (value: string | undefined, defaultValue = false): boolean => {
+  if (typeof value === 'undefined') {
+    return defaultValue;
   }
 
-  switch (value.toLowerCase()) {
+  const normalised = value.trim().toLowerCase();
+
+  if (normalised.length === 0) {
+    return defaultValue;
+  }
+
+  switch (normalised) {
     case '1':
     case 'true':
     case 'yes':
@@ -317,7 +323,7 @@ export const loadConfig = (): AppConfig => ({
     callbackSignSecret: getOptionalString('CALLBACK_SIGN_SECRET'),
   },
   features: {
-    trialEnabled: parseBoolean(process.env.FEATURE_TRIAL_ENABLED),
+    trialEnabled: parseBoolean(process.env.FEATURE_TRIAL_ENABLED, true),
     executorReplyKeyboard: parseBoolean(process.env.FEATURE_EXECUTOR_REPLY_KEYBOARD),
     reportsEnabled: parseBoolean(process.env.FEATURE_REPORTS_ENABLED),
   },
