@@ -1438,6 +1438,10 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
     const guard = await withIdempotency(ctx, 'order:accept', String(orderId), () =>
       handleOrderDecision(ctx, orderId, 'accept'),
     );
+    if (guard.status === 'error') {
+      await ctx.answerCbQuery(copy.serviceUnavailable, { show_alert: true });
+      return;
+    }
     if (guard.status === 'duplicate') {
       await ctx.answerCbQuery('Запрос уже обработан.');
     }
@@ -1467,6 +1471,10 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
     const guard = await withIdempotency(ctx, 'order:release', String(orderId), () =>
       handleOrderRelease(ctx, orderId),
     );
+    if (guard.status === 'error') {
+      await ctx.answerCbQuery(copy.serviceUnavailable, { show_alert: true });
+      return;
+    }
     if (guard.status === 'duplicate') {
       await ctx.answerCbQuery('Запрос уже обработан.');
     }
@@ -1484,6 +1492,10 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
     const guard = await withIdempotency(ctx, 'order:complete', String(orderId), () =>
       handleOrderCompletion(ctx, orderId),
     );
+    if (guard.status === 'error') {
+      await ctx.answerCbQuery(copy.serviceUnavailable, { show_alert: true });
+      return;
+    }
     if (guard.status === 'duplicate') {
       await ctx.answerCbQuery('Запрос уже обработан.');
     }
@@ -1501,6 +1513,10 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
     const guard = await withIdempotency(ctx, 'order:undo-release', String(orderId), () =>
       handleUndoOrderRelease(ctx, orderId),
     );
+    if (guard.status === 'error') {
+      await ctx.answerCbQuery(copy.serviceUnavailable, { show_alert: true });
+      return;
+    }
     if (guard.status === 'duplicate') {
       await ctx.answerCbQuery('Запрос уже обработан.');
     }
@@ -1518,6 +1534,10 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
     const guard = await withIdempotency(ctx, 'order:undo-complete', String(orderId), () =>
       handleUndoOrderCompletion(ctx, orderId),
     );
+    if (guard.status === 'error') {
+      await ctx.answerCbQuery(copy.serviceUnavailable, { show_alert: true });
+      return;
+    }
     if (guard.status === 'duplicate') {
       await ctx.answerCbQuery('Запрос уже обработан.');
     }
