@@ -27,14 +27,27 @@ const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
 const CLIENT_MENU_CITY_ACTION = 'clientMenu' as const;
 const CLIENT_MENU_REFRESH_ACTION = 'client:menu:refresh';
+const CLIENT_MENU_SUPPORT_ACTION = 'client:menu:support';
+const CLIENT_MENU_CITY_SELECT_ACTION = 'client:menu:city';
+const CLIENT_MENU_SWITCH_ROLE_ACTION = 'client:menu:switch-role';
 export const logClientMenuClick = async (
   ctx: BotContext,
   target: string,
   extra: Record<string, unknown> = {},
 ) => {
-  void ctx;
-  void target;
-  void extra;
+  const authUser = ctx.auth?.user;
+
+  logger.info(
+    {
+      event: 'client_menu_click',
+      target,
+      chatId: ctx.chat?.id,
+      userId: authUser?.telegramId ?? ctx.from?.id,
+      role: authUser?.role,
+      ...extra,
+    },
+    'client_menu_click',
+  );
 };
 
 const applyClientCommands = async (ctx: BotContext): Promise<void> => {
@@ -166,9 +179,18 @@ const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
     uiState.clientMenuVariant = undefined;
 
     const rows = [
-      [{ label: '🚕 Такси', action: START_TAXI_ORDER_ACTION }],
-      [{ label: '📦 Доставка', action: START_DELIVERY_ORDER_ACTION }],
-      [{ label: '📋 Мои заказы', action: CLIENT_ORDERS_ACTION }],
+      [
+        { label: CLIENT_MENU.taxi, action: START_TAXI_ORDER_ACTION },
+        { label: CLIENT_MENU.delivery, action: START_DELIVERY_ORDER_ACTION },
+      ],
+      [
+        { label: CLIENT_MENU.orders, action: CLIENT_ORDERS_ACTION },
+        { label: CLIENT_MENU.support, action: CLIENT_MENU_SUPPORT_ACTION },
+      ],
+      [
+        { label: CLIENT_MENU.city, action: CLIENT_MENU_CITY_SELECT_ACTION },
+        { label: CLIENT_MENU.switchRole, action: CLIENT_MENU_SWITCH_ROLE_ACTION },
+      ],
       [{ label: copy.refresh, action: CLIENT_MENU_REFRESH_ACTION }],
     ];
 
@@ -237,6 +259,61 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     await showMenu(ctx);
+  });
+
+  bot.action(CLIENT_MENU_SUPPORT_ACTION, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      await showMenu(ctx);
+      return;
+    }
+
+    await logClientMenuClick(ctx, 'client_home_menu:support');
+
+    try {
+      await ctx.answerCbQuery();
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to answer client menu support callback');
+    }
+
+    await promptClientSupport(ctx);
+  });
+
+  bot.action(CLIENT_MENU_CITY_SELECT_ACTION, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      await showMenu(ctx);
+      return;
+    }
+
+    const uiState = ctx.session.ui;
+    uiState.pendingCityAction = CLIENT_MENU_CITY_ACTION;
+
+    await logClientMenuClick(ctx, 'client_home_menu:city');
+
+    try {
+      await ctx.answerCbQuery();
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to answer client menu city callback');
+    }
+
+    await askCity(ctx, 'Выберите город:');
+  });
+
+  bot.action(CLIENT_MENU_SWITCH_ROLE_ACTION, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      await showMenu(ctx);
+      return;
+    }
+
+    await logClientMenuClick(ctx, 'client_home_menu:switch_role');
+
+    try {
+      await ctx.answerCbQuery();
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to answer client menu switch role callback');
+    }
+
+    await hideClientMenu(ctx, 'Меняем роль — выберите подходящий вариант ниже.');
+    await presentRoleSelection(ctx);
   });
 
   bot.action(CITY_ACTION_PATTERN, async (ctx, next) => {
