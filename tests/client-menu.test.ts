@@ -312,6 +312,33 @@ describe('client menu role selection', () => {
     assert.equal(setChatCommandsMock.mock.callCount(), 1);
   });
 
+  it('prompts to choose a city when none is selected', async () => {
+    const setChatCommandsMock = mock.method(
+      commandsService,
+      'setChatCommands',
+      async () => undefined,
+    );
+
+    const { bot, getAction } = createMockBot();
+    registerClientMenu(bot);
+
+    const handler = getAction(ROLE_CLIENT_ACTION);
+    assert.ok(handler, 'Client role action should be registered');
+
+    const { ctx, replyCalls } = createMockContext();
+    ctx.auth.user.citySelected = undefined;
+    ctx.session.city = undefined;
+
+    try {
+      await handler(ctx);
+    } finally {
+      setChatCommandsMock.mock.restore();
+    }
+
+    assert.equal(replyCalls.length, 1);
+    assert.match(replyCalls[0].text, /Укажите город/);
+  });
+
   it('opens role selection when the switch role button is used', async () => {
     const { bot, getHears } = createMockBot();
     registerClientMenu(bot);
