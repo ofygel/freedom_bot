@@ -47,6 +47,7 @@ const normaliseReason = (reason?: string): string => {
 const createToken = (): string => crypto.randomBytes(8).toString('hex');
 
 const MODERATION_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MISSING_CHANNEL_WARNING_THROTTLE_MS = 5 * 60 * 1000;
 
 const pickFormatOptions = (
   options?: ExtraReplyMessage,
@@ -277,6 +278,7 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
   const state = new Map<string, PendingModerationItem<T>>();
   const pendingRejectionPrompts = new Map<string, { token: string; moderatorId?: number }>();
   const promptsByToken = new Map<string, Set<string>>();
+  let lastMissingChannelWarningAt = 0;
 
   const buildPromptKey = (chatId: number, messageId: number): string =>
     `${chatId.toString(10)}:${messageId.toString(10)}`;
@@ -465,12 +467,18 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
   const publish = async (telegram: Telegram, item: T): Promise<PublishModerationResult> => {
     const binding = await getChannelBinding(config.channelType);
     if (!binding) {
-      logger.warn(
-        { queue: config.type, itemId: item.id },
-        'Target moderation channel is not configured, skipping publish',
-      );
+      const now = Date.now();
+      if (now - lastMissingChannelWarningAt > MISSING_CHANNEL_WARNING_THROTTLE_MS) {
+        logger.warn(
+          { queue: config.type, itemId: item.id },
+          'Target moderation channel is not configured, skipping publish',
+        );
+        lastMissingChannelWarningAt = now;
+      }
       return { status: 'missing_channel' };
     }
+
+    lastMissingChannelWarningAt = 0;
 
     const messageText = ensureArray(config.renderMessage(item)).join('\n');
     const rejectionReasons =
