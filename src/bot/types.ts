@@ -64,6 +64,7 @@ export interface AuthState {
 export interface ExecutorUploadedPhoto {
   fileId: string;
   messageId: number;
+  fileUniqueId?: string;
 }
 
 export type ExecutorVerificationStatus = 'idle' | 'collecting' | 'submitted';

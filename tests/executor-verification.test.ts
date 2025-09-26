@@ -85,15 +85,19 @@ const createContext = () => {
 };
 
 type PhotoHandler = (ctx: BotContext, next: () => Promise<void>) => Promise<void>;
+type MediaGroupHandler = PhotoHandler;
 
-const registerVerificationHandlers = (): { handlePhoto: PhotoHandler } => {
+const registerVerificationHandlers = (): { handlePhoto: PhotoHandler; handleMediaGroup: MediaGroupHandler } => {
   let photoHandler: PhotoHandler | undefined;
+  let mediaGroupHandler: MediaGroupHandler | undefined;
 
   const bot = {
     action: () => bot,
     on: (event: string, handler: unknown) => {
       if (event === 'photo') {
         photoHandler = handler as PhotoHandler;
+      } else if (event === 'media_group') {
+        mediaGroupHandler = handler as MediaGroupHandler;
       }
       return bot;
     },
@@ -107,7 +111,11 @@ const registerVerificationHandlers = (): { handlePhoto: PhotoHandler } => {
     throw new Error('photo handler was not registered');
   }
 
-  return { handlePhoto: photoHandler };
+  if (!mediaGroupHandler) {
+    throw new Error('media group handler was not registered');
+  }
+
+  return { handlePhoto: photoHandler, handleMediaGroup: mediaGroupHandler };
 };
 
 describe('executor verification handlers', () => {
@@ -190,5 +198,38 @@ describe('executor verification handlers', () => {
     const [statusStep] = recordedSteps;
     assert.equal(statusStep?.id, 'executor:verification:approved');
     assert.equal(showMenuMock.mock.callCount(), 0);
+  });
+
+  it('ignores duplicate photos by unique id', async () => {
+    const { handlePhoto } = registerVerificationHandlers();
+    const { ctx } = createContext();
+
+    const createMessage = (messageId: number) => ({
+      message_id: messageId,
+      chat: { id: ctx.chat!.id, type: 'private' as const },
+      date: Date.now(),
+      photo: [
+        { file_id: 'photo-small', file_unique_id: 'ph-shared', width: 100, height: 100 },
+        { file_id: `photo-best-${messageId}`, file_unique_id: 'ph-shared', width: 1000, height: 1000 },
+      ],
+    });
+
+    const firstMessage = createMessage(301);
+    (ctx as unknown as { message: typeof firstMessage; update: { message: typeof firstMessage } }).message =
+      firstMessage;
+    (ctx as unknown as { update: { message: typeof firstMessage } }).update = { message: firstMessage };
+
+    await handlePhoto(ctx, async () => {});
+
+    const secondMessage = createMessage(302);
+    (ctx as unknown as { message: typeof secondMessage; update: { message: typeof secondMessage } }).message =
+      secondMessage;
+    (ctx as unknown as { update: { message: typeof secondMessage } }).update = { message: secondMessage };
+
+    await handlePhoto(ctx, async () => {});
+
+    const verification = ctx.session.executor.verification.courier;
+    assert.equal(verification.uploadedPhotos.length, 1);
+    assert.equal(verification.uploadedPhotos[0]?.fileUniqueId, 'ph-shared');
   });
 });
