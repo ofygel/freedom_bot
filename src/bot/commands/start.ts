@@ -7,6 +7,9 @@ import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from './sets';
 import { hideClientMenu } from '../../ui/clientMenu';
 import { bindInlineKeyboardToUser } from '../services/callbackTokens';
 import { askPhone } from '../flows/common/phoneCollect';
+import { ensureExecutorState } from '../flows/executor/menu';
+import { startExecutorVerification } from '../flows/executor/verification';
+import { startExecutorSubscription } from '../flows/executor/subscription';
 
 type RoleKey = 'client' | 'courier' | 'driver';
 
@@ -83,6 +86,20 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
 
     await applyCommandsForRole(ctx);
     await hideClientMenu(ctx, 'Возвращаю стандартную клавиатуру…');
+
+    const executorState = ensureExecutorState(ctx);
+    const verification = executorState.verification[executorState.role];
+    if (verification.status === 'collecting') {
+      await startExecutorVerification(ctx);
+      return;
+    }
+
+    const subscriptionStatus = executorState.subscription.status;
+    if (subscriptionStatus === 'awaitingReceipt' || subscriptionStatus === 'pendingModeration') {
+      await startExecutorSubscription(ctx, { skipVerificationCheck: true });
+      return;
+    }
+
     await presentRoleSelection(ctx);
   });
 
