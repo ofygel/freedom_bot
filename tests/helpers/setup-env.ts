@@ -8,6 +8,10 @@ const REQUIRED_ENV_DEFAULTS: Record<string, string> = {
   WEBHOOK_SECRET: 'test-secret',
 };
 
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'test';
+}
+
 for (const [key, value] of Object.entries(REQUIRED_ENV_DEFAULTS)) {
   if (!process.env[key]) {
     process.env[key] = value;

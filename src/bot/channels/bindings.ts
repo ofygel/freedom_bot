@@ -34,6 +34,43 @@ const parseChatId = (value: string | number): number => {
   return parsed;
 };
 
+interface CacheEntry {
+  value: ChannelBinding | null;
+  expiresAt: number;
+}
+
+const BINDING_CACHE = new Map<ChannelType, CacheEntry>();
+
+const getCacheTtl = (): number => (process.env.NODE_ENV === 'test' ? 0 : 60_000);
+
+const readFromCache = (type: ChannelType): ChannelBinding | null | undefined => {
+  const ttl = getCacheTtl();
+  if (ttl <= 0) {
+    return undefined;
+  }
+
+  const entry = BINDING_CACHE.get(type);
+  if (!entry) {
+    return undefined;
+  }
+
+  if (entry.expiresAt <= Date.now()) {
+    BINDING_CACHE.delete(type);
+    return undefined;
+  }
+
+  return entry.value;
+};
+
+const writeToCache = (type: ChannelType, value: ChannelBinding | null): void => {
+  const ttl = getCacheTtl();
+  if (ttl <= 0) {
+    return;
+  }
+
+  BINDING_CACHE.set(type, { value, expiresAt: Date.now() + ttl });
+};
+
 export const saveChannelBinding = async (
   binding: ChannelBinding,
 ): Promise<void> => {
@@ -48,11 +85,18 @@ export const saveChannelBinding = async (
     `,
     [binding.chatId],
   );
+
+  writeToCache(binding.type, binding);
 };
 
 export const getChannelBinding = async (
   type: ChannelType,
 ): Promise<ChannelBinding | null> => {
+  const cached = readFromCache(type);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   const column = CHANNEL_COLUMNS[type];
 
   const { rows } = await pool.query<ChannelsRow>(
@@ -71,12 +115,23 @@ export const getChannelBinding = async (
 
   const value = row[column];
   if (value === null || value === undefined) {
+    writeToCache(type, null);
     return null;
   }
 
-  return {
+  const binding = {
     type,
     chatId: parseChatId(value),
-  };
+  } satisfies ChannelBinding;
+
+  writeToCache(type, binding);
+
+  return binding;
+};
+
+export const __testing = {
+  clearBindingCache: (): void => {
+    BINDING_CACHE.clear();
+  },
 };
 

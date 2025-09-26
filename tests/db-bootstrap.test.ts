@@ -82,11 +82,6 @@ describe('database bootstrap', () => {
     (pool as unknown as { connect: () => Promise<{ query: QueryHandler; release: () => void }> }).connect =
       async () => ({
         query: async (text, params) => {
-          if (text.includes('CREATE TABLE IF NOT EXISTS schema_migrations')) {
-            createTableCount += 1;
-            return { rows: [] };
-          }
-
           if (text.startsWith('SELECT EXISTS')) {
             const [fileName] = params ?? [];
             const name = fileName as string;
@@ -97,15 +92,20 @@ describe('database bootstrap', () => {
             return { rows: [{ exists }] };
           }
 
-          if (text.includes('INSERT INTO schema_migrations')) {
-            const [fileName] = params ?? [];
-            recorded.push(fileName as string);
-            return { rows: [] };
-          }
-
           if (pendingQueue.length > 0) {
             const current = pendingQueue.shift()!;
             applied.push(current);
+            return { rows: [] };
+          }
+
+          if (text.includes('CREATE TABLE IF NOT EXISTS schema_migrations')) {
+            createTableCount += 1;
+            return { rows: [] };
+          }
+
+          if (text.includes('INSERT INTO schema_migrations')) {
+            const [fileName] = params ?? [];
+            recorded.push(fileName as string);
             return { rows: [] };
           }
 
