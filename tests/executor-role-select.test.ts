@@ -13,8 +13,14 @@ import {
 import type { UiStepOptions } from '../src/bot/ui';
 
 let registerExecutorRoleSelect: typeof import('../src/bot/flows/executor/roleSelect')['registerExecutorRoleSelect'];
+let registerExecutorMenu: typeof import('../src/bot/flows/executor/menu')['registerExecutorMenu'];
+let EXECUTOR_MENU_CITY_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_CITY_ACTION'];
+let registerExecutorVerification: typeof import('../src/bot/flows/executor/verification')['registerExecutorVerification'];
+let registerCityAction: typeof import('../src/bot/flows/common/citySelect')['registerCityAction'];
 let commandsService: typeof import('../src/bot/services/commands');
 let uiHelper: typeof import('../src/bot/ui')['ui'];
+let usersDb: typeof import('../src/db/users');
+let usersService: typeof import('../src/services/users');
 
 before(async () => {
   process.env.BOT_TOKEN = process.env.BOT_TOKEN ?? 'test-token';
@@ -31,8 +37,15 @@ before(async () => {
   process.env.SUB_PRICE_30 = process.env.SUB_PRICE_30 ?? '16000';
 
   ({ registerExecutorRoleSelect } = await import('../src/bot/flows/executor/roleSelect'));
+  ({ registerExecutorMenu, EXECUTOR_MENU_CITY_ACTION } = await import(
+    '../src/bot/flows/executor/menu'
+  ));
+  ({ registerExecutorVerification } = await import('../src/bot/flows/executor/verification'));
+  ({ registerCityAction } = await import('../src/bot/flows/common/citySelect'));
   commandsService = await import('../src/bot/services/commands');
   ({ ui: uiHelper } = await import('../src/bot/ui'));
+  usersDb = await import('../src/db/users');
+  usersService = await import('../src/services/users');
 });
 
 const ROLE_DRIVER_ACTION = 'role:driver';
@@ -91,7 +104,10 @@ const createAuthState = (): BotContext['auth'] => ({
 });
 
 const createMockBot = () => {
-  const actions = new Map<string, (ctx: BotContext) => Promise<void>>();
+  const actions: Array<{
+    trigger: string | RegExp;
+    handler: (ctx: BotContext, next: () => Promise<void>) => Promise<void>;
+  }> = [];
 
   const bot: Partial<Telegraf<BotContext>> = {
     telegram: {
@@ -100,14 +116,69 @@ const createMockBot = () => {
     } as unknown as Telegraf<BotContext>['telegram'],
   };
 
-  bot.action = (trigger: string, handler: (ctx: BotContext) => Promise<void>) => {
-    actions.set(trigger, handler);
+  bot.action = (
+    trigger: string | RegExp,
+    handler: (ctx: BotContext, next: () => Promise<void>) => Promise<void>,
+  ) => {
+    actions.push({ trigger, handler });
     return bot as Telegraf<BotContext>;
+  };
+
+  bot.command = () => bot as Telegraf<BotContext>;
+  bot.hears = () => bot as Telegraf<BotContext>;
+  bot.on = () => bot as Telegraf<BotContext>;
+
+  const getAction = (trigger: string) => {
+    const entry = actions.find((candidate) => candidate.trigger === trigger);
+    if (!entry) {
+      return undefined;
+    }
+
+    return async (ctx: BotContext, next?: () => Promise<void>): Promise<void> => {
+      await entry.handler(
+        ctx,
+        next ?? (async () => {
+          /* noop */
+        }),
+      );
+    };
+  };
+
+  const dispatchAction = async (data: string, ctx: BotContext): Promise<void> => {
+    const matches = actions
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) =>
+        typeof entry.trigger === 'string' ? entry.trigger === data : entry.trigger.test(data),
+      );
+
+    const mutableCtx = ctx as BotContext & { match?: RegExpExecArray | undefined };
+
+    const run = async (position: number): Promise<void> => {
+      const match = matches[position];
+      if (!match) {
+        return;
+      }
+
+      const {
+        entry: { trigger, handler },
+      } = match;
+
+      if (trigger instanceof RegExp) {
+        mutableCtx.match = trigger.exec(data) ?? undefined;
+      } else {
+        mutableCtx.match = undefined;
+      }
+
+      await handler(ctx, () => run(position + 1));
+    };
+
+    await run(0);
   };
 
   return {
     bot: bot as Telegraf<BotContext>,
-    getAction: (trigger: string) => actions.get(trigger),
+    getAction,
+    dispatchAction,
   };
 };
 
@@ -135,6 +206,9 @@ const createMockContext = () => {
       return true;
     },
     editMessageReplyMarkup: async () => undefined,
+    editMessageText: async () => {
+      throw new Error('message to edit not found');
+    },
     reply: async (text: string, extra?: unknown) => {
       if (callbackRemoved) {
         const error = new Error('Bad Request: message to reply not found');
@@ -163,6 +237,10 @@ const createMockContext = () => {
       setMyCommands: async () => undefined,
       setChatMenuButton: async () => undefined,
     },
+    update: {} as never,
+    updateType: 'callback_query',
+    botInfo: {} as never,
+    state: {},
   } as unknown as BotContext;
 
   return {
@@ -224,5 +302,110 @@ describe('executor role selection', () => {
     }).reply_markup;
     assert.ok(promptMarkup, 'city selection keyboard should be attached');
     assert.match(promptCall.text, /Сначала выбери город/);
+  });
+
+  it('starts driver verification after confirming the work city', async () => {
+    const setChatCommandsMock = mock.method(
+      commandsService,
+      'setChatCommands',
+      async () => undefined,
+    );
+    const updateUserRoleMock = mock.method(usersDb, 'updateUserRole', async () => undefined);
+    const setUserCitySelectedMock = mock.method(
+      usersService,
+      'setUserCitySelected',
+      async () => undefined,
+    );
+
+    const { bot, getAction, dispatchAction } = createMockBot();
+    registerCityAction(bot);
+    registerExecutorRoleSelect(bot);
+    registerExecutorMenu(bot);
+    registerExecutorVerification(bot);
+
+    const handler = getAction(ROLE_DRIVER_ACTION);
+    assert.ok(handler, 'driver role action should be registered');
+
+    const { ctx } = createMockContext();
+
+    try {
+      await handler(ctx);
+      assert.equal(ctx.session.ui.pendingCityAction, EXECUTOR_MENU_CITY_ACTION);
+
+      Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+        callbackQuery: {
+          data: 'city:almaty',
+          message: { message_id: 101, chat: ctx.chat },
+        } as typeof ctx.callbackQuery,
+      });
+
+      await dispatchAction('city:almaty', ctx);
+    } finally {
+      setChatCommandsMock.mock.restore();
+      updateUserRoleMock.mock.restore();
+      setUserCitySelectedMock.mock.restore();
+    }
+
+    const verificationPrompt = recordedSteps.find(
+      (step) => step.id === 'executor:verification:prompt',
+    );
+    assert.ok(verificationPrompt, 'verification prompt should be shown after city confirmation');
+    assert.match(verificationPrompt.text, /водительского удостоверения/i);
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be displayed after verification prompt');
+    assert.equal(ctx.session.executor.verification.driver.status, 'collecting');
+  });
+
+  it('requires driver verification even when courier role was verified earlier', async () => {
+    const setChatCommandsMock = mock.method(
+      commandsService,
+      'setChatCommands',
+      async () => undefined,
+    );
+    const updateUserRoleMock = mock.method(usersDb, 'updateUserRole', async () => undefined);
+    const setUserCitySelectedMock = mock.method(
+      usersService,
+      'setUserCitySelected',
+      async () => undefined,
+    );
+
+    const { bot, getAction, dispatchAction } = createMockBot();
+    registerCityAction(bot);
+    registerExecutorRoleSelect(bot);
+    registerExecutorMenu(bot);
+    registerExecutorVerification(bot);
+
+    const handler = getAction(ROLE_DRIVER_ACTION);
+    assert.ok(handler, 'driver role action should be registered');
+
+    const { ctx } = createMockContext();
+    ctx.auth.executor.verifiedRoles.courier = true;
+    ctx.auth.executor.isVerified = true;
+
+    try {
+      await handler(ctx);
+      assert.equal(ctx.session.ui.pendingCityAction, EXECUTOR_MENU_CITY_ACTION);
+
+      Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+        callbackQuery: {
+          data: 'city:almaty',
+          message: { message_id: 202, chat: ctx.chat },
+        } as typeof ctx.callbackQuery,
+      });
+
+      await dispatchAction('city:almaty', ctx);
+    } finally {
+      setChatCommandsMock.mock.restore();
+      updateUserRoleMock.mock.restore();
+      setUserCitySelectedMock.mock.restore();
+    }
+
+    const verificationPrompt = recordedSteps.find(
+      (step) => step.id === 'executor:verification:prompt',
+    );
+    assert.ok(verificationPrompt, 'driver verification should still be requested');
+    assert.match(verificationPrompt.text, /водительского удостоверения/i);
+    assert.equal(ctx.session.executor.verification.driver.status, 'collecting');
   });
 });
