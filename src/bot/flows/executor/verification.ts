@@ -206,6 +206,7 @@ const submitForModeration = async (
 
     const moderationChatId = result.chatId;
     const storedPhotos = [...verification.uploadedPhotos];
+    const submittedPhotoCount = storedPhotos.length;
 
     if (storedPhotos.length > 0) {
       if (typeof moderationChatId !== 'number') {
@@ -316,7 +317,7 @@ const submitForModeration = async (
       ctx.telegram,
       applicant,
       role,
-      verification.uploadedPhotos.length,
+      submittedPhotoCount,
       application.applicant.phone,
     );
 
