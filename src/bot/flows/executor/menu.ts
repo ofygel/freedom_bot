@@ -189,8 +189,16 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
 
     const subscription = ctx.session.executor.subscription;
     if (ctx.auth.executor.hasActiveSubscription) {
-      if (subscription.status !== 'idle') {
-        subscription.status = 'idle';
+      const preserveSubscriptionFlow =
+        subscription.status === 'selectingPeriod' ||
+        subscription.status === 'awaitingReceipt' ||
+        subscription.status === 'pendingModeration';
+
+      if (!preserveSubscriptionFlow) {
+        if (subscription.status !== 'idle') {
+          subscription.status = 'idle';
+        }
+
         subscription.selectedPeriodId = undefined;
         subscription.pendingPaymentId = undefined;
       }
