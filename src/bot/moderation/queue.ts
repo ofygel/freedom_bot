@@ -607,14 +607,17 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     decision: ModerationDecision,
     reason?: string,
   ): Promise<void> => {
-    if (ctx.chat && ctx.chat.type && ctx.chat.type !== 'private') {
-      await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.');
-      return;
-    }
-
     const entry = await getEntry(token);
     if (!entry) {
       await ctx.answerCbQuery('Не удалось найти заявку. Вероятно, она уже обработана.');
+      return;
+    }
+
+    const chatId = ctx.chat?.id;
+    const isPrivateChat = ctx.chat?.type === 'private';
+    const isModerationChat = chatId !== undefined && chatId === entry.message.chatId;
+    if (!isPrivateChat && !isModerationChat) {
+      await ctx.answerCbQuery('Действие доступно только в личном чате с ботом или в чате модерации.');
       return;
     }
 
@@ -641,14 +644,17 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     token: string,
     reasonIndex: number,
   ): Promise<void> => {
-    if (ctx.chat && ctx.chat.type && ctx.chat.type !== 'private') {
-      await ctx.answerCbQuery('Доступно только в личном чате с ботом.');
-      return;
-    }
-
     const entry = await getEntry(token);
     if (!entry) {
       await ctx.answerCbQuery('Не удалось найти заявку. Вероятно, она уже обработана.');
+      return;
+    }
+
+    const chatId = ctx.chat?.id;
+    const isPrivateChat = ctx.chat?.type === 'private';
+    const isModerationChat = chatId !== undefined && chatId === entry.message.chatId;
+    if (!isPrivateChat && !isModerationChat) {
+      await ctx.answerCbQuery('Доступно только в личном чате с ботом или в чате модерации.');
       return;
     }
 
@@ -657,7 +663,6 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
       return;
     }
 
-    const chatId = ctx.chat?.id;
     if (chatId === undefined) {
       await ctx.answerCbQuery('Не удалось запросить причину отклонения. Попробуйте ещё раз.');
       return;
@@ -721,13 +726,6 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
       const replyTo = ctx.message.reply_to_message;
       const chatId = ctx.chat?.id;
       if (!replyTo || chatId === undefined) {
-        if (next) {
-          await next();
-        }
-        return;
-      }
-
-      if (ctx.chat && ctx.chat.type && ctx.chat.type !== 'private') {
         if (next) {
           await next();
         }
