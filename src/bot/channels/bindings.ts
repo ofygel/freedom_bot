@@ -1,3 +1,4 @@
+import { config, logger } from '../../config';
 import { pool } from '../../db';
 
 export type ChannelType = 'verify' | 'drivers' | 'stats';
@@ -71,6 +72,34 @@ const writeToCache = (type: ChannelType, value: ChannelBinding | null): void => 
   BINDING_CACHE.set(type, { value, expiresAt: Date.now() + ttl });
 };
 
+const FALLBACK_CHAT_IDS: Partial<Record<ChannelType, number>> = {
+  drivers: config.subscriptions.payment.driversChannelId,
+};
+
+const persistFallbackBinding = async (
+  type: ChannelType,
+): Promise<ChannelBinding | null> => {
+  const chatId = FALLBACK_CHAT_IDS[type];
+  if (typeof chatId !== 'number') {
+    return null;
+  }
+
+  const binding: ChannelBinding = { type, chatId };
+
+  try {
+    await saveChannelBinding(binding);
+  } catch (error) {
+    logger.error(
+      { err: error, type },
+      'Failed to persist fallback channel binding',
+    );
+  }
+
+  writeToCache(type, binding);
+
+  return binding;
+};
+
 export const saveChannelBinding = async (
   binding: ChannelBinding,
 ): Promise<void> => {
@@ -110,11 +139,21 @@ export const getChannelBinding = async (
 
   const [row] = rows;
   if (!row) {
+    const fallback = await persistFallbackBinding(type);
+    if (fallback) {
+      return fallback;
+    }
+
     return null;
   }
 
   const value = row[column];
   if (value === null || value === undefined) {
+    const fallback = await persistFallbackBinding(type);
+    if (fallback) {
+      return fallback;
+    }
+
     writeToCache(type, null);
     return null;
   }

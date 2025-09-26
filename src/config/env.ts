@@ -151,6 +151,20 @@ const parseOptionalPositiveNumber = (envKey: string): number | undefined => {
   return parsed;
 };
 
+const parseOptionalChatId = (envKey: string): number | undefined => {
+  const raw = getTrimmedEnv(envKey);
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed === 0) {
+    throw new Error(`${envKey} must be a non-zero integer`);
+  }
+
+  return parsed;
+};
+
 const parsePositiveInt = (envKey: string, defaultValue: number): number => {
   const raw = getTrimmedEnv(envKey);
 
@@ -307,6 +321,7 @@ export interface AppConfig {
         name: string;
         phone: string;
       };
+      driversChannelId?: number;
       driversChannelInvite?: string;
     };
   };
@@ -362,6 +377,7 @@ export const loadConfig = (): AppConfig => ({
         name: getRequiredString('KASPI_NAME'),
         phone: getRequiredString('KASPI_PHONE'),
       },
+      driversChannelId: parseOptionalChatId('DRIVERS_CHANNEL_ID'),
       driversChannelInvite: getOptionalString('DRIVERS_CHANNEL_INVITE'),
     },
   },

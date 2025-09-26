@@ -17,3 +17,7 @@ for (const [key, value] of Object.entries(REQUIRED_ENV_DEFAULTS)) {
     process.env[key] = value;
   }
 }
+
+if (!process.env.DRIVERS_CHANNEL_ID) {
+  process.env.DRIVERS_CHANNEL_ID = '-100200300';
+}

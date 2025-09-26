@@ -3,7 +3,7 @@ import './helpers/setup-env';
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 
-import { getChannelBinding, saveChannelBinding } from '../src/bot/channels/bindings';
+import { __testing, getChannelBinding, saveChannelBinding } from '../src/bot/channels/bindings';
 import { pool } from '../src/db';
 
 type QueryFunction = (
@@ -45,6 +45,7 @@ const extractQueryInvocation = (
 };
 
 afterEach(() => {
+  __testing.clearBindingCache();
   setPoolQuery(originalQuery);
 });
 
@@ -89,5 +90,79 @@ describe('channel bindings', () => {
     assert.equal(binding?.type, 'stats');
     assert.equal(binding?.chatId, -10054321);
     assert.ok(executedText?.includes('stats_channel_id'));
+  });
+
+  it('uses fallback drivers channel binding when env override is present', async () => {
+    const previousEnv = process.env.DRIVERS_CHANNEL_ID;
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+
+    const fallbackChatId = Number.parseInt(process.env.DRIVERS_CHANNEL_ID ?? '', 10);
+    if (!Number.isFinite(fallbackChatId)) {
+      throw new Error('Expected DRIVERS_CHANNEL_ID to be set for tests');
+    }
+
+    let selectCount = 0;
+    let insertCount = 0;
+    let insertedChatId: number | undefined;
+
+    const queryStub: QueryFunction = async (...args) => {
+      const { text, params } = extractQueryInvocation(args);
+
+      if (/SELECT\s+verify_channel_id/i.test(text)) {
+        selectCount += 1;
+
+        if (typeof insertedChatId === 'number') {
+          return {
+            rows: [
+              {
+                verify_channel_id: null,
+                drivers_channel_id: insertedChatId,
+                stats_channel_id: null,
+              },
+            ],
+          } as any;
+        }
+
+        return { rows: [] } as any;
+      }
+
+      if (/INSERT\s+INTO\s+channels/i.test(text)) {
+        insertCount += 1;
+        insertedChatId = params?.[0] as number;
+        return { rows: [] } as any;
+      }
+
+      throw new Error(`Unexpected query invocation: ${text}`);
+    };
+
+    setPoolQuery(queryStub);
+
+    try {
+      const binding = await getChannelBinding('drivers');
+
+      assert.ok(binding);
+      assert.equal(binding?.chatId, fallbackChatId);
+      assert.equal(insertCount, 1);
+      assert.equal(insertedChatId, fallbackChatId);
+
+      const cached = await getChannelBinding('drivers');
+      assert.ok(cached);
+      assert.equal(cached.chatId, fallbackChatId);
+      assert.equal(selectCount, 1);
+    } finally {
+      if (previousEnv === undefined) {
+        delete process.env.DRIVERS_CHANNEL_ID;
+      } else {
+        process.env.DRIVERS_CHANNEL_ID = previousEnv;
+      }
+
+      if (previousNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = previousNodeEnv;
+      }
+      insertedChatId = undefined;
+    }
   });
 });
