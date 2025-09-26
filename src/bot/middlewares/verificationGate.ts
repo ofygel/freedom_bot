@@ -50,7 +50,10 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
   const callbackQuery = ctx.callbackQuery;
   if (callbackQuery && 'data' in callbackQuery) {
     const callbackData = callbackQuery.data;
-    if (typeof callbackData === 'string' && CITY_ACTION_PATTERN.test(callbackData)) {
+    if (
+      typeof callbackData === 'string' &&
+      (callbackData.startsWith('mod:') || CITY_ACTION_PATTERN.test(callbackData))
+    ) {
       await next();
       return;
     }
