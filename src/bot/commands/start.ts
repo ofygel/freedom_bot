@@ -72,36 +72,39 @@ const applyCommandsForRole = async (ctx: BotContext): Promise<void> => {
   }
 };
 
+export const handleStart = async (ctx: BotContext): Promise<void> => {
+  if (ctx.chat?.type !== 'private') {
+    await ctx.reply('Пожалуйста, начните диалог с ботом в личных сообщениях.');
+    return;
+  }
+
+  if (!ctx.session.user?.phoneVerified) {
+    await askPhone(ctx);
+    return;
+  }
+
+  await applyCommandsForRole(ctx);
+  await hideClientMenu(ctx, 'Возвращаю стандартную клавиатуру…');
+
+  const executorState = ensureExecutorState(ctx);
+  const verification = executorState.verification[executorState.role];
+  if (verification.status === 'collecting') {
+    await startExecutorVerification(ctx);
+    return;
+  }
+
+  const subscriptionStatus = executorState.subscription.status;
+  if (subscriptionStatus === 'awaitingReceipt' || subscriptionStatus === 'pendingModeration') {
+    await startExecutorSubscription(ctx, { skipVerificationCheck: true });
+    return;
+  }
+
+  await presentRoleSelection(ctx);
+};
+
 export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
-  bot.start(async (ctx) => {
-    if (ctx.chat?.type !== 'private') {
-      await ctx.reply('Пожалуйста, начните диалог с ботом в личных сообщениях.');
-      return;
-    }
-
-    if (!ctx.session.user?.phoneVerified) {
-      await askPhone(ctx);
-      return;
-    }
-
-    await applyCommandsForRole(ctx);
-    await hideClientMenu(ctx, 'Возвращаю стандартную клавиатуру…');
-
-    const executorState = ensureExecutorState(ctx);
-    const verification = executorState.verification[executorState.role];
-    if (verification.status === 'collecting') {
-      await startExecutorVerification(ctx);
-      return;
-    }
-
-    const subscriptionStatus = executorState.subscription.status;
-    if (subscriptionStatus === 'awaitingReceipt' || subscriptionStatus === 'pendingModeration') {
-      await startExecutorSubscription(ctx, { skipVerificationCheck: true });
-      return;
-    }
-
-    await presentRoleSelection(ctx);
-  });
+  bot.start(handleStart);
+  bot.hears(/^start$/i, handleStart);
 
   bot.on('contact', async (ctx, next) => {
     if (ctx.chat?.type !== 'private') {
