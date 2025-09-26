@@ -470,7 +470,7 @@ export const showExecutorMenu = async (
   ctx: BotContext,
   options: ShowExecutorMenuOptions = {},
 ): Promise<void> => {
-  if (!ctx.chat) {
+  if (ctx.chat?.type !== 'private') {
     return;
   }
 
