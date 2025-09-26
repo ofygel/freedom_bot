@@ -97,6 +97,7 @@ export interface ExecutorSubscriptionState {
   moderationMessageId?: number;
   lastInviteLink?: string;
   lastIssuedAt?: number;
+  lastReminderAt?: number;
 }
 
 export type ExecutorVerificationState = Record<ExecutorRole, ExecutorVerificationRoleState>;
