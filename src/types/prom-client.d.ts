@@ -27,6 +27,26 @@ declare module 'prom-client' {
     reset(): void;
   }
 
+  export interface GaugeConfiguration<TLabel extends string = string> {
+    name: string;
+    help: string;
+    labelNames?: readonly TLabel[];
+    registers?: Registry[];
+  }
+
+  export class Gauge<TLabel extends string = string> {
+    constructor(configuration: GaugeConfiguration<TLabel>);
+    inc(labels?: Record<TLabel, string>, value?: number): void;
+    dec(labels?: Record<TLabel, string>, value?: number): void;
+    set(labels: Record<TLabel, string>, value: number): void;
+    set(value: number): void;
+    setToCurrentTime(labels?: Record<TLabel, string>): void;
+    startTimer(labels?: Record<TLabel, string>): () => number;
+    labels(...values: string[]): Gauge<TLabel>;
+    labels(labels: Record<TLabel, string>): Gauge<TLabel>;
+    reset(): void;
+  }
+
   export class Histogram<TLabel extends string = string> {
     constructor(configuration: HistogramConfiguration<TLabel>);
     startTimer(labels?: Record<TLabel, string>): () => void;
