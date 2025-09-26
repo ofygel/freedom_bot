@@ -80,11 +80,10 @@ export const hideClientMenu = async (
 export const isClientChat = (ctx: BotContext, role?: UserRole): boolean =>
   ctx.chat?.type === 'private' && (role === 'client' || role === undefined);
 
-export const clientMenuText = (city?: string): string =>
+export const clientMenuText = (): string =>
   [
     '🎯 Меню клиента',
-    city ? `Текущий город: ${city}.` : undefined,
-    city ? '' : undefined,
+    '',
     'Выберите, что хотите оформить:',
     '• 🚕 Такси — подача машины и поездка по указанному адресу.',
     '• 📦 Доставка — курьер заберёт и доставит вашу посылку.',
@@ -92,6 +91,4 @@ export const clientMenuText = (city?: string): string =>
     '• 🆘 Поддержка — напишите нам, если нужна помощь.',
     '• 🏙️ Сменить город — обновите географию заказов.',
     '• 👥 Сменить роль — переключитесь на режим исполнителя или клиента.',
-  ]
-    .filter((line): line is string => typeof line === 'string')
-    .join('\n');
+  ].join('\n');

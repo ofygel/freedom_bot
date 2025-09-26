@@ -171,7 +171,7 @@ const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
   const trialDaysLeft = trialEndsAt
     ? Math.max(0, Math.ceil((trialEndsAt.getTime() - Date.now()) / 86400000))
     : undefined;
-  const baseText = prompt ?? clientMenuText(cityLabel);
+  const baseText = prompt ?? clientMenuText();
   const miniStatus = copy.clientMiniStatus(cityLabel, trialDaysLeft);
   const header = miniStatus ? `${miniStatus}\n\n${baseText}` : baseText;
 
