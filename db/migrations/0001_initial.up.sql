@@ -2,7 +2,6 @@ BEGIN;
 
 /* ---------- EXTENSIONS ---------- */
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-CREATE EXTENSION IF NOT EXISTS "postgis";
 
 /* ---------- ENUM TYPES ---------- */
 DO $$
@@ -47,6 +46,19 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_tg_id_role ON users (tg_id, role);
 
 --------------------------------------------------------------------
+/* Clean up stale FK if an old migration created it incorrectly */
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM   information_schema.table_constraints
+    WHERE  constraint_name = 'sessions_scope_id_fkey'
+    AND    table_name = 'sessions'
+  ) THEN
+    ALTER TABLE sessions DROP CONSTRAINT sessions_scope_id_fkey;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS sessions (
   scope            TEXT        NOT NULL,
   scope_id         BIGINT      NOT NULL,
@@ -56,9 +68,24 @@ CREATE TABLE IF NOT EXISTS sessions (
   last_step_at     TIMESTAMPTZ,
   nudge_sent_at    TIMESTAMPTZ,
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (scope, scope_id),
-  FOREIGN KEY (scope_id) REFERENCES users(tg_id) ON DELETE CASCADE
+  PRIMARY KEY (scope, scope_id)
 );
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM   information_schema.table_constraints
+    WHERE  constraint_name = 'sessions_scope_id_fkey'
+    AND    table_name = 'sessions'
+  ) THEN
+    ALTER TABLE sessions
+      ADD CONSTRAINT sessions_scope_id_fkey
+        FOREIGN KEY (scope_id) REFERENCES users(tg_id) ON DELETE CASCADE;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_sessions_scope_id ON sessions (scope_id);
 
 --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS recent_actions (
@@ -78,8 +105,8 @@ CREATE TABLE IF NOT EXISTS orders (
   status           order_status    NOT NULL DEFAULT 'open',
   client_id        BIGINT          NOT NULL REFERENCES users(tg_id),
   executor_id      BIGINT          REFERENCES users(tg_id),
-  route_from       GEOMETRY(Point, 4326),
-  route_to         GEOMETRY(Point, 4326),
+  route_from       POINT,
+  route_to         POINT,
   payload          JSONB,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -88,8 +115,8 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE INDEX IF NOT EXISTS idx_orders_status       ON orders (status);
 CREATE INDEX IF NOT EXISTS idx_orders_client_id    ON orders (client_id);
 CREATE INDEX IF NOT EXISTS idx_orders_executor_id  ON orders (executor_id);
-CREATE INDEX IF NOT EXISTS idx_orders_from_geom    ON orders USING GIST (route_from);
-CREATE INDEX IF NOT EXISTS idx_orders_to_geom      ON orders USING GIST (route_to);
+/* Spatial indexes are intentionally omitted because the schema avoids
+   PostGIS dependencies by using the native POINT type. */
 
 --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS subscriptions (
@@ -145,17 +172,18 @@ CREATE INDEX IF NOT EXISTS idx_fsm_journal_user ON fsm_journal (user_id);
 
 --------------------------------------------------------------------
 /* Вьюхи «Мои заказы» для клиента и курьера */
-CREATE OR REPLACE VIEW v_client_orders AS
+DROP VIEW IF EXISTS v_client_orders;
+DROP VIEW IF EXISTS v_executor_orders;
+
+CREATE VIEW v_client_orders AS
 SELECT o.*, u.username AS executor_username
 FROM   orders o
-LEFT   JOIN users u ON u.tg_id = o.executor_id
-WHERE  o.client_id = current_setting('request.tg_id', true)::bigint;
+LEFT   JOIN users u ON u.tg_id = o.executor_id;
 
-CREATE OR REPLACE VIEW v_executor_orders AS
+CREATE VIEW v_executor_orders AS
 SELECT o.*, u.username AS client_username
 FROM   orders o
-LEFT   JOIN users u ON u.tg_id = o.client_id
-WHERE  o.executor_id = current_setting('request.tg_id', true)::bigint;
+LEFT   JOIN users u ON u.tg_id = o.client_id;
 
 /* ---------- INITIAL DATA ---------- */
 -- пример системных строк (необязательно)
