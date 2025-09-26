@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { clearSession, session } from '../src/bot/middlewares/session';
 import type { BotContext } from '../src/bot/types';
 import { pool } from '../src/db';
+import * as sessionStorage from '../src/db/sessions';
 
 type QueryHandler = (
   text: string,
@@ -145,5 +146,50 @@ describe('session middleware', () => {
     assert.notStrictEqual(ctx2.session, ctx.session);
 
     await clearSession(ctx2);
+  });
+
+  it('falls back to default session state when database access fails', async () => {
+    const middleware = session();
+    const ctx = {
+      chat: { id: 123, type: 'private' as const },
+      from: { id: 456 },
+      auth: createAuthState(456),
+    } as unknown as BotContext;
+
+    const sessionModule = sessionStorage as unknown as {
+      saveSessionState: typeof sessionStorage.saveSessionState;
+      deleteSessionState: typeof sessionStorage.deleteSessionState;
+    };
+
+    const originalSave = sessionModule.saveSessionState;
+    const originalDelete = sessionModule.deleteSessionState;
+
+    (pool as unknown as { connect: () => Promise<never> }).connect = async () => {
+      throw new Error('database unavailable');
+    };
+
+    sessionModule.saveSessionState = (async () => {
+      throw new Error('saveSessionState should not be called in fallback mode');
+    }) as typeof sessionModule.saveSessionState;
+
+    sessionModule.deleteSessionState = (async () => {
+      throw new Error('deleteSessionState should not be called in fallback mode');
+    }) as typeof sessionModule.deleteSessionState;
+
+    let nextCalled = false;
+
+    try {
+      await middleware(ctx, async () => {
+        nextCalled = true;
+        assert.equal(ctx.session.isAuthenticated, false);
+        assert.equal(ctx.session.client.taxi.stage, 'idle');
+        assert.equal(ctx.session.executor.subscription.status, 'idle');
+      });
+    } finally {
+      sessionModule.saveSessionState = originalSave;
+      sessionModule.deleteSessionState = originalDelete;
+    }
+
+    assert.equal(nextCalled, true);
   });
 });
