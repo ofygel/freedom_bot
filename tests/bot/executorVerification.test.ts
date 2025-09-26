@@ -271,6 +271,7 @@ describe('executor verification media group handler', () => {
           startHandler = handler;
           return startBot;
         },
+        hears: () => startBot,
         on: () => startBot,
       } as unknown as import('telegraf').Telegraf<BotContext>;
 

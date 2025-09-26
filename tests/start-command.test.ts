@@ -13,6 +13,7 @@ let askPhoneModule: typeof import('../src/bot/flows/common/phoneCollect');
 let commandsService: typeof import('../src/bot/services/commands');
 let executorVerificationModule: typeof import('../src/bot/flows/executor/verification');
 let executorSubscriptionModule: typeof import('../src/bot/flows/executor/subscription');
+let hideClientMenuModule: typeof import('../src/ui/clientMenu');
 
 before(async () => {
   process.env.BOT_TOKEN = process.env.BOT_TOKEN ?? 'test-token';
@@ -34,6 +35,7 @@ before(async () => {
   ({ registerStartCommand } = startCommandModule);
   executorVerificationModule = await import('../src/bot/flows/executor/verification');
   executorSubscriptionModule = await import('../src/bot/flows/executor/subscription');
+  hideClientMenuModule = await import('../src/ui/clientMenu');
 });
 
 let askPhoneMock: ReturnType<typeof mock.method> | undefined;
@@ -41,6 +43,7 @@ let setChatCommandsMock: ReturnType<typeof mock.method> | undefined;
 let startExecutorVerificationMock: ReturnType<typeof mock.method> | undefined;
 let startExecutorSubscriptionMock: ReturnType<typeof mock.method> | undefined;
 let presentRoleSelectionMock: ReturnType<typeof mock.method> | undefined;
+let hideClientMenuMock: ReturnType<typeof mock.method> | undefined;
 
 afterEach(() => {
   askPhoneMock?.mock.restore();
@@ -48,20 +51,30 @@ afterEach(() => {
   startExecutorVerificationMock?.mock.restore();
   startExecutorSubscriptionMock?.mock.restore();
   presentRoleSelectionMock?.mock.restore();
+  hideClientMenuMock?.mock.restore();
   askPhoneMock = undefined;
   setChatCommandsMock = undefined;
   startExecutorVerificationMock = undefined;
   startExecutorSubscriptionMock = undefined;
   presentRoleSelectionMock = undefined;
+  hideClientMenuMock = undefined;
 });
 
 const createMockBot = () => {
   let startHandler: ((ctx: BotContext) => Promise<void>) | undefined;
   const handlers = new Map<string, (ctx: BotContext) => Promise<void>>();
+  const hearsHandlers: Array<{
+    trigger: string | RegExp | string[];
+    handler: (ctx: BotContext) => Promise<void>;
+  }> = [];
 
   const bot = {
     start: (handler: typeof startHandler) => {
       startHandler = handler;
+      return bot;
+    },
+    hears: (trigger: string | RegExp | string[], handler: (ctx: BotContext) => Promise<void>) => {
+      hearsHandlers.push({ trigger, handler });
       return bot;
     },
     on: (event: string, handler: (ctx: BotContext) => Promise<void>) => {
@@ -74,6 +87,29 @@ const createMockBot = () => {
     bot,
     getStartHandler: () => startHandler,
     getHandler: (event: string) => handlers.get(event),
+    triggerHears: async (text: string, ctx: BotContext) => {
+      for (const { trigger, handler } of hearsHandlers) {
+        if (typeof trigger === 'string') {
+          if (trigger === text) {
+            await handler(ctx);
+          }
+          continue;
+        }
+
+        if (Array.isArray(trigger)) {
+          if (trigger.includes(text)) {
+            await handler(ctx);
+          }
+          continue;
+        }
+
+        trigger.lastIndex = 0;
+        if (trigger.test(text)) {
+          trigger.lastIndex = 0;
+          await handler(ctx);
+        }
+      }
+    },
   };
 };
 
@@ -325,6 +361,60 @@ describe('/start command', () => {
 
     await handler(ctx);
 
+    assert.equal(startExecutorVerificationMock.mock.callCount(), 0);
+    assert.equal(startExecutorSubscriptionMock.mock.callCount(), 0);
+    assert.equal(presentRoleSelectionMock.mock.callCount(), 1);
+  });
+
+  it('handles bare "start" text the same as /start when user is ready', async () => {
+    askPhoneMock = mock.method(askPhoneModule, 'askPhone', async () => undefined);
+    setChatCommandsMock = mock.method(commandsService, 'setChatCommands', async () => undefined);
+    hideClientMenuMock = mock.method(hideClientMenuModule, 'hideClientMenu', async () => undefined);
+    startExecutorVerificationMock = mock.method(
+      executorVerificationModule,
+      'startExecutorVerification',
+      async () => undefined,
+    );
+    startExecutorSubscriptionMock = mock.method(
+      executorSubscriptionModule,
+      'startExecutorSubscription',
+      async () => undefined,
+    );
+    presentRoleSelectionMock = mock.method(
+      startCommandModule,
+      'presentRoleSelection',
+      async () => undefined,
+    );
+
+    const { bot, triggerHears } = createMockBot();
+    registerStartCommand(bot);
+
+    const ctx = createContext('courier');
+    ctx.session.user!.phoneVerified = true;
+    ctx.auth.user.phoneVerified = true;
+    ctx.session.executor = {
+      role: 'courier',
+      verification: {
+        courier: {
+          status: 'submitted',
+          requiredPhotos: EXECUTOR_VERIFICATION_PHOTO_COUNT,
+          uploadedPhotos: [],
+          submittedAt: undefined,
+          moderation: undefined,
+        },
+      },
+      subscription: { status: 'idle' },
+    } as any;
+
+    await triggerHears('start', ctx);
+
+    assert.equal(askPhoneMock.mock.callCount(), 0);
+    assert.equal(setChatCommandsMock.mock.callCount(), 1);
+    const call = setChatCommandsMock.mock.calls[0];
+    assert.ok(call);
+    assert.equal(call.arguments[1], ctx.chat?.id);
+    assert.deepEqual(call.arguments[2], EXECUTOR_COMMANDS);
+    assert.equal(hideClientMenuMock.mock.callCount(), 1);
     assert.equal(startExecutorVerificationMock.mock.callCount(), 0);
     assert.equal(startExecutorSubscriptionMock.mock.callCount(), 0);
     assert.equal(presentRoleSelectionMock.mock.callCount(), 1);
