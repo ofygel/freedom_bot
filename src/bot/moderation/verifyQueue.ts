@@ -400,13 +400,31 @@ export const notifyVerificationApproval = async (
   }
 
   const fallback = buildFallbackApprovalNotification(application);
-  const notification = application.approvalNotification;
   const trialNotification = await activateVerificationTrial(application);
-  const text = notification?.text?.trim() || trialNotification?.text || fallback.text;
-  const keyboard = notification?.keyboard ?? trialNotification?.keyboard ?? fallback.keyboard;
+
+  let text: string;
+  let keyboard: InlineKeyboardMarkup | undefined;
+
+  if (trialNotification) {
+    text = trialNotification.text;
+    keyboard = trialNotification.keyboard;
+  } else {
+    const notification = application.approvalNotification;
+    const customText = notification?.text?.trim();
+
+    if (customText) {
+      text = customText;
+      keyboard = notification?.keyboard;
+    } else {
+      text = fallback.text;
+      keyboard = fallback.keyboard;
+    }
+  }
+
+  const replyMarkup = keyboard ?? fallback.keyboard;
 
   try {
-    await telegram.sendMessage(applicantId, text, { reply_markup: keyboard });
+    await telegram.sendMessage(applicantId, text, { reply_markup: replyMarkup });
   } catch (error) {
     logger.error(
       { err: error, applicationId: application.id, applicantId },
