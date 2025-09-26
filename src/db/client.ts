@@ -15,9 +15,9 @@ const createSslOptions = (): PoolConfig['ssl'] => {
 const pool = new Pool({
   connectionString: config.database.url,
   ssl: createSslOptions(),
-  max: 30,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
+  max: config.database.pool.max,
+  idleTimeoutMillis: config.database.pool.idleTimeoutMs,
+  connectionTimeoutMillis: config.database.pool.connectionTimeoutMs,
   statement_timeout: config.database.pool.statementTimeoutMs,
   query_timeout: config.database.pool.queryTimeoutMs,
 });
