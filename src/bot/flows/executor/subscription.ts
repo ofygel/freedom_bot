@@ -7,7 +7,7 @@ import type {
 } from 'telegraf/typings/core/types/typegram';
 
 import { config, logger } from '../../../config';
-import type { BotContext } from '../../types';
+import type { BotContext, ExecutorRole } from '../../types';
 import {
   EXECUTOR_MENU_ACTION,
   EXECUTOR_MENU_TEXT_LABELS,
@@ -38,6 +38,7 @@ import {
   reportSubscriptionTrialActivated,
   type SubscriptionIdentity,
 } from '../../services/reports';
+import { getVerificationRoleGuidance } from './verification';
 
 const SUBSCRIPTION_PERIOD_ACTION_PREFIX = 'executor:subscription:period';
 const SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID =
@@ -51,8 +52,12 @@ const SUBSCRIPTION_TRIAL_ACTION = 'executor:subscription:trial';
 const SUBSCRIPTION_TRIAL_UNAVAILABLE_STEP_ID = 'executor:subscription:trial-unavailable';
 const SUBSCRIPTION_TRIAL_ERROR_STEP_ID = 'executor:subscription:trial-error';
 
-const VERIFICATION_REQUIRED_MESSAGE =
-  'Вы пока не прошли модерацию. Отправьте 2 фотографии удостоверения личности с обеих сторон, чтобы мы выдали доступ.';
+const buildVerificationRequiredMessage = (role: ExecutorRole): string => {
+  const guidance = getVerificationRoleGuidance(role);
+  const prompt = guidance.nextStepsPrompt.replace(/^📸\s*/, '');
+  const sanitizedPrompt = prompt.replace(/\.$/, '');
+  return `Вы пока не прошли модерацию. ${sanitizedPrompt}, чтобы мы выдали доступ.`;
+};
 
 const formatKaspiDetails = (): string[] => [
   'Оплатите через Kaspi по реквизитам:',
@@ -150,10 +155,11 @@ const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
     state.subscription.status = 'idle';
     state.subscription.selectedPeriodId = undefined;
     state.subscription.pendingPaymentId = undefined;
-    await ctx.answerCbQuery(VERIFICATION_REQUIRED_MESSAGE);
+    const verificationRequiredMessage = buildVerificationRequiredMessage(state.role);
+    await ctx.answerCbQuery(verificationRequiredMessage);
     await ui.step(ctx, {
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
-      text: VERIFICATION_REQUIRED_MESSAGE,
+      text: verificationRequiredMessage,
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
@@ -268,9 +274,10 @@ export const startExecutorSubscription = async (
     state.subscription.status = 'idle';
     state.subscription.selectedPeriodId = undefined;
     state.subscription.pendingPaymentId = undefined;
+    const verificationRequiredMessage = buildVerificationRequiredMessage(state.role);
     await ui.step(ctx, {
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
-      text: VERIFICATION_REQUIRED_MESSAGE,
+      text: verificationRequiredMessage,
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });
@@ -326,10 +333,11 @@ const handlePeriodSelection = async (
     state.subscription.status = 'idle';
     state.subscription.selectedPeriodId = undefined;
     state.subscription.pendingPaymentId = undefined;
-    await ctx.answerCbQuery(VERIFICATION_REQUIRED_MESSAGE);
+    const verificationRequiredMessage = buildVerificationRequiredMessage(state.role);
+    await ctx.answerCbQuery(verificationRequiredMessage);
     await ui.step(ctx, {
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
-      text: VERIFICATION_REQUIRED_MESSAGE,
+      text: verificationRequiredMessage,
       cleanup: true,
       homeAction: EXECUTOR_MENU_ACTION,
     });

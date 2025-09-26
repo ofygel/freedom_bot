@@ -197,6 +197,28 @@ describe('executor access control', () => {
       (step) => step.id === 'executor:subscription:verification-required',
     );
     assert.ok(rejection, 'verification reminder should be shown');
+    assert.equal(
+      rejection.text,
+      'Вы пока не прошли модерацию. Отправьте фото удостоверения личности с обеих сторон в этот чат, чтобы мы выдали доступ.',
+    );
+  });
+
+  it('highlights driver-specific verification requirements before subscription', async () => {
+    const { ctx, session, auth } = createContext();
+    session.executor.role = 'driver';
+    auth.user.role = 'driver';
+    ensureExecutorState(ctx);
+
+    await startExecutorSubscription(ctx);
+
+    const rejection = recordedSteps.find(
+      (step) => step.id === 'executor:subscription:verification-required',
+    );
+    assert.ok(rejection, 'verification reminder should be shown');
+    assert.equal(
+      rejection?.text,
+      'Вы пока не прошли модерацию. Отправьте фото водительского удостоверения (лицевая сторона) и селфи с ним в этот чат, чтобы мы выдали доступ.',
+    );
   });
 
   it('shows the default executor menu keyboard when access requirements are not met', async () => {
