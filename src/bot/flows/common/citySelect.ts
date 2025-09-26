@@ -2,11 +2,13 @@ import { Markup, type Telegraf } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { CITIES_ORDER, CITY_LABEL, isAppCity, type AppCity } from '../../../domain/cities';
-import { setUserCitySelected } from '../../../services/users';
+import { CitySelectionError, setUserCitySelected } from '../../../services/users';
+import { logger } from '../../../config';
 import type { BotContext } from '../../types';
 import { resetClientOrderDraft } from '../../services/orders';
 import { bindInlineKeyboardToUser } from '../../services/callbackTokens';
 import { ui } from '../../ui';
+import { copy } from '../../copy';
 
 export const CITY_CONFIRM_STEP_ID = 'common:city:confirm';
 
@@ -113,7 +115,36 @@ export const registerCityAction = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    await setUserCitySelected(telegramId, city);
+    try {
+      await setUserCitySelected(telegramId, city);
+    } catch (error) {
+      if (error instanceof CitySelectionError) {
+        await ctx.answerCbQuery(copy.serviceUnavailable, { show_alert: true });
+        if (ctx.chat?.id) {
+          try {
+            await ctx.reply('Техническая ошибка, попробуйте позже');
+          } catch (replyError) {
+            logger.warn(
+              { err: replyError, chatId: ctx.chat.id },
+              'Failed to notify user about city selection error',
+            );
+            if (ctx.telegram?.sendMessage) {
+              try {
+                await ctx.telegram.sendMessage(ctx.chat.id, 'Техническая ошибка, попробуйте позже');
+              } catch (sendError) {
+                logger.error(
+                  { err: sendError, chatId: ctx.chat.id },
+                  'Failed to send city selection error notification',
+                );
+              }
+            }
+          }
+        }
+        return;
+      }
+
+      throw error;
+    }
     applyCitySelection(ctx, city);
 
     await ctx.answerCbQuery(`Город: ${CITY_LABEL[city]}`);
