@@ -37,8 +37,16 @@ export const sendClientMenu = async (
 
   try {
     return await ctx.reply(text, buildKeyboard());
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (!ctx.chat?.id) {
+      throw error;
+    }
+
+    try {
+      return await ctx.telegram.sendMessage(ctx.chat.id, text, buildKeyboard());
+    } catch {
+      throw error;
+    }
   }
 };
 
