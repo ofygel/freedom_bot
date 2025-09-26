@@ -294,7 +294,7 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
   });
 
   bot.command('role', async (ctx) => {
-    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+    if (ctx.chat?.type !== 'private') {
       await ctx.reply('Смена роли доступна только в личном чате с ботом.');
       return;
     }

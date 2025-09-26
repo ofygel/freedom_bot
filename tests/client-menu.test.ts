@@ -374,4 +374,23 @@ describe('client menu role selection', () => {
     assert.equal((firstMarkup.reply_markup as any).remove_keyboard, true);
     assert.match(replyCalls[1].text, /Выберите роль/);
   });
+
+  it('allows executors to open role selection with the /role command in private chat', async () => {
+    const { bot, getCommand } = createMockBot();
+    registerClientMenu(bot);
+
+    const handler = getCommand('role');
+    assert.ok(handler, '/role command should be registered');
+
+    const { ctx, replyCalls } = createMockContext({ role: 'courier' });
+
+    await handler(ctx);
+
+    assert.equal(replyCalls.length, 2);
+    assert.equal(replyCalls[0].text, 'Меняем роль — выберите подходящий вариант ниже.');
+    const firstMarkup = replyCalls[0].extra as { reply_markup?: ReplyKeyboardMarkup };
+    assert.ok(firstMarkup?.reply_markup);
+    assert.equal((firstMarkup.reply_markup as any).remove_keyboard, true);
+    assert.match(replyCalls[1].text, /Выберите роль/);
+  });
 });
