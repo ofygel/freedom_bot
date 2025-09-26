@@ -192,6 +192,54 @@ interface OrderUndoState {
 const releaseUndoStates = new Map<number, OrderUndoState>();
 const completionUndoStates = new Map<number, OrderUndoState>();
 
+const parseChatId = (chatId: number | string | undefined): number | undefined => {
+  if (typeof chatId === 'number' && Number.isFinite(chatId)) {
+    return chatId;
+  }
+
+  if (typeof chatId === 'string') {
+    const parsed = Number(chatId);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+};
+
+const resolveAuthorizedChatId = async (
+  orderId: number,
+  chat: { id: number | string | undefined; type?: string | undefined },
+): Promise<number | null> => {
+  const chatId = parseChatId(chat.id);
+  if (typeof chatId !== 'number') {
+    return null;
+  }
+
+  if (!chat.type || chat.type === 'private') {
+    return chatId;
+  }
+
+  const state = orderStates.get(orderId);
+  if (state?.chatId === chatId) {
+    return chatId;
+  }
+
+  try {
+    const binding = await getChannelBinding('drivers');
+    if (binding && binding.chatId === chatId) {
+      return chatId;
+    }
+  } catch (error) {
+    logger.error(
+      { err: error, orderId, chatId },
+      'Failed to resolve drivers channel binding while validating callback context',
+    );
+  }
+
+  return null;
+};
+
 const rememberUndoState = (
   map: Map<number, OrderUndoState>,
   orderId: number,
@@ -773,13 +821,13 @@ const handleOrderDecision = async (
     return;
   }
 
-  const chatType = message.chat.type;
-  if (chatType && chatType !== 'private') {
+  const authorizedChatId = await resolveAuthorizedChatId(orderId, message.chat);
+  if (authorizedChatId === null) {
     await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
     return;
   }
 
-  const chatId = message.chat.id;
+  const chatId = authorizedChatId;
   const messageId = message.message_id;
   const actorId = ctx.from?.id;
   const actorRole = ctx.auth?.user.role;
@@ -902,8 +950,8 @@ const handleOrderRelease = async (ctx: BotContext, orderId: number): Promise<voi
     return;
   }
 
-  const chatType = message.chat.type;
-  if (chatType && chatType !== 'private') {
+  const authorizedChatId = await resolveAuthorizedChatId(orderId, message.chat);
+  if (authorizedChatId === null) {
     await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
     return;
   }
@@ -1037,8 +1085,8 @@ const handleUndoOrderRelease = async (ctx: BotContext, orderId: number): Promise
     return;
   }
 
-  const chatType = message.chat.type;
-  if (chatType && chatType !== 'private') {
+  const authorizedChatId = await resolveAuthorizedChatId(orderId, message.chat);
+  if (authorizedChatId === null) {
     await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
     return;
   }
@@ -1161,8 +1209,8 @@ const handleUndoOrderCompletion = async (ctx: BotContext, orderId: number): Prom
     return;
   }
 
-  const chatType = message.chat.type;
-  if (chatType && chatType !== 'private') {
+  const authorizedChatId = await resolveAuthorizedChatId(orderId, message.chat);
+  if (authorizedChatId === null) {
     await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
     return;
   }
@@ -1284,8 +1332,8 @@ const handleOrderCompletion = async (ctx: BotContext, orderId: number): Promise<
     return;
   }
 
-  const chatType = message.chat.type;
-  if (chatType && chatType !== 'private') {
+  const authorizedChatId = await resolveAuthorizedChatId(orderId, message.chat);
+  if (authorizedChatId === null) {
     await ctx.answerCbQuery('Действие доступно только в личном чате с ботом.', { show_alert: true });
     return;
   }
@@ -1474,4 +1522,20 @@ export const registerOrdersChannel = (bot: Telegraf<BotContext>): void => {
       await ctx.answerCbQuery('Запрос уже обработан.');
     }
   });
+};
+
+export const __testing = {
+  orderStates,
+  resolveAuthorizedChatId,
+  handleOrderDecision,
+  handleOrderRelease,
+  handleOrderCompletion,
+  handleUndoOrderRelease,
+  handleUndoOrderCompletion,
+  reset: (): void => {
+    orderStates.clear();
+    orderDismissals.clear();
+    releaseUndoStates.clear();
+    completionUndoStates.clear();
+  },
 };
