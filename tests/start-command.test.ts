@@ -4,11 +4,15 @@ import assert from 'node:assert/strict';
 import { afterEach, before, describe, it, mock } from 'node:test';
 
 import type { BotContext } from '../src/bot/types';
+import { EXECUTOR_VERIFICATION_PHOTO_COUNT } from '../src/bot/types';
 import { EXECUTOR_COMMANDS, CLIENT_COMMANDS } from '../src/bot/commands/sets';
 
+let startCommandModule: typeof import('../src/bot/commands/start');
 let registerStartCommand: typeof import('../src/bot/commands/start')['registerStartCommand'];
 let askPhoneModule: typeof import('../src/bot/flows/common/phoneCollect');
 let commandsService: typeof import('../src/bot/services/commands');
+let executorVerificationModule: typeof import('../src/bot/flows/executor/verification');
+let executorSubscriptionModule: typeof import('../src/bot/flows/executor/subscription');
 
 before(async () => {
   process.env.BOT_TOKEN = process.env.BOT_TOKEN ?? 'test-token';
@@ -26,17 +30,29 @@ before(async () => {
 
   askPhoneModule = await import('../src/bot/flows/common/phoneCollect');
   commandsService = await import('../src/bot/services/commands');
-  ({ registerStartCommand } = await import('../src/bot/commands/start'));
+  startCommandModule = await import('../src/bot/commands/start');
+  ({ registerStartCommand } = startCommandModule);
+  executorVerificationModule = await import('../src/bot/flows/executor/verification');
+  executorSubscriptionModule = await import('../src/bot/flows/executor/subscription');
 });
 
 let askPhoneMock: ReturnType<typeof mock.method> | undefined;
 let setChatCommandsMock: ReturnType<typeof mock.method> | undefined;
+let startExecutorVerificationMock: ReturnType<typeof mock.method> | undefined;
+let startExecutorSubscriptionMock: ReturnType<typeof mock.method> | undefined;
+let presentRoleSelectionMock: ReturnType<typeof mock.method> | undefined;
 
 afterEach(() => {
   askPhoneMock?.mock.restore();
   setChatCommandsMock?.mock.restore();
+  startExecutorVerificationMock?.mock.restore();
+  startExecutorSubscriptionMock?.mock.restore();
+  presentRoleSelectionMock?.mock.restore();
   askPhoneMock = undefined;
   setChatCommandsMock = undefined;
+  startExecutorVerificationMock = undefined;
+  startExecutorSubscriptionMock = undefined;
+  presentRoleSelectionMock = undefined;
 });
 
 const createMockBot = () => {
@@ -103,6 +119,8 @@ const createContext = (role: BotContext['auth']['user']['role']): BotContext => 
     telegram: {} as any,
   } as unknown as BotContext;
 
+  (ctx as BotContext & { replyCalls: Array<{ text: string }> }).replyCalls = replyCalls;
+
   return ctx;
 };
 
@@ -163,5 +181,152 @@ describe('/start command', () => {
     assert.ok(call);
     assert.equal(call.arguments[1], ctx.chat?.id);
     assert.deepEqual(call.arguments[2], EXECUTOR_COMMANDS);
+  });
+
+  it('resumes executor verification when documents are being collected', async () => {
+    askPhoneMock = mock.method(askPhoneModule, 'askPhone', async () => undefined);
+    startExecutorVerificationMock = mock.method(
+      executorVerificationModule,
+      'startExecutorVerification',
+      async () => undefined,
+    );
+    startExecutorSubscriptionMock = mock.method(
+      executorSubscriptionModule,
+      'startExecutorSubscription',
+      async () => undefined,
+    );
+    presentRoleSelectionMock = mock.method(
+      startCommandModule,
+      'presentRoleSelection',
+      async () => undefined,
+    );
+
+    const { bot, getStartHandler } = createMockBot();
+    registerStartCommand(bot);
+    const handler = getStartHandler();
+    assert.ok(handler, 'start handler should be registered');
+
+    const ctx = createContext('courier');
+    ctx.session.user!.phoneVerified = true;
+    ctx.auth.user.phoneVerified = true;
+    ctx.session.executor = {
+      role: 'courier',
+      verification: {
+        courier: {
+          status: 'collecting',
+          requiredPhotos: EXECUTOR_VERIFICATION_PHOTO_COUNT,
+          uploadedPhotos: [],
+          submittedAt: undefined,
+          moderation: undefined,
+        },
+      },
+      subscription: { status: 'idle' },
+    } as any;
+
+    await handler(ctx);
+
+    assert.equal(startExecutorVerificationMock.mock.callCount(), 1);
+    assert.equal(startExecutorSubscriptionMock.mock.callCount(), 0);
+    assert.equal(presentRoleSelectionMock.mock.callCount(), 0);
+  });
+
+  for (const status of ['awaitingReceipt', 'pendingModeration'] as const) {
+    it(`resumes executor subscription when status is ${status}`, async () => {
+      askPhoneMock = mock.method(askPhoneModule, 'askPhone', async () => undefined);
+      startExecutorVerificationMock = mock.method(
+        executorVerificationModule,
+        'startExecutorVerification',
+        async () => undefined,
+      );
+      startExecutorSubscriptionMock = mock.method(
+        executorSubscriptionModule,
+        'startExecutorSubscription',
+        async () => undefined,
+      );
+      presentRoleSelectionMock = mock.method(
+        startCommandModule,
+        'presentRoleSelection',
+        async () => undefined,
+      );
+
+      const { bot, getStartHandler } = createMockBot();
+      registerStartCommand(bot);
+      const handler = getStartHandler();
+      assert.ok(handler, 'start handler should be registered');
+
+      const ctx = createContext('courier');
+      ctx.session.user!.phoneVerified = true;
+      ctx.auth.user.phoneVerified = true;
+      ctx.session.executor = {
+        role: 'courier',
+        verification: {
+          courier: {
+            status: 'submitted',
+            requiredPhotos: EXECUTOR_VERIFICATION_PHOTO_COUNT,
+            uploadedPhotos: [],
+            submittedAt: undefined,
+            moderation: undefined,
+          },
+        },
+        subscription: { status },
+      } as any;
+
+      await handler(ctx);
+
+      assert.equal(startExecutorVerificationMock.mock.callCount(), 0);
+      assert.equal(startExecutorSubscriptionMock.mock.callCount(), 1);
+      const call = startExecutorSubscriptionMock.mock.calls[0];
+      assert.ok(call);
+      const options = call.arguments[1] as { skipVerificationCheck?: boolean } | undefined;
+      assert.equal(options?.skipVerificationCheck, true);
+      assert.equal(presentRoleSelectionMock.mock.callCount(), 0);
+    });
+  }
+
+  it('presents role selection when no executor flow is pending', async () => {
+    askPhoneMock = mock.method(askPhoneModule, 'askPhone', async () => undefined);
+    startExecutorVerificationMock = mock.method(
+      executorVerificationModule,
+      'startExecutorVerification',
+      async () => undefined,
+    );
+    startExecutorSubscriptionMock = mock.method(
+      executorSubscriptionModule,
+      'startExecutorSubscription',
+      async () => undefined,
+    );
+    presentRoleSelectionMock = mock.method(
+      startCommandModule,
+      'presentRoleSelection',
+      async () => undefined,
+    );
+
+    const { bot, getStartHandler } = createMockBot();
+    registerStartCommand(bot);
+    const handler = getStartHandler();
+    assert.ok(handler, 'start handler should be registered');
+
+    const ctx = createContext('courier');
+    ctx.session.user!.phoneVerified = true;
+    ctx.auth.user.phoneVerified = true;
+    ctx.session.executor = {
+      role: 'courier',
+      verification: {
+        courier: {
+          status: 'submitted',
+          requiredPhotos: EXECUTOR_VERIFICATION_PHOTO_COUNT,
+          uploadedPhotos: [],
+          submittedAt: undefined,
+          moderation: undefined,
+        },
+      },
+      subscription: { status: 'idle' },
+    } as any;
+
+    await handler(ctx);
+
+    assert.equal(startExecutorVerificationMock.mock.callCount(), 0);
+    assert.equal(startExecutorSubscriptionMock.mock.callCount(), 0);
+    assert.equal(presentRoleSelectionMock.mock.callCount(), 1);
   });
 });
