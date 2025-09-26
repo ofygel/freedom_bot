@@ -1,5 +1,6 @@
 import { Markup } from 'telegraf';
 import type { Telegraf } from 'telegraf';
+import type { Message } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../../../config';
 import {
@@ -328,7 +329,10 @@ export const startExecutorVerification = async (
   await showExecutorMenu(ctx, { skipAccessCheck: true });
 };
 
-const handleIncomingPhoto = async (ctx: BotContext): Promise<boolean> => {
+const handleIncomingPhoto = async (
+  ctx: BotContext,
+  photoMessage?: Message.PhotoMessage,
+): Promise<boolean> => {
   if (ctx.chat?.type !== 'private') {
     return false;
   }
@@ -355,7 +359,7 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<boolean> => {
     return true;
   }
 
-  const message = ctx.message;
+  const message = photoMessage ?? ctx.message;
   if (!message || !('photo' in message) || !Array.isArray(message.photo) || message.photo.length === 0) {
     return false;
   }
@@ -409,10 +413,26 @@ const handleIncomingPhoto = async (ctx: BotContext): Promise<boolean> => {
 
   const photoSizes = message.photo;
   const bestPhoto = photoSizes[photoSizes.length - 1];
+  const bestPhotoUniqueId = bestPhoto.file_unique_id;
+  const uploadedBefore = verification.uploadedPhotos.length;
+
+  if (
+    typeof bestPhotoUniqueId === 'string' &&
+    verification.uploadedPhotos.some((photo) => photo.fileUniqueId === bestPhotoUniqueId)
+  ) {
+    await ui.step(ctx, {
+      id: VERIFICATION_PROGRESS_STEP_ID,
+      text: `Фото ${uploadedBefore}/${verification.requiredPhotos} получено.`,
+      cleanup: true,
+    });
+    await showExecutorMenu(ctx, { skipAccessCheck: true });
+    return true;
+  }
 
   verification.uploadedPhotos.push({
     fileId: bestPhoto.file_id,
     messageId: message.message_id,
+    fileUniqueId: bestPhotoUniqueId,
   });
 
   const uploaded = verification.uploadedPhotos.length;
@@ -493,6 +513,33 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
   bot.on('photo', async (ctx, next) => {
     const handled = await handleIncomingPhoto(ctx);
     if (!handled) {
+      await next();
+    }
+  });
+
+  bot.on('media_group' as any, async (ctx, next) => {
+    const updateWithMediaGroup = ctx.update as {
+      message?: { media_group?: Message.PhotoMessage[] };
+    };
+    const mediaGroup = updateWithMediaGroup.message?.media_group;
+
+    if (!Array.isArray(mediaGroup) || mediaGroup.length === 0) {
+      await next();
+      return;
+    }
+
+    let handledAny = false;
+    for (const media of mediaGroup) {
+      if (media && typeof media === 'object' && 'photo' in media) {
+        const handled = await handleIncomingPhoto(
+          ctx as unknown as BotContext,
+          media as Message.PhotoMessage,
+        );
+        handledAny = handledAny || handled;
+      }
+    }
+
+    if (!handledAny) {
       await next();
     }
   });
