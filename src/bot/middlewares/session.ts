@@ -1,6 +1,7 @@
 import type { MiddlewareFn } from 'telegraf';
 
-import { pool } from '../../db';
+import { logger } from '../../config';
+import { pool, type PoolClient } from '../../db';
 import {
   deleteSessionState,
   loadSessionState,
@@ -162,15 +163,59 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     return;
   }
 
-  const client = await pool.connect();
+  let client: PoolClient | undefined;
   const meta: SessionMeta = { key, cleared: false };
   setSessionMeta(ctx, meta);
 
   let nextError: unknown;
 
   try {
-    const existing = await loadSessionState(client, key);
-    const state = existing ?? createDefaultState();
+    try {
+      client = await pool.connect();
+    } catch (error) {
+      ctx.session = createDefaultState();
+      logger.warn({ err: error, key }, 'Failed to connect to database for session state');
+
+      try {
+        await next();
+      } catch (innerError) {
+        nextError = innerError;
+      }
+
+      return;
+    }
+
+    const dbClient = client;
+    if (!dbClient) {
+      ctx.session = createDefaultState();
+      logger.warn({ key }, 'Database client was not initialised for session state');
+
+      try {
+        await next();
+      } catch (innerError) {
+        nextError = innerError;
+      }
+
+      return;
+    }
+
+    let state: SessionState;
+
+    try {
+      const existing = await loadSessionState(dbClient, key);
+      state = existing ?? createDefaultState();
+    } catch (error) {
+      ctx.session = createDefaultState();
+      logger.warn({ err: error, key }, 'Failed to load session state, using default state');
+
+      try {
+        await next();
+      } catch (innerError) {
+        nextError = innerError;
+      }
+
+      return;
+    }
 
     if (!('city' in state)) {
       state.city = undefined;
@@ -193,13 +238,21 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     }
 
     if (meta.cleared) {
-      await deleteSessionState(client, key);
+      try {
+        await deleteSessionState(dbClient, key);
+      } catch (error) {
+        logger.warn({ err: error, key }, 'Failed to delete session state, continuing without persistence');
+      }
     } else {
-      await saveSessionState(client, key, ctx.session);
+      try {
+        await saveSessionState(dbClient, key, ctx.session);
+      } catch (error) {
+        logger.warn({ err: error, key }, 'Failed to save session state, continuing without persistence');
+      }
     }
   } finally {
     setSessionMeta(ctx, undefined);
-    client.release();
+    client?.release();
   }
 
   if (nextError) {
