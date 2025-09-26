@@ -134,7 +134,7 @@ export const setupGracefulShutdown = (bot: Telegraf<BotContext>): void => {
             bot.stop(`Received ${signal}`);
           } catch (error) {
             if (isBotAlreadyStoppedError(error)) {
-              logger.warn({ err: error }, 'Bot already stopped before cleanup, continuing shutdown');
+              logger.info({ err: error }, 'Bot already stopped before cleanup, continuing shutdown');
             } else {
               throw error;
             }
