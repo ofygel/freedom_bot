@@ -9,7 +9,6 @@ import type { UiStepOptions } from '../src/bot/ui';
 
 let ensureExecutorState: typeof import('../src/bot/flows/executor/menu')['ensureExecutorState'];
 let showExecutorMenu: typeof import('../src/bot/flows/executor/menu')['showExecutorMenu'];
-let EXECUTOR_VERIFICATION_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_VERIFICATION_ACTION'];
 let EXECUTOR_SUBSCRIPTION_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_SUBSCRIPTION_ACTION'];
 let EXECUTOR_ORDERS_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_ORDERS_ACTION'];
 let EXECUTOR_SUPPORT_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_SUPPORT_ACTION'];
@@ -35,7 +34,6 @@ before(async () => {
   ({
     ensureExecutorState,
     showExecutorMenu,
-    EXECUTOR_VERIFICATION_ACTION,
     EXECUTOR_SUBSCRIPTION_ACTION,
     EXECUTOR_ORDERS_ACTION,
     EXECUTOR_SUPPORT_ACTION,
@@ -213,12 +211,6 @@ describe('executor access control', () => {
     assert.deepEqual(mapKeyboard(menuStep.keyboard), [
       [
         {
-          text: '📸 Отправить документы',
-          callback_data: EXECUTOR_VERIFICATION_ACTION,
-        },
-      ],
-      [
-        {
           text: '📨 Получить ссылку на канал',
           callback_data: EXECUTOR_SUBSCRIPTION_ACTION,
         },
@@ -248,12 +240,6 @@ describe('executor access control', () => {
     assert.ok(menuStep, 'executor menu should be displayed');
 
     assert.deepEqual(mapKeyboard(menuStep.keyboard), [
-      [
-        {
-          text: '📸 Продолжить отправку документов',
-          callback_data: EXECUTOR_VERIFICATION_ACTION,
-        },
-      ],
       [
         {
           text: '📨 Получить ссылку на канал',
@@ -322,8 +308,10 @@ describe('executor menu formatting', () => {
     assert.ok(menuStep, 'executor menu should be displayed');
 
     assert.ok(
-      menuStep.text?.includes('Получите ссылку на канал курьеров после проверки'),
-      'menu should prompt to request a new link',
+      menuStep.text?.includes(
+        'Получите ссылку на канал курьеров: после подтверждения документов мы выдадим 2-дневный пробный доступ',
+      ),
+      'menu should prompt to request a new link and explain the trial access',
     );
     assert.ok(
       !menuStep.text?.includes('Ссылка на канал уже выдана'),

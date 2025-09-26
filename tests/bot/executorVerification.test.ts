@@ -77,6 +77,7 @@ const createContext = () => {
       editMessageText: async () => true,
       deleteMessage: async () => true,
       copyMessage: async () => true,
+      sendPhoto: async () => ({ message_id: 200 }),
       sendMessage: async () => ({ message_id: 1 }),
     },
     answerCbQuery: async () => {},
