@@ -1,4 +1,4 @@
-import { Telegraf, Telegram } from 'telegraf';
+import { Markup, Telegraf, Telegram } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../../config';
@@ -29,6 +29,8 @@ import {
   type SessionKey,
   type SessionScope,
 } from '../../db';
+import { getExecutorRoleCopy } from '../copy';
+import { EXECUTOR_SUBSCRIPTION_ACTION } from '../flows/executor/menu';
 
 const DEFAULT_TITLE = '🛡️ Заявка на верификацию исполнителя';
 const DEFAULT_REASONS = [
@@ -260,22 +262,39 @@ const resetVerificationSessionState = async (
   });
 };
 
+const buildFallbackApprovalNotification = (
+  application: VerificationApplication,
+): { text: string; keyboard: InlineKeyboardMarkup } => {
+  const copy = getExecutorRoleCopy(application.role);
+  const text = [
+    '✅ Документы подтверждены.',
+    `Чтобы получить доступ к заказам ${copy.genitive}, оформите подписку и запросите ссылку через кнопку ниже.`,
+    'Если потребуется помощь, напишите в поддержку.',
+  ].join('\n');
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
+  ]).reply_markup;
+
+  return { text, keyboard };
+};
+
 const notifyVerificationApproval = async (
   telegram: Telegram,
   application: VerificationApplication,
 ): Promise<void> => {
   const applicantId = application.applicant.telegramId;
-  const notification = application.approvalNotification;
-  if (!applicantId || !notification?.text) {
+  if (!applicantId) {
     return;
   }
 
-  const extra = notification.keyboard
-    ? { reply_markup: notification.keyboard }
-    : undefined;
+  const fallback = buildFallbackApprovalNotification(application);
+  const notification = application.approvalNotification;
+  const text = notification?.text?.trim() || fallback.text;
+  const keyboard = notification?.keyboard ?? fallback.keyboard;
 
   try {
-    await telegram.sendMessage(applicantId, notification.text, extra);
+    await telegram.sendMessage(applicantId, text, { reply_markup: keyboard });
   } catch (error) {
     logger.error(
       { err: error, applicationId: application.id, applicantId },
