@@ -16,6 +16,7 @@ import {
   type ClientOrderDraftState,
   type ExecutorFlowState,
   type ExecutorSubscriptionState,
+  type ExecutorUploadedPhoto,
   type ExecutorVerificationState,
   type SessionState,
   type SupportSessionState,
@@ -63,6 +64,87 @@ const createUiState = (): UiSessionState => ({
 const createSupportState = (): SupportSessionState => ({
   status: 'idle',
 });
+
+const isExecutorRole = (value: unknown): value is ExecutorFlowState['role'] =>
+  typeof value === 'string' && EXECUTOR_ROLES.includes(value as (typeof EXECUTOR_ROLES)[number]);
+
+const rebuildExecutorState = (value: unknown): ExecutorFlowState => {
+  const state = createExecutorState();
+  if (!value || typeof value !== 'object') {
+    return state;
+  }
+
+  const executor = value as Partial<ExecutorFlowState>;
+
+  if (isExecutorRole(executor.role)) {
+    state.role = executor.role;
+  }
+
+  if (executor.subscription && typeof executor.subscription === 'object') {
+    Object.assign(state.subscription, executor.subscription);
+  }
+
+  if (executor.verification && typeof executor.verification === 'object') {
+    const verification = executor.verification as Partial<ExecutorVerificationState>;
+    for (const role of EXECUTOR_ROLES) {
+      const candidate = verification[role];
+      if (!candidate || typeof candidate !== 'object') {
+        continue;
+      }
+
+      Object.assign(state.verification[role], candidate);
+
+      const uploadedPhotos = (candidate as { uploadedPhotos?: unknown }).uploadedPhotos;
+      if (Array.isArray(uploadedPhotos)) {
+        const photos: ExecutorUploadedPhoto[] = [];
+        for (const item of uploadedPhotos) {
+          if (!item || typeof item !== 'object') {
+            continue;
+          }
+
+          const fileId = (item as { fileId?: unknown }).fileId;
+          const messageId = (item as { messageId?: unknown }).messageId;
+          if (typeof fileId !== 'string' || typeof messageId !== 'number') {
+            continue;
+          }
+
+          const photo: ExecutorUploadedPhoto = {
+            fileId,
+            messageId,
+          };
+
+          const fileUniqueId = (item as { fileUniqueId?: unknown }).fileUniqueId;
+          if (typeof fileUniqueId === 'string') {
+            photo.fileUniqueId = fileUniqueId;
+          }
+
+          photos.push(photo);
+        }
+
+        state.verification[role].uploadedPhotos = photos;
+      }
+    }
+  }
+
+  return state;
+};
+
+const rebuildClientState = (value: unknown): ClientFlowState => {
+  const state = createClientState();
+  if (!value || typeof value !== 'object') {
+    return state;
+  }
+
+  const client = value as Partial<ClientFlowState>;
+  for (const key of ['taxi', 'delivery'] as const) {
+    const draft = client[key];
+    if (draft && typeof draft === 'object') {
+      Object.assign(state[key], draft);
+    }
+  }
+
+  return state;
+};
 
 const createDefaultState = (): SessionState => ({
   ephemeralMessages: [],
@@ -237,6 +319,9 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       if (!state.support) {
         state.support = createSupportState();
       }
+
+      state.executor = rebuildExecutorState((state as { executor?: unknown }).executor);
+      state.client = rebuildClientState((state as { client?: unknown }).client);
 
       ctx.session = state;
 
