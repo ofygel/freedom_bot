@@ -372,7 +372,7 @@ describe("/menu command routing", () => {
     }
   });
 
-  it('renders the executor menu via city selection when auth uses a cached snapshot', async () => {
+  it('renders the executor menu via city selection when guest auth fallback uses the session role', async () => {
     const showExecutorMenuMock = mock.method(
       executorMenuModule,
       'showExecutorMenu',
@@ -390,7 +390,7 @@ describe("/menu command routing", () => {
 
     const session = createSessionState();
     session.city = undefined;
-    session.executor.role = undefined;
+    session.executor.role = 'courier';
     session.authSnapshot = {
       role: 'courier',
       status: 'active_executor',

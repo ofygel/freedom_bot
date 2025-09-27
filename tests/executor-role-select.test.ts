@@ -608,6 +608,15 @@ describe('executor role selection', () => {
       async () => undefined,
     );
 
+    const originalShowExecutorMenu = executorMenuModule.showExecutorMenu;
+    const showExecutorMenuMock = mock.method(
+      executorMenuModule,
+      'showExecutorMenu',
+      async (context: BotContext) => {
+        await originalShowExecutorMenu(context);
+      },
+    );
+
     const { bot, dispatchAction } = createMockBot();
     registerCityAction(bot);
     registerExecutorMenu(bot);
@@ -630,15 +639,23 @@ describe('executor role selection', () => {
       } as typeof ctx.callbackQuery,
     });
 
+    let showExecutorMenuCallCount = 0;
     try {
       await dispatchAction('city:almaty', ctx);
+      showExecutorMenuCallCount = showExecutorMenuMock.mock.callCount();
     } finally {
       setUserCitySelectedMock.mock.restore();
+      showExecutorMenuMock.mock.restore();
     }
 
     const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
     assert.ok(menuStep, 'executor menu should be displayed using the cached session role');
     assert.equal(ctx.auth.user.role, 'guest');
+    assert.equal(
+      showExecutorMenuCallCount,
+      1,
+      'city callback should continue to render the executor menu during guest fallback',
+    );
   });
 
   it('uses the cached auth snapshot when auth query fails during city callbacks', async () => {

@@ -178,18 +178,22 @@ const normaliseSubscriptionState = (
 const isExecutorRole = (role: AuthUser['role'] | ExecutorRole | undefined): role is ExecutorRole =>
   role === 'courier' || role === 'driver';
 
-const getCachedExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
-  const snapshotRole = ctx.session.authSnapshot?.role;
-  if (isExecutorRole(snapshotRole)) {
-    return snapshotRole;
-  }
-
+const getSessionExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
   const sessionRole = ctx.session.executor?.role;
   if (isExecutorRole(sessionRole)) {
     return sessionRole;
   }
 
   return undefined;
+};
+
+const getCachedExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
+  const snapshotRole = ctx.session.authSnapshot?.role;
+  if (isExecutorRole(snapshotRole)) {
+    return snapshotRole;
+  }
+
+  return getSessionExecutorRole(ctx);
 };
 
 export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
@@ -199,7 +203,7 @@ export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
   }
 
   if (ctx.session.isAuthenticated === false && authRole === 'guest') {
-    return isExecutorRole(getCachedExecutorRole(ctx));
+    return isExecutorRole(getSessionExecutorRole(ctx));
   }
 
   return false;
