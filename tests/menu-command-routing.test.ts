@@ -44,6 +44,17 @@ const createSessionState = (): SessionState => ({
   phoneNumber: undefined,
   user: undefined,
   city: DEFAULT_CITY,
+  authSnapshot: {
+    role: 'guest',
+    status: 'guest',
+    executor: {
+      verifiedRoles: { courier: false, driver: false },
+      hasActiveSubscription: false,
+      isVerified: false,
+    },
+    city: undefined,
+    stale: false,
+  },
   executor: {
     role: undefined,
     verification: {
@@ -351,12 +362,12 @@ describe("/menu command routing", () => {
       await authMiddleware(ctx, async () => {});
 
       assert.equal(ctx.session.isAuthenticated, false);
-      assert.equal(ctx.session.authSnapshot?.stale, true);
-      assert.equal(ctx.session.authSnapshot?.executor.verifiedRoles.courier, true);
-      assert.equal(ctx.session.authSnapshot?.executor.hasActiveSubscription, true);
-      assert.equal(ctx.session.authSnapshot?.status, 'active_executor');
-      assert.equal(ctx.auth.user.role, 'guest');
-      assert.equal(ctx.auth.user.status, 'guest');
+      assert.equal(ctx.session.authSnapshot.stale, true);
+      assert.equal(ctx.session.authSnapshot.executor.verifiedRoles.courier, true);
+      assert.equal(ctx.session.authSnapshot.executor.hasActiveSubscription, true);
+      assert.equal(ctx.session.authSnapshot.status, 'active_executor');
+      assert.equal(ctx.auth.user.role, 'courier');
+      assert.equal(ctx.auth.user.status, 'active_executor');
       assert.equal(ctx.auth.executor.verifiedRoles.courier, true);
       assert.equal(ctx.auth.executor.hasActiveSubscription, true);
       assert.equal(ctx.auth.executor.isVerified, true);
@@ -446,7 +457,8 @@ describe("/menu command routing", () => {
     try {
       await authMiddleware(ctx, async () => {});
 
-      assert.equal(ctx.auth.user.role, 'guest');
+      assert.equal(ctx.auth.user.role, 'courier');
+      assert.equal(ctx.auth.user.status, 'active_executor');
       assert.equal(ctx.session.isAuthenticated, false);
 
       await handler(ctx);

@@ -69,6 +69,17 @@ const createSessionState = (): SessionState => ({
   isAuthenticated: false,
   awaitingPhone: false,
   city: DEFAULT_CITY,
+  authSnapshot: {
+    role: 'guest',
+    status: 'guest',
+    executor: {
+      verifiedRoles: { courier: false, driver: false },
+      hasActiveSubscription: false,
+      isVerified: false,
+    },
+    city: undefined,
+    stale: false,
+  },
   executor: {
     role: 'courier',
     verification: {
@@ -719,10 +730,10 @@ describe('executor role selection', () => {
     const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
     assert.ok(menuStep, 'executor menu should be displayed after auth snapshot fallback');
     assert.equal(ctx.session.isAuthenticated, false);
-    assert.equal(ctx.session.authSnapshot?.stale, true);
-    assert.equal(ctx.session.authSnapshot?.status, 'active_executor');
-    assert.equal(ctx.auth.user.role, 'guest');
-    assert.equal(ctx.auth.user.status, 'guest');
+    assert.equal(ctx.session.authSnapshot.stale, true);
+    assert.equal(ctx.session.authSnapshot.status, 'active_executor');
+    assert.equal(ctx.auth.user.role, 'courier');
+    assert.equal(ctx.auth.user.status, 'active_executor');
     assert.equal(ctx.auth.executor.verifiedRoles.courier, true);
     assert.equal(ctx.auth.executor.hasActiveSubscription, true);
     assert.equal(ctx.auth.executor.isVerified, true);

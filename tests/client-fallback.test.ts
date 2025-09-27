@@ -14,6 +14,17 @@ const createSessionState = () => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   awaitingPhone: false,
+  authSnapshot: {
+    role: 'guest' as const,
+    status: 'guest' as const,
+    executor: {
+      verifiedRoles: { courier: false, driver: false },
+      hasActiveSubscription: false,
+      isVerified: false,
+    },
+    city: undefined,
+    stale: false,
+  },
   executor: {
     role: 'courier' as const,
     verification: {
