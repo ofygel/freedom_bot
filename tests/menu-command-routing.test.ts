@@ -11,11 +11,13 @@ import {
 } from '../src/bot/types';
 import { auth } from '../src/bot/middlewares/auth';
 import { pool } from '../src/db';
+import type { UiStepOptions } from '../src/bot/ui';
 
 let executorMenuModule: typeof import('../src/bot/flows/executor/menu');
 let clientMenuModule: typeof import('../src/bot/flows/client/menu');
 let registerExecutorMenu: typeof import('../src/bot/flows/executor/menu')['registerExecutorMenu'];
 let registerClientMenu: typeof import('../src/bot/flows/client/menu')['registerClientMenu'];
+let uiHelper: typeof import('../src/bot/ui')['ui'];
 
 before(async () => {
   process.env.BOT_TOKEN = process.env.BOT_TOKEN ?? 'test-token';
@@ -35,6 +37,7 @@ before(async () => {
   clientMenuModule = await import('../src/bot/flows/client/menu');
   ({ registerExecutorMenu } = executorMenuModule);
   ({ registerClientMenu } = clientMenuModule);
+  ({ ui: uiHelper } = await import('../src/bot/ui'));
 });
 
 const DEFAULT_CITY = 'almaty' as const;
@@ -286,6 +289,64 @@ describe("/menu command routing", () => {
       showExecutorMenuMock.mock.restore();
       showClientMenuMock.mock.restore();
     }
+  });
+
+  it('shows verification prompt and menu when /menu runs during guest auth fallback', async () => {
+    const { bot, getCommand } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const handler = getCommand('menu');
+    assert.ok(handler, 'menu command should be registered');
+
+    const ctx = createContext('guest');
+    ctx.session.isAuthenticated = false;
+    ctx.session.executor.role = 'courier';
+    ctx.auth.executor.verifiedRoles.courier = false;
+    ctx.auth.executor.hasActiveSubscription = false;
+    ctx.auth.executor.isVerified = false;
+
+    Object.assign(ctx as BotContext & { message?: typeof ctx.message; update?: typeof ctx.update }, {
+      updateType: 'message' as BotContext['updateType'],
+      message: {
+        message_id: 702,
+        chat: ctx.chat,
+        text: '/menu',
+        from: ctx.from,
+      } as typeof ctx.message,
+      update: {
+        message: {
+          message_id: 702,
+          chat: ctx.chat,
+          text: '/menu',
+          from: ctx.from,
+        },
+      } as typeof ctx.update,
+    });
+
+    const recordedSteps: UiStepOptions[] = [];
+    const originalStep = uiHelper.step;
+    (uiHelper as { step: typeof uiHelper.step }).step = async (_context, options) => {
+      recordedSteps.push(options);
+      return undefined;
+    };
+
+    try {
+      await handler(ctx);
+    } finally {
+      (uiHelper as { step: typeof uiHelper.step }).step = originalStep;
+    }
+
+    const verificationPrompt = recordedSteps.find(
+      (step) => step.id === 'executor:verification:prompt',
+    );
+    assert.ok(
+      verificationPrompt,
+      'verification prompt should be rendered when /menu runs during guest auth fallback',
+    );
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be shown after triggering verification');
+    assert.equal(ctx.session.executor.verification.courier.status, 'collecting');
   });
 
   it('shows the client menu for client users', async () => {
