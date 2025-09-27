@@ -30,6 +30,8 @@ const createSessionState = (): SessionState => ({
   authSnapshot: {
     role: 'guest',
     status: 'guest',
+    phoneVerified: false,
+    userIsVerified: false,
     executor: {
       verifiedRoles: { courier: false, driver: false },
       hasActiveSubscription: false,

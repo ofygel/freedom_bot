@@ -64,6 +64,8 @@ export interface AuthState {
 export interface AuthStateSnapshot {
   role: UserRole;
   status: UserStatus;
+  phoneVerified: boolean;
+  userIsVerified: boolean;
   executor: AuthExecutorState;
   city?: AppCity;
   stale: boolean;

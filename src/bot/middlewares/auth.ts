@@ -194,8 +194,10 @@ const buildAuthStateFromSnapshot = (
     base.user.role = snapshot.role;
     base.user.status = snapshot.status ?? deriveSnapshotStatus(snapshot.role);
   }
+  base.user.phoneVerified = Boolean(snapshot.phoneVerified || base.user.phoneVerified);
+  const userVerifiedFromSnapshot = snapshot.userIsVerified || snapshot.executor.isVerified;
+  base.user.isVerified = Boolean(userVerifiedFromSnapshot || base.user.isVerified);
   base.user.citySelected = snapshot.city ?? base.user.citySelected;
-  base.user.isVerified = snapshot.executor.isVerified;
   base.executor = cloneExecutorState(snapshot.executor);
   base.isModerator = shouldRestoreRole && snapshot.role === 'moderator';
 
@@ -419,6 +421,8 @@ const applyAuthState = (
   ctx.session.authSnapshot = {
     role: authState.user.role,
     status: authState.user.status,
+    phoneVerified: authState.user.phoneVerified,
+    userIsVerified: authState.user.isVerified,
     executor: cloneExecutorState(authState.executor),
     city: authState.user.citySelected,
     stale: options?.isStale ?? false,
@@ -508,16 +512,17 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       const snapshot: AuthStateSnapshot = {
         role: cachedSnapshot.role,
         status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
+        phoneVerified: cachedSnapshot.phoneVerified,
+        userIsVerified: cachedSnapshot.userIsVerified,
         executor: cloneExecutorState(cachedSnapshot.executor),
         city: cachedSnapshot.city,
         stale: true,
       } satisfies AuthStateSnapshot;
 
-      ctx.session.isAuthenticated = false;
-      ctx.session.authSnapshot = snapshot;
-
       const authState = buildAuthStateFromSnapshot(ctx, snapshot);
       applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
+      ctx.session.isAuthenticated = false;
+      ctx.session.authSnapshot.stale = true;
       logger.warn(
         { err: error.cause ?? error, update: ctx.update },
         'Failed to load auth state, using cached snapshot',
