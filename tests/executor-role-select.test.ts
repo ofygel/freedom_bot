@@ -892,9 +892,11 @@ describe('executor role selection', () => {
     ctx.session.ui.pendingCityAction = undefined;
     ctx.session.isAuthenticated = false;
     ctx.auth.user.role = 'guest';
+    ctx.auth.user.status = 'guest';
     ctx.session.executor.role = 'courier';
     ctx.auth.executor.verifiedRoles.courier = true;
     ctx.auth.executor.hasActiveSubscription = true;
+    ctx.session.authSnapshot.role = 'guest';
 
     Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
       callbackQuery: {
@@ -919,6 +921,11 @@ describe('executor role selection', () => {
       showExecutorMenuCallCount,
       1,
       'city callback should continue to render the executor menu during guest fallback',
+    );
+    assert.equal(
+      executorMenuModule.userLooksLikeExecutor(ctx),
+      true,
+      'guest fallback should still be recognised as an executor via session role',
     );
   });
 
