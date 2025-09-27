@@ -184,6 +184,20 @@ const deriveAuthExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
   return undefined;
 };
 
+const userLooksLikeExecutor = (ctx: BotContext): boolean => {
+  const authRole = ctx.auth.user.role;
+  if (authRole === 'courier' || authRole === 'driver') {
+    return true;
+  }
+
+  if (authRole === 'guest' && ctx.session.isAuthenticated === false) {
+    const sessionRole = ctx.session.executor?.role;
+    return sessionRole === 'courier' || sessionRole === 'driver';
+  }
+
+  return false;
+};
+
 export const requireExecutorRole = (state: ExecutorFlowState): ExecutorRole => {
   const role = state.role;
   if (role && EXECUTOR_ROLES.includes(role)) {
@@ -618,11 +632,9 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     const pendingCityAction = ctx.session.ui?.pendingCityAction;
-    const userRole = ctx.auth.user.role;
-    const hasExecutorRole = userRole === 'courier' || userRole === 'driver';
-
     const shouldShowExecutorMenu =
-      pendingCityAction === EXECUTOR_MENU_CITY_ACTION || (!pendingCityAction && hasExecutorRole);
+      pendingCityAction === EXECUTOR_MENU_CITY_ACTION ||
+      (!pendingCityAction && userLooksLikeExecutor(ctx));
 
     if (!shouldShowExecutorMenu) {
       return;
@@ -648,10 +660,9 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    const role = ctx.auth.user.role;
-    const isExecutor = role === 'courier' || role === 'driver';
+    const looksLikeExecutor = userLooksLikeExecutor(ctx);
 
-    if (!isExecutor) {
+    if (!looksLikeExecutor) {
       await showMenu(ctx);
       return;
     }

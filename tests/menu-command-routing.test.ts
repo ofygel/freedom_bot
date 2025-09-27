@@ -179,6 +179,35 @@ describe("/menu command routing", () => {
     }
   });
 
+  it('shows the executor menu when auth falls back to guest but the session has executor role', async () => {
+    const showExecutorMenuMock = mock.method(
+      executorMenuModule,
+      'showExecutorMenu',
+      async () => undefined,
+    );
+    const showClientMenuMock = mock.method(clientMenuModule, 'showMenu', async () => undefined);
+
+    const { bot, getCommand } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const handler = getCommand('menu');
+    assert.ok(handler, 'menu command should be registered');
+
+    const ctx = createContext('guest');
+    ctx.session.isAuthenticated = false;
+    ctx.session.executor.role = 'courier';
+
+    try {
+      await handler(ctx);
+
+      assert.equal(showExecutorMenuMock.mock.callCount(), 1);
+      assert.equal(showClientMenuMock.mock.callCount(), 0);
+    } finally {
+      showExecutorMenuMock.mock.restore();
+      showClientMenuMock.mock.restore();
+    }
+  });
+
   it('shows the client menu for client users', async () => {
     const showExecutorMenuMock = mock.method(
       executorMenuModule,
