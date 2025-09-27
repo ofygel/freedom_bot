@@ -23,6 +23,17 @@ const createSessionState = (): BotContext['session'] => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   awaitingPhone: false,
+  authSnapshot: {
+    role: 'guest' as const,
+    status: 'guest' as const,
+    executor: {
+      verifiedRoles: { courier: false, driver: false },
+      hasActiveSubscription: false,
+      isVerified: false,
+    },
+    city: undefined,
+    stale: false,
+  },
   executor: {
     role: 'courier',
     verification: {
@@ -200,6 +211,8 @@ describe('auth middleware', () => {
     assert.equal(ctx.auth.user.telegramId, 777);
     assert.equal(ctx.auth.user.username, 'guestuser');
     assert.equal(ctx.session.isAuthenticated, false);
+    assert.equal(ctx.session.authSnapshot.stale, true);
+    assert.equal(ctx.session.authSnapshot.role, 'guest');
     assert.equal(ctx.session.user?.id, 777);
     assert.equal(ctx.session.user?.username, 'guestuser');
     assert.equal(replyCalled, false);

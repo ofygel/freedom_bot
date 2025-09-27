@@ -501,58 +501,24 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
   try {
     const authState = await loadAuthState(ctx.from);
-    applyAuthState(ctx, authState);
+    applyAuthState(ctx, authState, { isStale: false });
   } catch (error) {
     if (error instanceof AuthStateQueryError) {
       const cachedSnapshot = ctx.session.authSnapshot;
-      if (cachedSnapshot) {
-        const snapshot: AuthStateSnapshot = {
-          role: cachedSnapshot.role,
-          status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
-          executor: cloneExecutorState(cachedSnapshot.executor),
-          city: cachedSnapshot.city,
-          stale: true,
-        };
-
-        ctx.session.authSnapshot = snapshot;
-        const authState = buildAuthStateFromSnapshot(ctx, snapshot, { restoreRole: false });
-        ctx.auth = authState;
-        ctx.session.isAuthenticated = false;
-        ctx.session.user = {
-          id: authState.user.telegramId,
-          username: authState.user.username,
-          firstName: authState.user.firstName,
-          lastName: authState.user.lastName,
-          phoneVerified: authState.user.phoneVerified,
-        };
-        logger.warn(
-          { err: error.cause ?? error, update: ctx.update },
-          'Failed to load auth state, using cached snapshot',
-        );
-        await next();
-        return;
-      }
-
-      const authState = createGuestAuthState(ctx.from);
       const snapshot: AuthStateSnapshot = {
-        role: authState.user.role,
-        status: authState.user.status,
-        executor: cloneExecutorState(authState.executor),
-        city: authState.user.citySelected,
+        role: cachedSnapshot.role,
+        status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
+        executor: cloneExecutorState(cachedSnapshot.executor),
+        city: cachedSnapshot.city,
         stale: true,
-      };
+      } satisfies AuthStateSnapshot;
 
-      ctx.session.authSnapshot = snapshot;
-      ctx.auth = authState;
-      ctx.session.isAuthenticated = false;
-      ctx.session.user = {
-        id: authState.user.telegramId,
-        username: authState.user.username,
-        firstName: authState.user.firstName,
-        lastName: authState.user.lastName,
-        phoneVerified: authState.user.phoneVerified,
-      };
-      logger.warn({ err: error.cause ?? error, update: ctx.update }, 'Failed to load auth state, using guest context');
+      const authState = buildAuthStateFromSnapshot(ctx, snapshot);
+      applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
+      logger.warn(
+        { err: error.cause ?? error, update: ctx.update },
+        'Failed to load auth state, using cached snapshot',
+      );
       await next();
       return;
     }

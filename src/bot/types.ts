@@ -178,7 +178,7 @@ export interface SessionState {
   phoneNumber?: string;
   user?: SessionUser;
   city?: AppCity;
-  authSnapshot?: AuthStateSnapshot;
+  authSnapshot: AuthStateSnapshot;
   executor: ExecutorFlowState;
   client: ClientFlowState;
   ui: UiSessionState;
