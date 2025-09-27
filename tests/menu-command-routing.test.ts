@@ -129,8 +129,11 @@ const createContext = (role: BotContext['auth']['user']['role']): BotContext => 
   } as unknown as BotContext;
 };
 
+type ActionHandler = (ctx: BotContext, next?: () => Promise<void>) => Promise<void>;
+
 const createMockBot = () => {
   const commands = new Map<string, (ctx: BotContext) => Promise<void>>();
+  const actions: Array<{ trigger: string | RegExp; handler: ActionHandler }> = [];
 
   const bot: Partial<Telegraf<BotContext>> = {
     telegram: {
@@ -139,16 +142,49 @@ const createMockBot = () => {
     } as unknown as Telegraf<BotContext>['telegram'],
   };
 
-  bot.action = ((() => bot) as unknown) as Telegraf<BotContext>['action'];
+  bot.action = (((trigger: string | RegExp, handler: ActionHandler) => {
+    actions.push({ trigger, handler });
+    return bot as Telegraf<BotContext>;
+  }) as unknown) as Telegraf<BotContext>['action'];
   bot.hears = ((() => bot) as unknown) as Telegraf<BotContext>['hears'];
   bot.command = (((command: string, handler: (ctx: BotContext) => Promise<void>) => {
     commands.set(command, handler);
     return bot as Telegraf<BotContext>;
   }) as unknown) as Telegraf<BotContext>['command'];
 
+  const triggerAction = async (payload: string, ctx: BotContext): Promise<void> => {
+    for (const action of actions) {
+      if (typeof action.trigger === 'string') {
+        if (action.trigger === payload) {
+          (ctx as BotContext & { match?: string }).match = payload;
+          await action.handler(ctx);
+          delete (ctx as BotContext & { match?: string }).match;
+          return;
+        }
+        continue;
+      }
+
+      const match = action.trigger.exec(payload);
+      if (!match) {
+        continue;
+      }
+
+      (ctx as BotContext & { match?: RegExpExecArray }).match = match;
+      try {
+        await action.handler(ctx, undefined);
+      } finally {
+        delete (ctx as BotContext & { match?: RegExpExecArray }).match;
+      }
+      return;
+    }
+
+    throw new Error(`Action handler not found for payload: ${payload}`);
+  };
+
   return {
     bot: bot as Telegraf<BotContext>,
     getCommand: (name: string) => commands.get(name),
+    triggerAction,
   };
 };
 
@@ -319,8 +355,8 @@ describe("/menu command routing", () => {
       assert.equal(ctx.session.authSnapshot?.executor.verifiedRoles.courier, true);
       assert.equal(ctx.session.authSnapshot?.executor.hasActiveSubscription, true);
       assert.equal(ctx.session.authSnapshot?.status, 'active_executor');
-      assert.equal(ctx.auth.user.role, 'courier');
-      assert.equal(ctx.auth.user.status, 'active_executor');
+      assert.equal(ctx.auth.user.role, 'guest');
+      assert.equal(ctx.auth.user.status, 'guest');
       assert.equal(ctx.auth.executor.verifiedRoles.courier, true);
       assert.equal(ctx.auth.executor.hasActiveSubscription, true);
       assert.equal(ctx.auth.executor.isVerified, true);
@@ -329,6 +365,104 @@ describe("/menu command routing", () => {
 
       assert.equal(showExecutorMenuMock.mock.callCount(), 1);
       assert.equal(showClientMenuMock.mock.callCount(), 0);
+    } finally {
+      queryMock.mock.restore();
+      showExecutorMenuMock.mock.restore();
+      showClientMenuMock.mock.restore();
+    }
+  });
+
+  it('renders the executor menu via city selection when auth uses a cached snapshot', async () => {
+    const showExecutorMenuMock = mock.method(
+      executorMenuModule,
+      'showExecutorMenu',
+      async (ctx: BotContext) => {
+        ctx.session.ui.pendingCityAction = executorMenuModule.EXECUTOR_MENU_CITY_ACTION;
+      },
+    );
+    const showClientMenuMock = mock.method(clientMenuModule, 'showMenu', async () => undefined);
+
+    const { bot, getCommand, triggerAction } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const handler = getCommand('menu');
+    assert.ok(handler, 'menu command should be registered');
+
+    const session = createSessionState();
+    session.city = undefined;
+    session.executor.role = undefined;
+    session.authSnapshot = {
+      role: 'courier',
+      status: 'active_executor',
+      executor: {
+        verifiedRoles: { courier: true, driver: false },
+        hasActiveSubscription: true,
+        isVerified: true,
+      },
+      city: DEFAULT_CITY,
+      stale: false,
+    };
+
+    const ctx = {
+      chat: { id: 77, type: 'private' as const },
+      from: {
+        id: 101,
+        username: 'cached_user',
+        first_name: 'Cache',
+        last_name: 'User',
+      },
+      session,
+      auth: undefined as any,
+      reply: async () => ({
+        message_id: 1,
+        chat: { id: 77, type: 'private' as const },
+        date: Math.floor(Date.now() / 1000),
+        text: 'ok',
+      }),
+      telegram: {
+        sendMessage: async () => ({
+          message_id: 1,
+          chat: { id: 77, type: 'private' as const },
+          date: Math.floor(Date.now() / 1000),
+          text: 'ok',
+        }),
+        editMessageText: async () => true,
+        deleteMessage: async () => true,
+        setMyCommands: async () => undefined,
+        setChatMenuButton: async () => undefined,
+      },
+      answerCbQuery: async () => undefined,
+      update: { message: { chat: { id: 77, type: 'private' as const } } },
+      updateType: 'message',
+      botInfo: {} as never,
+      state: {},
+    } as unknown as BotContext;
+
+    const authMiddleware = auth();
+    const queryMock = mock.method(pool, 'query', async () => {
+      throw new Error('temporary failure');
+    });
+
+    try {
+      await authMiddleware(ctx, async () => {});
+
+      assert.equal(ctx.auth.user.role, 'guest');
+      assert.equal(ctx.session.isAuthenticated, false);
+
+      await handler(ctx);
+
+      assert.equal(showExecutorMenuMock.mock.callCount(), 1);
+      assert.equal(showClientMenuMock.mock.callCount(), 0);
+
+      ctx.session.ui.pendingCityAction = executorMenuModule.EXECUTOR_MENU_CITY_ACTION;
+      ctx.session.city = DEFAULT_CITY;
+      ctx.auth.user.citySelected = DEFAULT_CITY;
+
+      await triggerAction('city:almaty', ctx);
+
+      assert.equal(showExecutorMenuMock.mock.callCount(), 2);
+      assert.equal(showClientMenuMock.mock.callCount(), 0);
+      assert.equal(ctx.session.executor.role, 'courier');
     } finally {
       queryMock.mock.restore();
       showExecutorMenuMock.mock.restore();

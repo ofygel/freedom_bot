@@ -166,9 +166,14 @@ const cloneExecutorState = (executor: AuthExecutorState): AuthExecutorState => (
   isVerified: executor.isVerified,
 });
 
+interface SnapshotHydrationOptions {
+  restoreRole?: boolean;
+}
+
 const buildAuthStateFromSnapshot = (
   ctx: BotContext,
   snapshot: AuthStateSnapshot,
+  options: SnapshotHydrationOptions = {},
 ): AuthState => {
   const base = createGuestAuthState(ctx.from!);
   const sessionUser = ctx.session.user;
@@ -184,12 +189,15 @@ const buildAuthStateFromSnapshot = (
     base.user.phone = ctx.session.phoneNumber;
   }
 
-  base.user.role = snapshot.role;
-  base.user.status = snapshot.status ?? deriveSnapshotStatus(snapshot.role);
+  const shouldRestoreRole = options.restoreRole ?? true;
+  if (shouldRestoreRole) {
+    base.user.role = snapshot.role;
+    base.user.status = snapshot.status ?? deriveSnapshotStatus(snapshot.role);
+  }
   base.user.citySelected = snapshot.city ?? base.user.citySelected;
   base.user.isVerified = snapshot.executor.isVerified;
   base.executor = cloneExecutorState(snapshot.executor);
-  base.isModerator = snapshot.role === 'moderator';
+  base.isModerator = shouldRestoreRole && snapshot.role === 'moderator';
 
   return base;
 };
@@ -507,9 +515,16 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         };
 
         ctx.session.authSnapshot = snapshot;
-        const authState = buildAuthStateFromSnapshot(ctx, snapshot);
+        const authState = buildAuthStateFromSnapshot(ctx, snapshot, { restoreRole: false });
         ctx.auth = authState;
         ctx.session.isAuthenticated = false;
+        ctx.session.user = {
+          id: authState.user.telegramId,
+          username: authState.user.username,
+          firstName: authState.user.firstName,
+          lastName: authState.user.lastName,
+          phoneVerified: authState.user.phoneVerified,
+        };
         logger.warn(
           { err: error.cause ?? error, update: ctx.update },
           'Failed to load auth state, using cached snapshot',
@@ -530,6 +545,13 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       ctx.session.authSnapshot = snapshot;
       ctx.auth = authState;
       ctx.session.isAuthenticated = false;
+      ctx.session.user = {
+        id: authState.user.telegramId,
+        username: authState.user.username,
+        firstName: authState.user.firstName,
+        lastName: authState.user.lastName,
+        phoneVerified: authState.user.phoneVerified,
+      };
       logger.warn({ err: error.cause ?? error, update: ctx.update }, 'Failed to load auth state, using guest context');
       await next();
       return;

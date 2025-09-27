@@ -178,14 +178,28 @@ const normaliseSubscriptionState = (
 const isExecutorRole = (role: AuthUser['role'] | ExecutorRole | undefined): role is ExecutorRole =>
   role === 'courier' || role === 'driver';
 
+const getCachedExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
+  const snapshotRole = ctx.session.authSnapshot?.role;
+  if (isExecutorRole(snapshotRole)) {
+    return snapshotRole;
+  }
+
+  const sessionRole = ctx.session.executor?.role;
+  if (isExecutorRole(sessionRole)) {
+    return sessionRole;
+  }
+
+  return undefined;
+};
+
 export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
   const authRole = ctx.auth.user.role;
   if (isExecutorRole(authRole)) {
     return true;
   }
 
-  if (authRole === 'guest' && ctx.session.isAuthenticated === false) {
-    return isExecutorRole(ctx.session.executor?.role);
+  if (ctx.session.isAuthenticated === false && authRole === 'guest') {
+    return isExecutorRole(getCachedExecutorRole(ctx));
   }
 
   return false;
@@ -197,10 +211,10 @@ const deriveAuthExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
     return authRole;
   }
 
-  if (ctx.session.isAuthenticated === false && ctx.auth.user.role === 'guest') {
-    const sessionRole = ctx.session.executor?.role;
-    if (isExecutorRole(sessionRole)) {
-      return sessionRole;
+  if (ctx.session.isAuthenticated === false && authRole === 'guest') {
+    const cachedRole = getCachedExecutorRole(ctx);
+    if (isExecutorRole(cachedRole)) {
+      return cachedRole;
     }
   }
 
