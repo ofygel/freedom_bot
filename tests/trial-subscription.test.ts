@@ -8,10 +8,12 @@ import {
   TrialSubscriptionUnavailableError,
 } from '../src/db/subscriptions';
 import * as dbClient from '../src/db/client';
-import { resolveInviteLink } from '../src/bot/flows/executor/orders';
+import { processOrdersRequest, resolveInviteLink } from '../src/bot/flows/executor/orders';
 import * as bindings from '../src/bot/channels/bindings';
 import * as subscriptionsDb from '../src/db/subscriptions';
 import type { BotContext, ExecutorFlowState } from '../src/bot/types';
+import { copy } from '../src/bot/copy';
+import { ui, type UiStepOptions } from '../src/bot/ui';
 
 type RecordedQuery = { text: string; params?: unknown[] };
 
@@ -193,5 +195,95 @@ describe('resolveInviteLink with trial subscriptions', () => {
     assert.equal(options.expire_date, Math.floor(expiresAt.getTime() / 1000));
     assert.equal(resolution.link, 'https://t.me/+trial');
     assert.equal(resolution.expiresAt?.toISOString(), expiresAt.toISOString());
+  });
+
+  it('shows service unavailable prompt when invite generation fails', async () => {
+    const createInvite = mock.fn<
+      (chatId: number, options: { name: string; member_limit?: number; expire_date?: number }) =>
+        Promise<{ invite_link: string }>
+    >(async () => ({ invite_link: 'https://t.me/+unexpected' }));
+
+    const ctx = {
+      chat: { id: 999, type: 'private' as const },
+      telegram: { createChatInviteLink: createInvite },
+      session: {
+        ephemeralMessages: [],
+        isAuthenticated: true,
+        awaitingPhone: false,
+        executor: {
+          role: 'driver' as const,
+          verification: {
+            courier: { status: 'idle' as const, requiredPhotos: 0, uploadedPhotos: [] },
+            driver: { status: 'idle' as const, requiredPhotos: 0, uploadedPhotos: [] },
+          },
+          subscription: { status: 'idle' as const },
+        },
+        client: {
+          taxi: { stage: 'idle' as const },
+          delivery: { stage: 'idle' as const },
+        },
+        ui: { steps: {}, homeActions: [] },
+        support: { status: 'idle' as const },
+      },
+      auth: {
+        user: {
+          telegramId: 777,
+          phoneVerified: false,
+          role: 'driver' as const,
+          status: 'active_executor' as const,
+          isVerified: false,
+          isBlocked: false,
+        },
+        executor: {
+          verifiedRoles: { courier: false, driver: false },
+          hasActiveSubscription: true,
+          isVerified: false,
+        },
+        isModerator: false,
+      },
+      reply: async (text: string) => ({
+        message_id: 1,
+        chat: { id: 999, type: 'private' as const },
+        date: Math.floor(Date.now() / 1000),
+        text,
+      }),
+      update: {} as never,
+      updateType: 'callback_query' as const,
+      botInfo: {} as never,
+      state: {},
+    } as unknown as BotContext;
+
+    getChannelBindingMock = mock.method(bindings, 'getChannelBinding', async () => ({
+      type: 'drivers',
+      chatId: -100333,
+    }));
+
+    findActiveSubscriptionMock = mock.method(
+      subscriptionsDb,
+      'findActiveSubscriptionForUser',
+      async () => {
+        throw new Error('db unavailable');
+      },
+    );
+
+    let recordedStep: UiStepOptions | undefined;
+    const uiStepMock = mock.method(ui, 'step', async (_ctx: BotContext, options: UiStepOptions) => {
+      recordedStep = options;
+      return { messageId: 1, sent: true };
+    });
+
+    try {
+      await processOrdersRequest(ctx);
+
+      assert.equal(findActiveSubscriptionMock.mock.callCount(), 1);
+      assert.equal(createInvite.mock.callCount(), 0);
+      assert.ok(recordedStep);
+      assert.equal(
+        recordedStep?.text,
+        `${copy.serviceUnavailable}\n\nНе удалось получить ссылку на канал заказов. Попробуйте позже или обратитесь в поддержку через меню.`,
+      );
+    } finally {
+      uiStepMock.mock.restore();
+    }
   });
 });
