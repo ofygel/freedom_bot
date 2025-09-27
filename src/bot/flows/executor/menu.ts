@@ -578,10 +578,22 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    if (ctx.session.ui?.pendingCityAction !== EXECUTOR_MENU_CITY_ACTION) {
+    const pendingCityAction = ctx.session.ui?.pendingCityAction;
+    const userRole = ctx.auth.user.role;
+    const sessionExecutorRole = ctx.session.executor?.role;
+    const hasExecutorRole =
+      userRole === 'courier' ||
+      userRole === 'driver' ||
+      (sessionExecutorRole ? EXECUTOR_ROLES.includes(sessionExecutorRole) : false);
+
+    const shouldShowExecutorMenu =
+      pendingCityAction === EXECUTOR_MENU_CITY_ACTION || (!pendingCityAction && hasExecutorRole);
+
+    if (!shouldShowExecutorMenu) {
       return;
     }
 
+    ensureExecutorState(ctx);
     await showExecutorMenu(ctx);
   });
 
