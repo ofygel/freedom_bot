@@ -12,12 +12,15 @@ import {
   ensureExecutorState,
   showExecutorMenu,
 } from './menu';
-import { getExecutorRoleCopy } from '../../copy';
+import { copy, getExecutorRoleCopy } from '../../copy';
 
 const ORDERS_LINK_STEP_ID = 'executor:orders:link';
 
 export const EXECUTOR_SUBSCRIPTION_REQUIRED_MESSAGE =
   'Подписка на канал заказов не активна. Оформите подписку через меню, чтобы получить доступ.';
+
+const EXECUTOR_ORDERS_INVITE_FAILURE_PROMPT =
+  'Не удалось получить ссылку на канал заказов. Попробуйте позже или обратитесь в поддержку через меню.';
 
 const formatDateTime = (value: Date): string =>
   new Intl.DateTimeFormat('ru-RU', {
@@ -79,6 +82,9 @@ export const resolveInviteLink = async (
       { err: error, chatId: binding.chatId, telegramId: ctx.auth.user.telegramId },
       'Failed to resolve active subscription before issuing invite link',
     );
+
+    const failureMarker = new Date(0);
+    return { expiresAt: failureMarker, source: 'none' } satisfies InviteResolutionResult;
   }
 
   try {
@@ -160,7 +166,7 @@ export const sendInviteLink = async (
   });
 };
 
-const processOrdersRequest = async (ctx: BotContext): Promise<void> => {
+export const processOrdersRequest = async (ctx: BotContext): Promise<void> => {
   const state = ensureExecutorState(ctx);
   if (!ctx.auth.executor.hasActiveSubscription) {
     state.subscription.status = 'idle';
@@ -177,9 +183,18 @@ const processOrdersRequest = async (ctx: BotContext): Promise<void> => {
 
   const resolution = await resolveInviteLink(ctx, state);
   if (!resolution.link) {
+    const isResolutionFailure =
+      resolution.source === 'none' &&
+      resolution.expiresAt instanceof Date &&
+      resolution.expiresAt.getTime() === 0;
+
+    const text = isResolutionFailure
+      ? `${copy.serviceUnavailable}\n\n${EXECUTOR_ORDERS_INVITE_FAILURE_PROMPT}`
+      : EXECUTOR_ORDERS_INVITE_FAILURE_PROMPT;
+
     await ui.step(ctx, {
       id: ORDERS_LINK_STEP_ID,
-      text: 'Не удалось получить ссылку на канал заказов. Попробуйте позже или обратитесь в поддержку через меню.',
+      text,
       homeAction: EXECUTOR_MENU_ACTION,
     });
     return;
