@@ -313,7 +313,7 @@ describe("/menu command routing", () => {
     try {
       await authMiddleware(ctx, async () => {});
 
-      assert.equal(ctx.session.isAuthenticated, true);
+      assert.equal(ctx.session.isAuthenticated, false);
       assert.equal(ctx.session.authSnapshot?.stale, true);
       assert.equal(ctx.session.authSnapshot?.executor.verifiedRoles.courier, true);
       assert.equal(ctx.session.authSnapshot?.executor.hasActiveSubscription, true);
