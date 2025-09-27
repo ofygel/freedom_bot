@@ -131,6 +131,8 @@ const createSessionState = (): BotContext['session'] => ({
   authSnapshot: {
     role: 'guest' as const,
     status: 'guest' as const,
+    phoneVerified: false,
+    userIsVerified: false,
     executor: {
       verifiedRoles: { courier: false, driver: false },
       hasActiveSubscription: false,

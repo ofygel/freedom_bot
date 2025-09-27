@@ -26,6 +26,7 @@ import {
   type ExecutorUploadedPhoto,
   type ExecutorVerificationState,
   type SessionState,
+  type SessionUser,
   type SupportSessionState,
   type UiSessionState,
   type UserRole,
@@ -90,6 +91,8 @@ const USER_STATUSES: readonly UserStatus[] = [
 const createAuthSnapshot = (): AuthStateSnapshot => ({
   role: 'guest',
   status: 'guest',
+  phoneVerified: false,
+  userIsVerified: false,
   executor: {
     verifiedRoles: { courier: false, driver: false },
     hasActiveSubscription: false,
@@ -99,9 +102,12 @@ const createAuthSnapshot = (): AuthStateSnapshot => ({
   stale: false,
 });
 
-const rebuildAuthSnapshot = (value: unknown): AuthStateSnapshot => {
+const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthStateSnapshot => {
   const snapshot = createAuthSnapshot();
   if (!value || typeof value !== 'object') {
+    if (sessionUser?.phoneVerified !== undefined) {
+      snapshot.phoneVerified = Boolean(sessionUser.phoneVerified);
+    }
     return snapshot;
   }
 
@@ -130,6 +136,27 @@ const rebuildAuthSnapshot = (value: unknown): AuthStateSnapshot => {
       hasActiveSubscription: Boolean(executor.hasActiveSubscription),
       isVerified: Boolean(executor.isVerified),
     };
+  }
+
+  const hasPhoneVerifiedField = Object.prototype.hasOwnProperty.call(candidate, 'phoneVerified');
+  if (hasPhoneVerifiedField) {
+    snapshot.phoneVerified = Boolean(
+      (candidate as { phoneVerified?: unknown }).phoneVerified,
+    );
+  } else if (sessionUser?.phoneVerified !== undefined) {
+    snapshot.phoneVerified = Boolean(sessionUser.phoneVerified);
+  }
+
+  const hasUserVerifiedField = Object.prototype.hasOwnProperty.call(candidate, 'userIsVerified');
+  if (hasUserVerifiedField && typeof candidate.userIsVerified === 'boolean') {
+    snapshot.userIsVerified = candidate.userIsVerified;
+  } else if (candidate.executor && typeof candidate.executor === 'object') {
+    const executorIsVerified = Boolean(
+      (candidate.executor as { isVerified?: unknown }).isVerified,
+    );
+    if (executorIsVerified) {
+      snapshot.userIsVerified = true;
+    }
   }
 
   if (candidate.city && isAppCity(candidate.city)) {
@@ -416,7 +443,10 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         state.support = createSupportState();
       }
 
-      state.authSnapshot = rebuildAuthSnapshot((state as { authSnapshot?: unknown }).authSnapshot);
+      state.authSnapshot = rebuildAuthSnapshot(
+        (state as { authSnapshot?: unknown }).authSnapshot,
+        (state as { user?: SessionUser }).user,
+      );
 
       state.executor = rebuildExecutorState((state as { executor?: unknown }).executor);
       state.client = rebuildClientState((state as { client?: unknown }).client);

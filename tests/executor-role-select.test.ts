@@ -72,6 +72,8 @@ const createSessionState = (): SessionState => ({
   authSnapshot: {
     role: 'guest',
     status: 'guest',
+    phoneVerified: false,
+    userIsVerified: false,
     executor: {
       verifiedRoles: { courier: false, driver: false },
       hasActiveSubscription: false,
@@ -870,6 +872,8 @@ describe('executor role selection', () => {
     ctx.session.authSnapshot = {
       role: 'courier',
       status: 'active_executor',
+      phoneVerified: true,
+      userIsVerified: true,
       executor: {
         verifiedRoles: { courier: true, driver: false },
         hasActiveSubscription: true,
@@ -909,11 +913,15 @@ describe('executor role selection', () => {
     assert.equal(ctx.session.authSnapshot.stale, true);
     assert.equal(ctx.session.authSnapshot.status, 'active_executor');
     assert.equal(ctx.session.authSnapshot.role, 'courier');
+    assert.equal(ctx.session.authSnapshot.phoneVerified, true);
+    assert.equal(ctx.session.authSnapshot.userIsVerified, true);
     assert.equal(ctx.session.authSnapshot.executor.verifiedRoles.courier, true);
     assert.equal(ctx.session.authSnapshot.executor.hasActiveSubscription, true);
     assert.equal(ctx.session.authSnapshot.executor.isVerified, true);
     assert.equal(ctx.auth.user.role, 'courier');
     assert.equal(ctx.auth.user.status, 'active_executor');
+    assert.equal(ctx.auth.user.phoneVerified, true);
+    assert.equal(ctx.auth.user.isVerified, true);
     assert.equal(ctx.auth.executor.verifiedRoles.courier, true);
     assert.equal(ctx.auth.executor.hasActiveSubscription, true);
     assert.equal(ctx.auth.executor.isVerified, true);
