@@ -201,7 +201,13 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
       subscription: createSubscriptionState(),
     } satisfies ExecutorFlowState;
   } else {
-    ctx.session.executor.role = derivedRole;
+    if (derivedRole !== undefined) {
+      ctx.session.executor.role = derivedRole;
+    } else if (ctx.session.isAuthenticated === false && ctx.auth.user.role === 'guest') {
+      // Preserve the existing executor role when auth falls back to the guest context.
+    } else {
+      ctx.session.executor.role = undefined;
+    }
     ctx.session.executor.verification = normaliseVerificationState(
       ctx.session.executor.verification,
     );

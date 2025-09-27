@@ -364,7 +364,7 @@ describe('executor role selection', () => {
     const { ctx } = createMockContext();
     ctx.session.city = undefined;
     ctx.auth.user.citySelected = undefined;
-    ctx.session.ui.pendingCityAction = undefined;
+    ctx.session.ui.pendingCityAction = EXECUTOR_MENU_CITY_ACTION;
 
     Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
       callbackQuery: {
@@ -390,6 +390,58 @@ describe('executor role selection', () => {
     const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
     assert.ok(menuStep, 'executor menu should be displayed after verification prompt');
     assert.equal(ctx.session.executor.verification.courier.status, 'collecting');
+  });
+
+  it('retains the session executor role during guest fallback city callbacks', async () => {
+    const setUserCitySelectedMock = mock.method(
+      usersService,
+      'setUserCitySelected',
+      async () => undefined,
+    );
+
+    const { bot, dispatchAction } = createMockBot();
+    registerCityAction(bot);
+    registerExecutorMenu(bot);
+    registerExecutorVerification(bot);
+
+    const { ctx } = createMockContext();
+    ctx.session.city = undefined;
+    ctx.auth.user.citySelected = undefined;
+    ctx.session.ui.pendingCityAction = EXECUTOR_MENU_CITY_ACTION;
+
+    // Simulate a temporary auth failure (guest fallback) while the session still knows the role.
+    ctx.session.isAuthenticated = false;
+    ctx.auth.user.role = 'guest';
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: 'city:almaty',
+        message: { message_id: 350, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    try {
+      await dispatchAction('city:almaty', ctx);
+    } finally {
+      setUserCitySelectedMock.mock.restore();
+    }
+
+    const verificationPrompt = recordedSteps.find(
+      (step) => step.id === 'executor:verification:prompt',
+    );
+    assert.ok(
+      verificationPrompt,
+      'guest fallback should still route through executor verification using the session role',
+    );
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(
+      menuStep,
+      'executor menu should be displayed after verification even when auth falls back to guest',
+    );
+
+    // The guest fallback should not wipe executor role information from the session.
+    assert.equal(ctx.session.executor.role, 'courier');
   });
 
   it('keeps clients in the client menu when changing the city', async () => {
