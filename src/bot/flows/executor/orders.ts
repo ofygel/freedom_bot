@@ -23,6 +23,7 @@ const formatDateTime = (value: Date): string =>
   new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'short',
     timeStyle: 'short',
+    timeZone: config.timezone,
   }).format(value);
 
 type InviteSource = 'generated' | 'cached' | 'config' | 'none';

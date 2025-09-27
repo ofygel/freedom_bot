@@ -299,6 +299,7 @@ export interface AppConfig {
   city: {
     default?: string;
   };
+  timezone: string;
   jobs: {
     nudger: string;
     subscription: string;
@@ -360,6 +361,7 @@ export const loadConfig = (): AppConfig => ({
   city: {
     default: getOptionalString('CITY_DEFAULT'),
   },
+  timezone: getOptionalString('TIMEZONE') ?? 'Asia/Almaty',
   jobs: {
     nudger: getCronExpression('JOBS_NUDGER_CRON', '*/1 * * * *'),
     subscription: getCronExpression('JOBS_SUBSCRIPTION_CRON', '*/10 * * * *'),

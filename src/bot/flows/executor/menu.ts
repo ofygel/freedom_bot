@@ -1,6 +1,7 @@
 import { Markup, Telegraf } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
+import { config } from '../../../config';
 import {
   EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
@@ -251,6 +252,7 @@ const formatTimestamp = (timestamp: number): string => {
   return new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'short',
     timeStyle: 'short',
+    timeZone: config.timezone,
   }).format(new Date(timestamp));
 };
 
