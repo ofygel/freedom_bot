@@ -61,6 +61,13 @@ export interface AuthState {
   isModerator: boolean;
 }
 
+export interface AuthStateSnapshot {
+  role: UserRole;
+  executor: AuthExecutorState;
+  city?: AppCity;
+  stale: boolean;
+}
+
 export interface ExecutorUploadedPhoto {
   fileId: string;
   messageId: number;
@@ -170,6 +177,7 @@ export interface SessionState {
   phoneNumber?: string;
   user?: SessionUser;
   city?: AppCity;
+  authSnapshot?: AuthStateSnapshot;
   executor: ExecutorFlowState;
   client: ClientFlowState;
   ui: UiSessionState;
