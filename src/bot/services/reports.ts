@@ -423,7 +423,7 @@ export const reportSubscriptionExpired = async (
 interface OrderReportContext {
   order: OrderRecord;
   customer?: UserIdentity;
-  publishStatus?: 'published' | 'already_published' | 'missing_channel';
+  publishStatus?: 'published' | 'already_published' | 'missing_channel' | 'publish_failed';
 }
 
 const buildOrderReport = ({ order, customer, publishStatus }: OrderReportContext): string => {
@@ -442,6 +442,9 @@ const buildOrderReport = ({ order, customer, publishStatus }: OrderReportContext
   }
   if (publishStatus === 'missing_channel') {
     lines.push('⚠️ Канал исполнителей не настроен');
+  }
+  if (publishStatus === 'publish_failed') {
+    lines.push('🚨 Не удалось опубликовать заказ в канал — требуется ручная обработка');
   }
   return lines.join('\n');
 };

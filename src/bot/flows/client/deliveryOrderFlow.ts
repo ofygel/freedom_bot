@@ -6,7 +6,7 @@ import type {
 
 import { publishOrderToDriversChannel, type PublishOrderStatus } from '../../channels/ordersChannel';
 import { logger } from '../../../config';
-import { createOrder } from '../../../db/orders';
+import { createOrder, markOrderAsCancelled } from '../../../db/orders';
 import type { OrderRecord, OrderLocation } from '../../../types';
 import {
   buildCustomerName,
@@ -80,6 +80,8 @@ const DELIVERY_CREATE_ERROR_STEP_ID = 'client:delivery:error:create';
 const DELIVERY_ADDRESS_TYPE_HINT_STEP_ID = 'client:delivery:hint:address-type';
 const DELIVERY_ADDRESS_DETAILS_ERROR_STEP_ID = 'client:delivery:error:address-details';
 const DELIVERY_RECIPIENT_PHONE_ERROR_STEP_ID = 'client:delivery:error:recipient-phone';
+
+type ClientPublishStatus = PublishOrderStatus | 'publish_failed';
 
 export const normaliseRecipientPhone = (value: string): string | undefined => {
   const result = normalizeE164(value);
@@ -695,15 +697,18 @@ const cancelOrderDraft = async (ctx: BotContext, draft: ClientOrderDraftState): 
 const notifyOrderCreated = async (
   ctx: BotContext,
   order: OrderRecord,
-  publishStatus: PublishOrderStatus,
+  publishStatus: ClientPublishStatus,
 ): Promise<void> => {
-  flowComplete('delivery_order', true);
+  const isSuccessful = publishStatus !== 'publish_failed';
+  flowComplete('delivery_order', isSuccessful);
 
   const statusLabel =
     publishStatus === 'missing_channel'
       ? 'Заказ создан. Оператор свяжется вручную.'
+      : publishStatus === 'publish_failed'
+      ? 'Заказ создан, но не опубликован. Оператор свяжется вручную.'
       : 'Заказ отправлен исполнителям. Ожидаем отклика.';
-  const statusEmoji = publishStatus === 'missing_channel' ? '⚠️' : '⏳';
+  const statusEmoji = publishStatus === 'published' || publishStatus === 'already_published' ? '⏳' : '⚠️';
   const statusPayload = { emoji: statusEmoji, label: statusLabel };
   const { text: statusText, reply_markup } = buildStatusMessage(
     statusEmoji,
@@ -722,12 +727,17 @@ const notifyOrderCreated = async (
   });
 
   const lines = [
-    `Заказ на доставку №${order.id} создан.`,
+    publishStatus === 'publish_failed'
+      ? `Заказ на доставку №${order.id} записан, но не был отправлен исполнителям.`
+      : `Заказ на доставку №${order.id} создан.`,
     `Стоимость по расчёту: ${formatPriceAmount(order.price.amount, order.price.currency)}.`,
   ];
 
   if (publishStatus === 'missing_channel') {
     lines.push('⚠️ Канал исполнителей не настроен. Мы свяжемся с вами вручную.');
+  }
+  if (publishStatus === 'publish_failed') {
+    lines.push('⚠️ Не удалось отправить заказ исполнителям. Мы свяжемся с вами вручную.');
   }
 
   const customer: UserIdentity = {
@@ -789,28 +799,62 @@ const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Prom
   }
 
   try {
-    const order = await createOrder({
-      kind: 'delivery',
-      city,
-      clientId: ctx.auth.user.telegramId,
-      clientPhone: ctx.session.phoneNumber,
-      recipientPhone: draft.recipientPhone,
-      customerName: buildCustomerName(ctx),
-      customerUsername: ctx.auth.user.username,
-      clientComment: draft.notes,
-      apartment: draft.apartment,
-      entrance: draft.entrance,
-      floor: draft.floor,
-      isPrivateHouse: draft.isPrivateHouse,
-      pickup: draft.pickup,
-      dropoff: draft.dropoff,
-      price: draft.price,
-    });
+    let order: OrderRecord;
+    try {
+      order = await createOrder({
+        kind: 'delivery',
+        city,
+        clientId: ctx.auth.user.telegramId,
+        clientPhone: ctx.session.phoneNumber,
+        recipientPhone: draft.recipientPhone,
+        customerName: buildCustomerName(ctx),
+        customerUsername: ctx.auth.user.username,
+        clientComment: draft.notes,
+        apartment: draft.apartment,
+        entrance: draft.entrance,
+        floor: draft.floor,
+        isPrivateHouse: draft.isPrivateHouse,
+        pickup: draft.pickup,
+        dropoff: draft.dropoff,
+        price: draft.price,
+      });
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to create delivery order');
+      flowComplete('delivery_order', false);
+      await ui.step(ctx, {
+        id: DELIVERY_CREATE_ERROR_STEP_ID,
+        text: 'Не удалось создать заказ. Попробуйте позже.',
+        cleanup: true,
+      });
+      await sendClientMenu(ctx, 'Не удалось создать заказ. Выберите следующее действие.');
+      return;
+    }
 
-    const publishResult = await publishOrderToDriversChannel(ctx.telegram, order.id);
-    await notifyOrderCreated(ctx, order, publishResult.status);
+    let publishStatus: ClientPublishStatus;
+    try {
+      const publishResult = await publishOrderToDriversChannel(ctx.telegram, order.id);
+      publishStatus = publishResult.status;
+    } catch (error) {
+      logger.error({ err: error, orderId: order.id }, 'Failed to publish delivery order');
+      publishStatus = 'publish_failed';
+
+      try {
+        order = (await markOrderAsCancelled(order.id)) ?? order;
+      } catch (statusError) {
+        logger.error(
+          { err: statusError, orderId: order.id },
+          'Failed to cancel delivery order after publish failure',
+        );
+      }
+
+      if (ctx.callbackQuery) {
+        await ctx.answerCbQuery('Заказ записан, оператор свяжется вручную.', { show_alert: true });
+      }
+    }
+
+    await notifyOrderCreated(ctx, order, publishStatus);
   } catch (error) {
-    logger.error({ err: error }, 'Failed to create delivery order');
+    logger.error({ err: error }, 'Failed to finalize delivery order confirmation');
     flowComplete('delivery_order', false);
     await ui.step(ctx, {
       id: DELIVERY_CREATE_ERROR_STEP_ID,
