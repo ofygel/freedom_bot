@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, it, mock } from 'node:test';
 import type { BotContext, SessionState } from '../src/bot/types';
 import { EXECUTOR_VERIFICATION_PHOTO_COUNT } from '../src/bot/types';
 import { ensureVerifiedExecutor } from '../src/bot/middlewares/verificationGate';
+import {
+  EXECUTOR_SUBSCRIPTION_ACTION,
+  EXECUTOR_SUPPORT_ACTION,
+} from '../src/bot/flows/executor/menu';
 import * as verificationDb from '../src/db/verifications';
 import * as verificationFlow from '../src/bot/flows/executor/verification';
 
@@ -137,7 +141,7 @@ describe('ensureVerifiedExecutor middleware', () => {
     assert.equal(startVerificationMock.mock.callCount(), 1);
   });
 
-  it('allows commands while collecting to reach downstream handlers', async () => {
+  it('allows /start command while collecting to reach downstream handlers', async () => {
     const { ctx } = createContext();
 
     const roleState = ctx.session.executor.verification.courier;
@@ -151,6 +155,61 @@ describe('ensureVerifiedExecutor middleware', () => {
     });
 
     assert.equal(nextCalled, true, 'commands should reach their handlers while collecting');
+    assert.equal(startVerificationMock.mock.callCount(), 0);
+  });
+
+  it('allows role selection callbacks while collecting to reach downstream handlers', async () => {
+    const { ctx } = createContext();
+
+    const roleState = ctx.session.executor.verification.courier;
+    roleState.status = 'collecting';
+
+    (ctx as unknown as { callbackQuery: { data: string } }).callbackQuery = { data: 'role:client' };
+
+    let nextCalled = false;
+    await ensureVerifiedExecutor(ctx, async () => {
+      nextCalled = true;
+    });
+
+    assert.equal(nextCalled, true, 'role change should reach downstream handler');
+    assert.equal(startVerificationMock.mock.callCount(), 0);
+  });
+
+  it('allows executor menu callbacks while collecting to reach downstream handlers', async () => {
+    const { ctx } = createContext();
+
+    const roleState = ctx.session.executor.verification.courier;
+    roleState.status = 'collecting';
+
+    (ctx as unknown as { callbackQuery: { data: string } }).callbackQuery = {
+      data: EXECUTOR_SUBSCRIPTION_ACTION,
+    };
+
+    let nextCalled = false;
+    await ensureVerifiedExecutor(ctx, async () => {
+      nextCalled = true;
+    });
+
+    assert.equal(nextCalled, true, 'executor menu callbacks should reach their handlers');
+    assert.equal(startVerificationMock.mock.callCount(), 0);
+  });
+
+  it('allows support callback while collecting to reach downstream handlers', async () => {
+    const { ctx } = createContext();
+
+    const roleState = ctx.session.executor.verification.courier;
+    roleState.status = 'collecting';
+
+    (ctx as unknown as { callbackQuery: { data: string } }).callbackQuery = {
+      data: EXECUTOR_SUPPORT_ACTION,
+    };
+
+    let nextCalled = false;
+    await ensureVerifiedExecutor(ctx, async () => {
+      nextCalled = true;
+    });
+
+    assert.equal(nextCalled, true, 'support callback should reach downstream handler');
     assert.equal(startVerificationMock.mock.callCount(), 0);
   });
 

@@ -3,8 +3,28 @@ import { type MiddlewareFn } from 'telegraf';
 import { logger } from '../../config';
 import { isExecutorVerified } from '../../db/verifications';
 import { CITY_ACTION_PATTERN } from '../flows/common/citySelect';
+import {
+  EXECUTOR_MENU_ACTION,
+  EXECUTOR_MENU_CITY_ACTION,
+  EXECUTOR_ORDERS_ACTION,
+  EXECUTOR_SUBSCRIPTION_ACTION,
+  EXECUTOR_SUPPORT_ACTION,
+  EXECUTOR_VERIFICATION_ACTION,
+  isExecutorMenuTextCommand,
+} from '../flows/executor/menu';
 import { startExecutorVerification } from '../flows/executor/verification';
 import type { BotContext, ExecutorRole } from '../types';
+
+const COLLECTING_SAFE_COMMANDS = new Set(['/start']);
+const COLLECTING_SAFE_CALLBACK_PREFIXES = ['role:'];
+const COLLECTING_SAFE_CALLBACKS = new Set([
+  EXECUTOR_MENU_ACTION,
+  EXECUTOR_MENU_CITY_ACTION,
+  EXECUTOR_ORDERS_ACTION,
+  EXECUTOR_SUBSCRIPTION_ACTION,
+  EXECUTOR_SUPPORT_ACTION,
+  EXECUTOR_VERIFICATION_ACTION,
+]);
 
 const resolveExecutorRole = (ctx: BotContext, fallback: ExecutorRole): ExecutorRole => {
   const sessionRole = ctx.session.executor?.role;
@@ -63,14 +83,24 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
   const hasPhoto =
     message && 'photo' in message && Array.isArray(message.photo) && message.photo.length > 0;
   const messageText = message && 'text' in message ? message.text : undefined;
-  const isCommand = typeof messageText === 'string' && messageText.startsWith('/');
+
+  const isSafeCollectingCallback =
+    callbackQuery &&
+    'data' in callbackQuery &&
+    typeof callbackQuery.data === 'string' &&
+    (COLLECTING_SAFE_CALLBACK_PREFIXES.some((prefix) => callbackQuery.data.startsWith(prefix)) ||
+      COLLECTING_SAFE_CALLBACKS.has(callbackQuery.data));
+
+  const isSafeCollectingCommand =
+    typeof messageText === 'string' &&
+    (COLLECTING_SAFE_COMMANDS.has(messageText) || isExecutorMenuTextCommand(messageText));
 
   if (executorState?.status === 'collecting' && hasPhoto) {
     await next();
     return;
   }
 
-  if (executorState?.status === 'collecting' && isCommand) {
+  if (executorState?.status === 'collecting' && (isSafeCollectingCommand || isSafeCollectingCallback)) {
     await next();
     return;
   }
