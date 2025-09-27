@@ -316,11 +316,10 @@ describe('executor role selection', () => {
     registerExecutorMenu(bot);
 
     let cityMiddlewareExecuted = false;
-    bot.action(CITY_ACTION_PATTERN, async (ctx, next) => {
+    bot.action(CITY_ACTION_PATTERN, async (ctx) => {
       cityMiddlewareExecuted = true;
       ctx.session.city = DEFAULT_CITY;
       ctx.auth.user.citySelected = DEFAULT_CITY;
-      await next();
     });
 
     registerCityAction(bot);
