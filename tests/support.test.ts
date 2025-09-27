@@ -281,6 +281,85 @@ describe('support service', () => {
     assert.equal(state?.moderatorMessageId, 402);
   });
 
+  it('returns missing_channel when moderation resolver throws without fallback', async () => {
+    const telegram = createMockTelegram();
+
+    __testing__.setModerationChannelResolver(async () => {
+      throw new Error('db unavailable');
+    });
+
+    const ctx = {
+      chat: { id: 111 },
+      from: { id: 222 },
+      message: { message_id: 321, text: 'Помогите' },
+      telegram: telegram.api,
+      auth: createAuthState(222),
+    } as unknown as BotContext;
+
+    const result = (await forwardSupportMessage(ctx)) as SupportForwardResult;
+
+    assert.equal(result.status, 'missing_channel');
+    assert.equal(telegram.calls.length, 0);
+  });
+
+  it('uses the cached moderation chat when resolver fails', async () => {
+    const telegram = createMockTelegram();
+    const queries: string[] = [];
+
+    setPoolQuery((async (text: string) => {
+      queries.push(text);
+      return { rows: [] } as any;
+    }) as typeof pool.query);
+
+    __testing__.setModerationChannelResolver(async () => 987654321);
+
+    const auth = createAuthState(222);
+    auth.user.phone = '+7 777 000 00 00';
+
+    const firstCtx = {
+      chat: { id: 111 },
+      from: { id: 222 },
+      message: { message_id: 1111, text: 'Нужна помощь' },
+      telegram: telegram.api,
+      auth,
+    } as unknown as BotContext;
+
+    const firstResult = (await forwardSupportMessage(firstCtx)) as SupportForwardResult;
+    assert.equal(firstResult.status, 'forwarded');
+
+    __testing__.setModerationChannelResolver(async () => {
+      throw new Error('db down');
+    });
+
+    const secondCtx = {
+      chat: { id: 112 },
+      from: { id: 223 },
+      message: { message_id: 1112, text: 'Снова нужна помощь' },
+      telegram: telegram.api,
+      auth: createAuthState(223),
+    } as unknown as BotContext;
+
+    const secondResult = (await forwardSupportMessage(secondCtx)) as SupportForwardResult;
+
+    assert.equal(secondResult.status, 'forwarded');
+    assert.equal(__testing__.getLastKnownModerationChatId(), 987654321);
+
+    const headerCalls = telegram.calls.filter((call) => call.method === 'sendMessage');
+    assert.equal(headerCalls.length, 2);
+    assert.equal(headerCalls[0]?.args[0], 987654321);
+    assert.equal(headerCalls[1]?.args[0], 987654321);
+
+    const copyCalls = telegram.calls.filter((call) => call.method === 'copyMessage');
+    assert.equal(copyCalls.length, 2);
+    assert.equal(copyCalls[0]?.args[0], 987654321);
+    assert.equal(copyCalls[1]?.args[0], 987654321);
+
+    assert.ok(
+      queries.some((text) => text.includes('INSERT INTO support_threads')),
+      'support threads should be persisted',
+    );
+  });
+
   it('prompts moderators for replies and delivers responses', async () => {
     const threadId = 'thread-reply';
     const telegram = createMockTelegram();

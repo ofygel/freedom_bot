@@ -86,6 +86,8 @@ afterEach(() => {
   poolQueryMock?.mock.restore();
   forwardSupportMock = undefined;
   poolQueryMock = undefined;
+  supportService.__testing__?.setModerationChannelResolver(null);
+  supportService.__testing__?.resetSupportState();
 });
 
 describe('client support flow', () => {
@@ -128,6 +130,24 @@ describe('client support flow', () => {
     forwardSupportMock = mock.method(supportService, 'forwardSupportMessage', async () => ({
       status: 'missing_channel' as const,
     }));
+
+    const handled = await clientSupportTesting.handleSupportMessage(ctx);
+
+    assert.equal(handled, true);
+    assert.equal(ctx.session.support.status, 'idle');
+    assert.equal(replyCalls.length, 1);
+    assert.match(replyCalls[0].text, /не удалось передать/iu);
+  });
+
+  it('notifies client when moderation channel resolver throws', async () => {
+    const { ctx, replyCalls } = createContext();
+    ctx.session.support.status = 'awaiting_message';
+    (ctx as any).message = { message_id: 13, text: 'Поддержка нужна' };
+
+    supportService.__testing__.resetSupportState();
+    supportService.__testing__.setModerationChannelResolver(async () => {
+      throw new Error('db offline');
+    });
 
     const handled = await clientSupportTesting.handleSupportMessage(ctx);
 

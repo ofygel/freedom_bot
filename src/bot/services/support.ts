@@ -223,6 +223,8 @@ const defaultResolveModerationChannel: ModerationChannelResolver = async () => {
 
 let resolveModerationChannel: ModerationChannelResolver =
   defaultResolveModerationChannel;
+let lastKnownModerationChatId: number | null = null;
+let resolverFailureLogged = false;
 
 const createThreadId = (): string => crypto.randomBytes(8).toString('hex');
 
@@ -604,7 +606,35 @@ export const forwardSupportMessage = async (
     return { status: 'skipped' };
   }
 
-  const moderationChatId = await resolveModerationChannel();
+  let moderationChatId: number | null = null;
+  try {
+    moderationChatId = await resolveModerationChannel();
+    resolverFailureLogged = false;
+  } catch (error) {
+    if (!resolverFailureLogged) {
+      logger.error(
+        { err: error },
+        'Failed to resolve support moderation channel',
+      );
+      resolverFailureLogged = true;
+    }
+    moderationChatId = lastKnownModerationChatId;
+    if (moderationChatId !== null) {
+      logger.warn(
+        { chatId, messageId: message.message_id, moderationChatId },
+        'Support moderation channel resolver failed, using cached chat id',
+      );
+    }
+  }
+
+  if (moderationChatId === null && lastKnownModerationChatId !== null) {
+    logger.warn(
+      { chatId, messageId: message.message_id },
+      'Support moderation channel resolver returned null, using cached chat id',
+    );
+    moderationChatId = lastKnownModerationChatId;
+  }
+
   if (moderationChatId === null) {
     logger.warn(
       { chatId, messageId: message.message_id },
@@ -612,6 +642,8 @@ export const forwardSupportMessage = async (
     );
     return { status: 'missing_channel' };
   }
+
+  lastKnownModerationChatId = moderationChatId;
 
   const threadId = createThreadId();
   const headerMessageId = await sendSupportHeader(ctx, moderationChatId, threadId);
@@ -1138,6 +1170,8 @@ const resetSupportState = (): void => {
   promptAliasIndex.clear();
   promptModeratorIndex.clear();
   resolveModerationChannel = defaultResolveModerationChannel;
+  lastKnownModerationChatId = null;
+  resolverFailureLogged = false;
 };
 
 export const __testing__ = {
@@ -1154,4 +1188,8 @@ export const __testing__ = {
   setModerationChannelResolver: (resolver: ModerationChannelResolver | null) => {
     resolveModerationChannel = resolver ?? defaultResolveModerationChannel;
   },
+  setLastKnownModerationChatId: (chatId: number | null) => {
+    lastKnownModerationChatId = chatId;
+  },
+  getLastKnownModerationChatId: () => lastKnownModerationChatId,
 };
