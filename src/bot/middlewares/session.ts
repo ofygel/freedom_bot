@@ -442,6 +442,9 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     }
 
     if (fallbackMode) {
+      if (ctx.session) {
+        ctx.session.isAuthenticated = false;
+      }
       await invokeNext();
       finalState = ctx.session;
     }

@@ -545,6 +545,73 @@ describe('executor role selection', () => {
     assert.equal(savedState.executor.role, 'courier');
   });
 
+  it('retains the cached executor role when fallback cache is already unauthenticated', async () => {
+    const { bot, dispatchAction } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const { ctx } = createMockContext();
+    ctx.auth.user.role = 'guest';
+    ctx.auth.executor.verifiedRoles.courier = true;
+    ctx.auth.executor.hasActiveSubscription = true;
+    ctx.auth.executor.isVerified = true;
+    ctx.auth.user.citySelected = DEFAULT_CITY;
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: EXECUTOR_MENU_ACTION,
+        message: { message_id: 992, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    const cachedState = createSessionState();
+    cachedState.executor.role = 'driver';
+    cachedState.isAuthenticated = false;
+    cachedState.city = DEFAULT_CITY;
+
+    const loadCacheMock = mock.method(sessionCache, 'loadSessionCache', async () => cachedState);
+    const saveCacheMock = mock.method(sessionCache, 'saveSessionCache', async () => undefined);
+    const connectMock = mock.method(pool, 'connect', async () => {
+      throw new Error('database offline');
+    });
+    const showExecutorMenuMock = mock.method(
+      executorMenuModule,
+      'showExecutorMenu',
+      async () => undefined,
+    );
+
+    const sessionMiddleware = sessionMiddlewareFactory();
+
+    let cachedCalls: typeof saveCacheMock.mock.calls = [];
+    let showExecutorCallCount = 0;
+
+    try {
+      await sessionMiddleware(ctx, async () => {
+        await dispatchAction(EXECUTOR_MENU_ACTION, ctx);
+      });
+      cachedCalls = saveCacheMock.mock.calls;
+      showExecutorCallCount = showExecutorMenuMock.mock.callCount();
+    } finally {
+      connectMock.mock.restore();
+      loadCacheMock.mock.restore();
+      saveCacheMock.mock.restore();
+      showExecutorMenuMock.mock.restore();
+    }
+
+    assert.equal(
+      showExecutorCallCount,
+      1,
+      'executor menu should render when cached unauthenticated fallback is used',
+    );
+    assert.equal(ctx.session.executor.role, 'driver');
+    assert.equal(ctx.session.isAuthenticated, false);
+
+    const lastCall = cachedCalls.at(-1);
+    assert.ok(lastCall, 'fallback session should update cache even when already unauthenticated');
+    const savedState = lastCall.arguments[1] as SessionState;
+    assert.equal(savedState.isAuthenticated, false);
+    assert.equal(savedState.executor.role, 'driver');
+  });
+
   it('persists an unauthenticated default session when Redis fallback bootstraps state', async () => {
     const { bot, dispatchAction } = createMockBot();
     registerExecutorMenu(bot);
