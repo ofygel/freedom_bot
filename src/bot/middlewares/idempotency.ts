@@ -23,7 +23,7 @@ export const withIdempotency = async <T>(
   payload: string | undefined,
   handler: () => Promise<T>,
   ttlSeconds = DEFAULT_TTL_SECONDS,
-): Promise<{ status: 'ok'; result: T } | { status: 'duplicate' } | { status: 'error' }> => {
+): Promise<{ status: 'ok'; result: T } | { status: 'duplicate' }> => {
   const userId = ctx.auth?.user.telegramId ?? ctx.from?.id;
   if (typeof userId !== 'number') {
     return { status: 'duplicate' };
@@ -35,6 +35,31 @@ export const withIdempotency = async <T>(
   const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
 
   let keyInserted = false;
+  let cleanupAttempted = false;
+
+  const executeHandler = async (): Promise<{ status: 'ok'; result: T }> => {
+    try {
+      const result = await handler();
+      return { status: 'ok', result };
+    } catch (error) {
+      if (keyInserted && !cleanupAttempted) {
+        cleanupAttempted = true;
+        try {
+          await pool.query('DELETE FROM recent_actions WHERE user_id = $1 AND key = $2', [
+            userId,
+            key,
+          ]);
+        } catch (cleanupError) {
+          logger.warn(
+            { err: cleanupError, userId, action, payload },
+            'Failed to clean up idempotency key after handler error',
+          );
+        }
+      }
+      throw error;
+    }
+  };
+
   try {
     const insertResult = await pool.query(
       `
@@ -50,21 +75,13 @@ export const withIdempotency = async <T>(
     }
     keyInserted = true;
   } catch (error) {
-    logger.error({ err: error, userId, action, payload }, 'Failed to register idempotency key');
-    return { status: 'error' };
+    logger.error(
+      { err: error, userId, action, payload },
+      'Failed to register idempotency key, executing handler without guard',
+    );
+    return executeHandler();
   }
 
-  try {
-    const result = await handler();
-    return { status: 'ok', result };
-  } catch (error) {
-    if (keyInserted) {
-      try {
-        await pool.query('DELETE FROM recent_actions WHERE user_id = $1 AND key = $2', [userId, key]);
-      } catch {
-        // swallow cleanup errors, prefer surfacing original failure
-      }
-    }
-    throw error;
-  }
+  const result = await executeHandler();
+  return result;
 };
