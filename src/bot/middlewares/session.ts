@@ -265,6 +265,14 @@ const createDefaultState = (): SessionState => ({
   support: createSupportState(),
 });
 
+const prepareFallbackSession = (
+  state: SessionState | null | undefined,
+): SessionState => {
+  const session = state ?? createDefaultState();
+  session.isAuthenticated = false;
+  return session;
+};
+
 const SESSION_META = Symbol('session-meta');
 
 interface SessionMeta {
@@ -387,8 +395,8 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     try {
       client = await pool.connect();
     } catch (error) {
-      ctx.session = cachedState ?? createDefaultState();
-      ctx.session.isAuthenticated = false;
+      const fallbackSession = prepareFallbackSession(cachedState);
+      ctx.session = fallbackSession;
       logger.warn({ err: error, key }, 'Failed to connect to database for session state');
 
       fallbackMode = true;
@@ -398,8 +406,8 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
     const dbClient = client;
     if (!fallbackMode && !dbClient) {
-      ctx.session = cachedState ?? createDefaultState();
-      ctx.session.isAuthenticated = false;
+      const fallbackSession = prepareFallbackSession(cachedState);
+      ctx.session = fallbackSession;
       logger.warn({ key }, 'Database client was not initialised for session state');
 
       fallbackMode = true;
@@ -415,8 +423,8 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         const existing = await loadSessionState(activeClient, key);
         state = existing ?? cachedState ?? createDefaultState();
       } catch (error) {
-        ctx.session = cachedState ?? createDefaultState();
-        ctx.session.isAuthenticated = false;
+        const fallbackSession = prepareFallbackSession(cachedState);
+        ctx.session = fallbackSession;
         logger.warn({ err: error, key }, 'Failed to load session state, using default state');
 
         fallbackMode = true;
@@ -473,7 +481,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
     if (fallbackMode) {
       if (ctx.session) {
-        ctx.session.isAuthenticated = false;
+        ctx.session = prepareFallbackSession(ctx.session);
       }
       await invokeNext();
       finalState = ctx.session;
@@ -501,10 +509,8 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   }
 
   try {
-    if (fallbackMode) {
-      finalState.isAuthenticated = false;
-    }
-    await saveSessionCache(key, finalState);
+    const stateToCache = fallbackMode ? prepareFallbackSession(finalState) : finalState;
+    await saveSessionCache(key, stateToCache);
   } catch (error) {
     logger.warn({ err: error, key }, 'Failed to persist session cache');
   }

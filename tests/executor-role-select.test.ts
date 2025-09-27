@@ -13,6 +13,7 @@ import {
 import { auth } from '../src/bot/middlewares/auth';
 import { session as sessionMiddlewareFactory } from '../src/bot/middlewares/session';
 import { pool } from '../src/db';
+import type { PoolClient } from '../src/db';
 import * as sessionCache from '../src/infra/sessionCache';
 import type { UiStepOptions } from '../src/bot/ui';
 
@@ -29,6 +30,7 @@ let commandsService: typeof import('../src/bot/services/commands');
 let uiHelper: typeof import('../src/bot/ui')['ui'];
 let usersDb: typeof import('../src/db/users');
 let usersService: typeof import('../src/services/users');
+let sessionsDb: typeof import('../src/db/sessions');
 
 before(async () => {
   process.env.BOT_TOKEN = process.env.BOT_TOKEN ?? 'test-token';
@@ -58,6 +60,7 @@ before(async () => {
   ({ ui: uiHelper } = await import('../src/bot/ui'));
   usersDb = await import('../src/db/users');
   usersService = await import('../src/services/users');
+  sessionsDb = await import('../src/db/sessions');
 });
 
 const ROLE_DRIVER_ACTION = 'role:driver';
@@ -612,6 +615,78 @@ describe('executor role selection', () => {
     const savedState = lastCall.arguments[1] as SessionState;
     assert.equal(savedState.isAuthenticated, false);
     assert.equal(savedState.executor.role, 'driver');
+  });
+
+  it('marks fallback cache unauthenticated when database load fails but keeps executor role', async () => {
+    const { bot, dispatchAction } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const { ctx } = createMockContext();
+    ctx.auth.user.role = 'guest';
+    ctx.auth.executor.verifiedRoles.courier = true;
+    ctx.auth.executor.hasActiveSubscription = true;
+    ctx.auth.executor.isVerified = true;
+    ctx.auth.user.citySelected = DEFAULT_CITY;
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: EXECUTOR_MENU_ACTION,
+        message: { message_id: 993, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    const cachedState = createSessionState();
+    cachedState.executor.role = 'driver';
+    cachedState.isAuthenticated = true;
+    cachedState.city = DEFAULT_CITY;
+
+    const loadCacheMock = mock.method(sessionCache, 'loadSessionCache', async () => cachedState);
+    const saveCacheMock = mock.method(sessionCache, 'saveSessionCache', async () => undefined);
+    const releaseMock = mock.fn(() => undefined);
+    const fakeClient = { release: releaseMock } as unknown as PoolClient;
+    const connectMock = mock.method(pool, 'connect', async () => fakeClient);
+    const loadStateMock = mock.method(sessionsDb, 'loadSessionState', async () => {
+      throw new Error('load failure');
+    });
+    const showExecutorMenuMock = mock.method(
+      executorMenuModule,
+      'showExecutorMenu',
+      async () => undefined,
+    );
+
+    const sessionMiddleware = sessionMiddlewareFactory();
+
+    let cachedCalls: typeof saveCacheMock.mock.calls = [];
+    let showExecutorCallCount = 0;
+
+    try {
+      await sessionMiddleware(ctx, async () => {
+        await dispatchAction(EXECUTOR_MENU_ACTION, ctx);
+      });
+      cachedCalls = saveCacheMock.mock.calls;
+      showExecutorCallCount = showExecutorMenuMock.mock.callCount();
+    } finally {
+      connectMock.mock.restore();
+      loadCacheMock.mock.restore();
+      saveCacheMock.mock.restore();
+      showExecutorMenuMock.mock.restore();
+      loadStateMock.mock.restore();
+    }
+
+    assert.equal(
+      showExecutorCallCount,
+      1,
+      'executor menu should render when database load failure triggers guest fallback',
+    );
+    assert.equal(ctx.session.executor.role, 'driver');
+    assert.equal(ctx.session.isAuthenticated, false);
+
+    const lastCall = cachedCalls.at(-1);
+    assert.ok(lastCall, 'fallback session should update cache after load failure');
+    const savedState = lastCall.arguments[1] as SessionState;
+    assert.equal(savedState.isAuthenticated, false);
+    assert.equal(savedState.executor.role, 'driver');
+    assert.equal(releaseMock.mock.callCount(), 1, 'database client should be released after fallback');
   });
 
   it('persists an unauthenticated default session when Redis fallback bootstraps state', async () => {
