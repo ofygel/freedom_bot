@@ -203,7 +203,8 @@ export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
   }
 
   if (ctx.session.isAuthenticated === false && authRole === 'guest') {
-    return isExecutorRole(getSessionExecutorRole(ctx));
+    const sessionRole = ctx.session.executor?.role;
+    return isExecutorRole(sessionRole);
   }
 
   return false;
