@@ -183,6 +183,7 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
           username = COALESCE(EXCLUDED.username, users.username),
           first_name = COALESCE(EXCLUDED.first_name, users.first_name),
           last_name = COALESCE(EXCLUDED.last_name, users.last_name),
+          is_blocked = false,
           updated_at = now()
         RETURNING
           tg_id,

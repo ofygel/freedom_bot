@@ -2,6 +2,7 @@ import { Markup, type MiddlewareFn } from 'telegraf';
 
 import { logger } from '../../../config';
 import { pool } from '../../../db';
+import { setUserBlockedStatus } from '../../../db/users';
 import { reportUserRegistration, toUserIdentity } from '../../services/reports';
 import type { BotContext } from '../../types';
 
@@ -19,21 +20,65 @@ const normalisePhone = (phone: string): string => {
   return `+${digits}`;
 };
 
+const isBlockedByUserError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as {
+    error_code?: number;
+    description?: string;
+    response?: { error_code?: number; description?: string };
+  };
+
+  const errorCode = candidate.error_code ?? candidate.response?.error_code;
+  if (errorCode !== 403) {
+    return false;
+  }
+
+  const description = candidate.description ?? candidate.response?.description ?? '';
+  return description.toLowerCase().includes('bot was blocked by the user');
+};
+
 export const askPhone = async (ctx: BotContext): Promise<void> => {
   if (ctx.chat?.type !== 'private') {
     return;
   }
 
-  const message = await ctx.reply(
-    'Для работы с ботом нужен ваш номер. Нажмите кнопку ниже 👇',
-    Markup.keyboard([Markup.button.contactRequest('📲 Поделиться контактом')])
-      .oneTime()
-      .resize(),
-  );
+  try {
+    const message = await ctx.reply(
+      'Для работы с ботом нужен ваш номер. Нажмите кнопку ниже 👇',
+      Markup.keyboard([Markup.button.contactRequest('📲 Поделиться контактом')])
+        .oneTime()
+        .resize(),
+    );
 
-  ctx.session.awaitingPhone = true;
-  if (message?.message_id) {
-    ctx.session.ephemeralMessages.push(message.message_id);
+    ctx.session.awaitingPhone = true;
+    if (message?.message_id) {
+      ctx.session.ephemeralMessages.push(message.message_id);
+    }
+  } catch (error) {
+    if (!isBlockedByUserError(error)) {
+      throw error;
+    }
+
+    const telegramId = ctx.from?.id ?? ctx.chat?.id;
+    logger.info({ err: error, telegramId }, 'User blocked bot when requesting phone');
+
+    if (ctx.auth?.user) {
+      ctx.auth.user.isBlocked = true;
+      if (ctx.auth.user.status !== 'banned' && ctx.auth.user.status !== 'suspended') {
+        ctx.auth.user.status = 'suspended';
+      }
+    }
+
+    if (telegramId) {
+      try {
+        await setUserBlockedStatus({ telegramId, isBlocked: true });
+      } catch (dbError) {
+        logger.error({ err: dbError, telegramId }, 'Failed to persist user blocked status');
+      }
+    }
   }
 };
 
