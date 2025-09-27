@@ -78,7 +78,7 @@ export const hideClientMenu = async (
 };
 
 export const isClientChat = (ctx: BotContext, role?: UserRole): boolean =>
-  ctx.chat?.type === 'private' && (role === 'client' || role === undefined);
+  ctx.chat?.type === 'private' && (role === 'client' || role === 'guest' || role === undefined);
 
 export const clientMenuText = (): string =>
   [
