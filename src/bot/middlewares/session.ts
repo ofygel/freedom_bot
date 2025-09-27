@@ -468,6 +468,9 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   }
 
   try {
+    if (fallbackMode) {
+      finalState.isAuthenticated = false;
+    }
     await saveSessionCache(key, finalState);
   } catch (error) {
     logger.warn({ err: error, key }, 'Failed to persist session cache');
