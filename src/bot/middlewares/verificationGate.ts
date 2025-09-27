@@ -60,14 +60,23 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
   }
 
   const message = ctx.message;
-  const hasPhoto = message && 'photo' in message && Array.isArray(message.photo) && message.photo.length > 0;
+  const hasPhoto =
+    message && 'photo' in message && Array.isArray(message.photo) && message.photo.length > 0;
+  const messageText = message && 'text' in message ? message.text : undefined;
+  const isCommand = typeof messageText === 'string' && messageText.startsWith('/');
 
   if (executorState?.status === 'collecting' && hasPhoto) {
     await next();
     return;
   }
 
+  if (executorState?.status === 'collecting' && isCommand) {
+    await next();
+    return;
+  }
+
   if (executorState?.status === 'collecting') {
+    await startExecutorVerification(ctx);
     return;
   }
 
