@@ -112,4 +112,57 @@ describe('initialiseAppState', () => {
 
     assert.equal(clearIntervalMock?.mock.callCount() ?? 0, 0);
   });
+
+  it('retries startup tasks until they succeed and clears the retry interval', async () => {
+    const connectionError = createConnectionError();
+    let supportRestoreAttempts = 0;
+    let resumeRetry!: () => void;
+    const retryCompleted = new Promise<void>((resolve) => {
+      resumeRetry = resolve;
+    });
+
+    ensureDatabaseSchemaMock = mock.method(bootstrap, 'ensureDatabaseSchema', async () => undefined);
+
+    restoreVerificationMock = mock.method(
+      verifyQueue,
+      'restoreVerificationModerationQueue',
+      async () => undefined,
+    );
+
+    restorePaymentMock = mock.method(
+      paymentQueue,
+      'restorePaymentModerationQueue',
+      async () => undefined,
+    );
+
+    restoreSupportMock = mock.method(
+      supportService,
+      'restoreSupportThreads',
+      async () => {
+        supportRestoreAttempts += 1;
+        if (supportRestoreAttempts === 1) {
+          throw connectionError;
+        }
+
+        resumeRetry();
+      },
+    );
+
+    await initialiseAppState();
+
+    assert.equal(restoreSupportMock.mock.callCount(), 1);
+
+    const calls = setIntervalMock?.mock.calls ?? [];
+    assert.equal(calls.length, 1, 'support restore failure should schedule a retry interval');
+
+    const [retryHandler] = calls[0]?.arguments ?? [];
+    assert.equal(typeof retryHandler, 'function');
+
+    (retryHandler as () => void)();
+    await retryCompleted;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(restoreSupportMock.mock.callCount(), 2, 'support restore should succeed on retry');
+    assert.equal(clearIntervalMock?.mock.callCount(), 1, 'retry interval should be cleared after success');
+  });
 });
