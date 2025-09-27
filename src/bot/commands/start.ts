@@ -62,7 +62,7 @@ const applyCommandsForRole = async (ctx: BotContext): Promise<void> => {
   }
 
   const role = ctx.auth?.user.role;
-  if (role === 'client' || role === undefined) {
+  if (role === 'client' || role === 'guest' || role === undefined) {
     await setChatCommands(ctx.telegram, ctx.chat.id, CLIENT_COMMANDS, { showMenuButton: true });
     return;
   }

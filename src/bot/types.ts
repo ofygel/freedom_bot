@@ -9,7 +9,7 @@ export type ExecutorRole = 'courier' | 'driver';
 
 export const EXECUTOR_ROLES: readonly ExecutorRole[] = ['courier', 'driver'];
 
-export type UserRole = 'client' | 'courier' | 'driver' | 'moderator';
+export type UserRole = 'guest' | 'client' | 'courier' | 'driver' | 'moderator';
 
 export interface SessionUser {
   id: number;

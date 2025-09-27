@@ -169,6 +169,42 @@ describe('auth middleware', () => {
     assert.equal(ctx.session.phoneNumber, '+7 700 000 00 00');
   });
 
+  it('falls back to guest auth state when the database query fails', async () => {
+    const dbError = new Error('connection refused');
+    setPoolQuery(async (..._args) => {
+      throw dbError;
+    });
+
+    const middleware = auth();
+    const session = createSessionState();
+    let replyCalled = false;
+    const ctx = {
+      from: { id: 777, username: 'guestuser', first_name: 'Guest', last_name: 'User' },
+      chat: { id: 42, type: 'private' as const },
+      update: { message: { chat: { id: 42, type: 'private' as const } } },
+      session,
+      auth: undefined as any,
+      reply: async () => {
+        replyCalled = true;
+      },
+    } as unknown as BotContext;
+
+    let nextInvoked = false;
+    await middleware(ctx, async () => {
+      nextInvoked = true;
+    });
+
+    assert.equal(nextInvoked, true);
+    assert.equal(ctx.auth.user.role, 'guest');
+    assert.equal(ctx.auth.user.status, 'guest');
+    assert.equal(ctx.auth.user.telegramId, 777);
+    assert.equal(ctx.auth.user.username, 'guestuser');
+    assert.equal(ctx.session.isAuthenticated, false);
+    assert.equal(ctx.session.user?.id, 777);
+    assert.equal(ctx.session.user?.username, 'guestuser');
+    assert.equal(replyCalled, false);
+  });
+
   it('requires active subscriptions to have a future expiration date', async () => {
     const authRow = {
       tg_id: 654,

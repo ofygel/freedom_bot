@@ -17,6 +17,16 @@ import {
 
 type Nullable<T> = T | null | undefined;
 
+class AuthStateQueryError extends Error {
+  declare cause: unknown;
+
+  constructor(message: string, options: { cause: unknown }) {
+    super(message);
+    this.name = 'AuthStateQueryError';
+    this.cause = options.cause;
+  }
+}
+
 interface AuthQueryRow {
   tg_id: string | number;
   username: string | null;
@@ -62,6 +72,8 @@ const normaliseString = (value: Nullable<string>): string | undefined => {
 
 const normaliseRole = (value: Nullable<string>): UserRole => {
   switch (value) {
+    case 'guest':
+      return 'guest';
     case 'courier':
     case 'driver':
     case 'moderator':
@@ -275,15 +287,26 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
 const loadAuthState = async (
   from: NonNullable<BotContext['from']>,
 ): Promise<AuthState> => {
-  const includeCitySelected = await hasUsersCitySelectedColumn();
+  let includeCitySelected: boolean;
+  try {
+    includeCitySelected = await hasUsersCitySelectedColumn();
+  } catch (error) {
+    throw new AuthStateQueryError('Failed to resolve auth query metadata', { cause: error });
+  }
+
   const authQuery = buildAuthQuery(includeCitySelected);
 
-  const { rows } = await pool.query<AuthQueryRow>(authQuery, [
-    from.id,
-    from.username ?? null,
-    from.first_name ?? null,
-    from.last_name ?? null,
-  ]);
+  let rows: AuthQueryRow[];
+  try {
+    ({ rows } = await pool.query<AuthQueryRow>(authQuery, [
+      from.id,
+      from.username ?? null,
+      from.first_name ?? null,
+      from.last_name ?? null,
+    ]));
+  } catch (error) {
+    throw new AuthStateQueryError('Failed to query authentication state', { cause: error });
+  }
 
   const [row] = rows;
   if (!row) {
@@ -293,9 +316,33 @@ const loadAuthState = async (
   return mapAuthRow(row);
 };
 
-const applyAuthState = (ctx: BotContext, authState: AuthState): void => {
+const createGuestAuthState = (from: NonNullable<BotContext['from']>): AuthState => ({
+  user: {
+    telegramId: from.id,
+    username: from.username ?? undefined,
+    firstName: from.first_name ?? undefined,
+    lastName: from.last_name ?? undefined,
+    phoneVerified: false,
+    role: 'guest',
+    status: 'guest',
+    isVerified: false,
+    isBlocked: false,
+  },
+  executor: {
+    verifiedRoles: { courier: false, driver: false },
+    hasActiveSubscription: false,
+    isVerified: false,
+  },
+  isModerator: false,
+});
+
+const applyAuthState = (
+  ctx: BotContext,
+  authState: AuthState,
+  options?: { isAuthenticated?: boolean },
+): void => {
   ctx.auth = authState;
-  ctx.session.isAuthenticated = true;
+  ctx.session.isAuthenticated = options?.isAuthenticated ?? true;
   ctx.session.user = {
     id: authState.user.telegramId,
     username: authState.user.username,
@@ -389,6 +436,14 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     const authState = await loadAuthState(ctx.from);
     applyAuthState(ctx, authState);
   } catch (error) {
+    if (error instanceof AuthStateQueryError) {
+      const authState = createGuestAuthState(ctx.from);
+      applyAuthState(ctx, authState, { isAuthenticated: false });
+      logger.warn({ err: error.cause ?? error, update: ctx.update }, 'Failed to load auth state, using guest context');
+      await next();
+      return;
+    }
+
     logger.error({ err: error, update: ctx.update }, 'Failed to authenticate update');
     if (typeof ctx.answerCbQuery === 'function') {
       try {
