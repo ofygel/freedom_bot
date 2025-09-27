@@ -54,8 +54,14 @@ export interface OrderSummaryOptions {
   instructions?: string[];
 }
 
+type OrderSummaryDraft = ClientOrderDraftState & {
+  pickup: OrderLocation;
+  dropoff: OrderLocation;
+  price: OrderPriceDetails;
+};
+
 export const buildOrderSummary = (
-  draft: CompletedOrderDraft,
+  draft: OrderSummaryDraft,
   options: OrderSummaryOptions,
 ): string => {
   const lines = [options.title.trim(), ''];

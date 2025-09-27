@@ -7,11 +7,10 @@ import type {
 import { publishOrderToDriversChannel, type PublishOrderStatus } from '../../channels/ordersChannel';
 import { logger } from '../../../config';
 import { createOrder, markOrderAsCancelled } from '../../../db/orders';
-import type { OrderRecord, OrderLocation } from '../../../types';
+import type { OrderRecord, OrderLocation, OrderPriceDetails } from '../../../types';
 import {
   buildCustomerName,
   buildOrderSummary,
-  isOrderDraftComplete,
   resetClientOrderDraft,
   type CompletedOrderDraft,
 } from '../../services/orders';
@@ -246,6 +245,15 @@ const applyPickupDetails = async (
   await requestDropoffAddress(ctx, city, pickup);
 };
 
+type TaxiOrderDraft = ClientOrderDraftState & {
+  pickup: OrderLocation;
+  dropoff: OrderLocation;
+  price: OrderPriceDetails;
+};
+
+const isTaxiOrderDraftReady = (draft: ClientOrderDraftState): draft is TaxiOrderDraft =>
+  Boolean(draft.pickup && draft.dropoff && draft.price);
+
 const applyDropoffDetails = async (
   ctx: BotContext,
   draft: ClientOrderDraftState,
@@ -278,7 +286,7 @@ const applyDropoffDetails = async (
     );
   }
 
-  if (isOrderDraftComplete(draft)) {
+  if (isTaxiOrderDraftReady(draft)) {
     await showConfirmation(ctx, draft, city);
   }
 };
@@ -304,7 +312,7 @@ const buildOrderAgainKeyboard = () =>
 
 const showConfirmation = async (
   ctx: BotContext,
-  draft: CompletedOrderDraft,
+  draft: TaxiOrderDraft,
   city: AppCity,
 ): Promise<void> => {
   const summary = buildOrderSummary(draft, {
@@ -450,7 +458,7 @@ const notifyOrderCreated = async (
 };
 
 const confirmOrder = async (ctx: BotContext, draft: ClientOrderDraftState): Promise<void> => {
-  if (!isOrderDraftComplete(draft)) {
+  if (!isTaxiOrderDraftReady(draft)) {
     await ui.step(ctx, {
       id: TAXI_CONFIRM_ERROR_STEP_ID,
       text: 'Не удалось подтвердить заказ: отсутствуют данные адресов.',
@@ -663,10 +671,10 @@ const resumeTaxiFlowStep = async (ctx: BotContext): Promise<boolean> => {
     }
     case 'awaitingConfirmation': {
       const city = resolveTaxiCity(ctx);
-      if (!city || !isOrderDraftComplete(draft)) {
+      if (!city || !isTaxiOrderDraftReady(draft)) {
         return false;
       }
-      await showConfirmation(ctx, draft as CompletedOrderDraft, city);
+      await showConfirmation(ctx, draft, city);
       return true;
     }
     default:
