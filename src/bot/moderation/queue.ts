@@ -74,6 +74,9 @@ const applyFormatOptions = (
   link_preview_options: options?.link_preview_options,
 });
 
+const DECISION_FAILURE_RESPONSE =
+  'Не удалось обработать заявку. Требуется ручная проверка.';
+
 const buildDecisionSuffix = (
   decision: ModerationDecision,
   moderator: ModeratorInfo,
@@ -91,6 +94,10 @@ const buildDecisionSuffix = (
 const buildAlreadyProcessedResponse = (
   state: PendingModerationItem<any>,
 ): string => {
+  if (state.failed) {
+    return DECISION_FAILURE_RESPONSE;
+  }
+
   if (state.decision?.status === 'approved') {
     const moderatorLabel = state.decision.moderator
       ? formatModerator(state.decision.moderator)
@@ -160,6 +167,7 @@ interface PendingModerationItem<T> {
     formatOptions?: MessageFormatOptions;
   };
   rejectionReasons: string[];
+  failed?: boolean;
   decision?: {
     status: ModerationDecision;
     moderator?: ModeratorInfo;
@@ -174,6 +182,7 @@ interface StoredModerationEntry<TSerialized> {
   status: PendingModerationItem<any>['status'];
   message: PendingModerationItem<any>['message'];
   rejectionReasons: string[];
+  failed?: boolean;
   decision?: PendingModerationItem<any>['decision'];
 }
 
@@ -339,6 +348,7 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     status: entry.status,
     message: entry.message,
     rejectionReasons: entry.rejectionReasons,
+    failed: entry.failed === true ? true : undefined,
     decision: entry.decision,
   });
 
@@ -393,6 +403,7 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
       status: stored.status ?? 'pending',
       message: stored.message,
       rejectionReasons,
+      failed: stored.failed === true ? true : undefined,
       decision: stored.decision,
     } satisfies PendingModerationItem<T>;
 
@@ -559,15 +570,11 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     decidedAt: number,
     reason?: string,
   ): Promise<string> => {
-    entry.status = decision;
-    entry.decision = {
-      status: decision,
-      moderator,
-      reason,
-      decidedAt,
-    };
+    if (entry.failed) {
+      return DECISION_FAILURE_RESPONSE;
+    }
 
-    await updateMessage(telegram, entry, decision, moderator, reason);
+    const rejectionReason = normaliseReason(reason);
 
     try {
       if (decision === 'approved') {
@@ -583,7 +590,7 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
           moderator,
           decidedAt,
           telegram,
-          reason: normaliseReason(reason),
+          reason: rejectionReason,
         });
       }
     } catch (callbackError) {
@@ -591,14 +598,34 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
         { err: callbackError, queue: config.type, itemId: entry.item.id },
         'Error while running moderation decision callback',
       );
+      entry.failed = true;
+      entry.status = 'pending';
+      entry.decision = undefined;
+      clearPendingPromptsForToken(entry.token);
+      await persistEntry(entry);
+      logger.warn(
+        { queue: config.type, itemId: entry.item.id, token: entry.token, decision },
+        'Moderation decision requires manual review after callback failure',
+      );
+      return DECISION_FAILURE_RESPONSE;
     }
+
+    entry.status = decision;
+    entry.decision = {
+      status: decision,
+      moderator,
+      reason,
+      decidedAt,
+    };
+
+    await updateMessage(telegram, entry, decision, moderator, reason);
 
     clearPendingPromptsForToken(entry.token);
     await removePersistedEntry(entry.token);
 
     return decision === 'approved'
       ? 'Заявка одобрена.'
-      : `Заявка отклонена (${normaliseReason(reason)}).`;
+      : `Заявка отклонена (${rejectionReason}).`;
   };
 
   const resolveDecision = async (
@@ -610,6 +637,11 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     const entry = await getEntry(token);
     if (!entry) {
       await ctx.answerCbQuery('Не удалось найти заявку. Вероятно, она уже обработана.');
+      return;
+    }
+
+    if (entry.failed) {
+      await ctx.answerCbQuery(DECISION_FAILURE_RESPONSE, { show_alert: true });
       return;
     }
 
@@ -647,6 +679,11 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     const entry = await getEntry(token);
     if (!entry) {
       await ctx.answerCbQuery('Не удалось найти заявку. Вероятно, она уже обработана.');
+      return;
+    }
+
+    if (entry.failed) {
+      await ctx.answerCbQuery(DECISION_FAILURE_RESPONSE, { show_alert: true });
       return;
     }
 
@@ -752,6 +789,17 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
       if (!entry) {
         clearPendingPromptsForToken(prompt.token);
         await ctx.reply('Заявка уже обработана.', {
+          reply_parameters: {
+            message_id: ctx.message.message_id,
+            allow_sending_without_reply: true,
+          },
+        });
+        return;
+      }
+
+      if (entry.failed) {
+        clearPromptByKey(promptKey);
+        await ctx.reply(DECISION_FAILURE_RESPONSE, {
           reply_parameters: {
             message_id: ctx.message.message_id,
             allow_sending_without_reply: true,
