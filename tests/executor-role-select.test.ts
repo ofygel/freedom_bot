@@ -13,6 +13,7 @@ import {
 import type { UiStepOptions } from '../src/bot/ui';
 
 let registerExecutorRoleSelect: typeof import('../src/bot/flows/executor/roleSelect')['registerExecutorRoleSelect'];
+let ensureExecutorState: typeof import('../src/bot/flows/executor/menu')['ensureExecutorState'];
 let registerExecutorMenu: typeof import('../src/bot/flows/executor/menu')['registerExecutorMenu'];
 let EXECUTOR_MENU_CITY_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_CITY_ACTION'];
 let registerExecutorVerification: typeof import('../src/bot/flows/executor/verification')['registerExecutorVerification'];
@@ -38,7 +39,7 @@ before(async () => {
   process.env.SUB_PRICE_30 = process.env.SUB_PRICE_30 ?? '16000';
 
   ({ registerExecutorRoleSelect } = await import('../src/bot/flows/executor/roleSelect'));
-  ({ registerExecutorMenu, EXECUTOR_MENU_CITY_ACTION } = await import(
+  ({ ensureExecutorState, registerExecutorMenu, EXECUTOR_MENU_CITY_ACTION } = await import(
     '../src/bot/flows/executor/menu'
   ));
   ({ registerExecutorVerification } = await import('../src/bot/flows/executor/verification'));
@@ -422,6 +423,7 @@ describe('executor role selection', () => {
       setUserCitySelectedMock.mock.restore();
     }
 
+    ensureExecutorState(ctx);
     const verificationPrompt = recordedSteps.find(
       (step) => step.id === 'executor:verification:prompt',
     );
@@ -429,8 +431,13 @@ describe('executor role selection', () => {
 
     assert.equal(verificationPrompt, undefined);
     assert.equal(executorMenuStep, undefined);
+    assert.equal(ctx.session.executor.role, undefined);
     assert.equal(ctx.session.executor.verification.courier.status, 'idle');
     assert.equal(ctx.session.ui.pendingCityAction, 'clientMenu');
+    const containsExecutorCopy = recordedSteps.some((step) =>
+      typeof step.text === 'string' && step.text.includes('Статус проверки'),
+    );
+    assert.equal(containsExecutorCopy, false);
   });
 
   it('starts driver verification after confirming the work city', async () => {

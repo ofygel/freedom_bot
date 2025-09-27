@@ -10,6 +10,7 @@ import {
   EXECUTOR_MENU_TEXT_LABELS,
   EXECUTOR_ORDERS_ACTION,
   ensureExecutorState,
+  requireExecutorRole,
   showExecutorMenu,
 } from './menu';
 import { copy, getExecutorRoleCopy } from '../../copy';
@@ -41,6 +42,7 @@ export const resolveInviteLink = async (
   ctx: BotContext,
   state: ExecutorFlowState,
 ): Promise<InviteResolutionResult> => {
+  requireExecutorRole(state);
   const subscription = state.subscription;
   const cachedLink = subscription.lastInviteLink;
   const fallbackInvite = config.subscriptions.payment.driversChannelInvite;
@@ -138,7 +140,8 @@ const buildInviteMessage = (
   state: ExecutorFlowState,
   expiresAt?: Date,
 ): string => {
-  const copy = getExecutorRoleCopy(state.role);
+  const role = requireExecutorRole(state);
+  const copy = getExecutorRoleCopy(role);
   const lines = [
     `Нажмите кнопку ниже, чтобы перейти в канал ${copy.pluralGenitive}.`,
     expiresAt ? `Ссылка действует до ${formatDateTime(expiresAt)}.` : undefined,
@@ -154,6 +157,7 @@ export const sendInviteLink = async (
   link: string,
   expiresAt?: Date,
 ): Promise<void> => {
+  requireExecutorRole(state);
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.url('Перейти к заказам', link)],
   ]).reply_markup;
@@ -168,6 +172,9 @@ export const sendInviteLink = async (
 
 export const processOrdersRequest = async (ctx: BotContext): Promise<void> => {
   const state = ensureExecutorState(ctx);
+  if (!state.role) {
+    return;
+  }
   if (!ctx.auth.executor.hasActiveSubscription) {
     state.subscription.status = 'idle';
     state.subscription.selectedPeriodId = undefined;
