@@ -110,6 +110,10 @@ const createMockBot = () => {
     trigger: string | RegExp;
     handler: (ctx: BotContext, next: () => Promise<void>) => Promise<void>;
   }> = [];
+  const commands: Array<{
+    triggers: Array<string | RegExp>;
+    handlers: Array<(ctx: BotContext, next: () => Promise<void>) => Promise<void>>;
+  }> = [];
 
   const bot: Partial<Telegraf<BotContext>> = {
     telegram: {
@@ -126,7 +130,21 @@ const createMockBot = () => {
     return bot as Telegraf<BotContext>;
   };
 
-  bot.command = () => bot as Telegraf<BotContext>;
+  bot.command = ((
+    command: unknown,
+    ...middlewares: Array<(ctx: BotContext, next: () => Promise<void>) => Promise<void>>
+  ) => {
+    const triggers = (Array.isArray(command) ? [...command] : [command]) as Array<string | RegExp>;
+    const handlers = middlewares.length
+      ? middlewares
+      : [
+          async () => {
+            /* noop */
+          },
+        ];
+    commands.push({ triggers, handlers });
+    return bot as Telegraf<BotContext>;
+  }) as Telegraf<BotContext>['command'];
   bot.hears = () => bot as Telegraf<BotContext>;
   bot.on = () => bot as Telegraf<BotContext>;
 
@@ -177,10 +195,31 @@ const createMockBot = () => {
     await run(0);
   };
 
+  const dispatchCommand = async (command: string, ctx: BotContext): Promise<void> => {
+    const entries = commands.filter((candidate) => candidate.triggers.includes(command));
+
+    const runHandlers = async (
+      handlers: Array<(ctx: BotContext, next: () => Promise<void>) => Promise<void>>,
+      position: number,
+    ): Promise<void> => {
+      const handler = handlers[position];
+      if (!handler) {
+        return;
+      }
+
+      await handler(ctx, () => runHandlers(handlers, position + 1));
+    };
+
+    for (const entry of entries) {
+      await runHandlers(entry.handlers, 0);
+    }
+  };
+
   return {
     bot: bot as Telegraf<BotContext>,
     getAction,
     dispatchAction,
+    dispatchCommand,
   };
 };
 
@@ -304,6 +343,45 @@ describe('executor role selection', () => {
     }).reply_markup;
     assert.ok(promptMarkup, 'city selection keyboard should be attached');
     assert.match(promptCall.text, /Сначала выбери город/);
+  });
+
+  it('shows the executor menu when /menu is used during a guest auth fallback', async () => {
+    const { bot, dispatchCommand } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const { ctx } = createMockContext();
+    ctx.session.isAuthenticated = false;
+    ctx.auth.user.role = 'guest';
+    ctx.auth.executor.isVerified = true;
+    ctx.auth.executor.hasActiveSubscription = true;
+    ctx.auth.executor.verifiedRoles.courier = true;
+
+    Object.assign(ctx as BotContext & { message?: typeof ctx.message; update?: typeof ctx.update }, {
+      updateType: 'message' as BotContext['updateType'],
+      message: {
+        message_id: 777,
+        chat: ctx.chat,
+        text: '/menu',
+        from: ctx.from,
+      } as typeof ctx.message,
+      update: {
+        message: {
+          message_id: 777,
+          chat: ctx.chat,
+          text: '/menu',
+          from: ctx.from,
+        },
+      } as typeof ctx.update,
+    });
+
+    await dispatchCommand('menu', ctx);
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(
+      menuStep,
+      'executor menu should still be shown when /menu is used and auth temporarily falls back to guest',
+    );
+    assert.equal(ctx.session.executor.role, 'courier');
   });
 
   it('shows the executor menu after city callback when another middleware stores the city', async () => {

@@ -181,6 +181,13 @@ const deriveAuthExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
     return authRole;
   }
 
+  if (ctx.session.isAuthenticated === false && ctx.auth.user.role === 'guest') {
+    const sessionRole = ctx.session.executor?.role;
+    if (sessionRole === 'courier' || sessionRole === 'driver') {
+      return sessionRole;
+    }
+  }
+
   return undefined;
 };
 
@@ -649,7 +656,16 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     const role = ctx.auth.user.role;
-    const isExecutor = role === 'courier' || role === 'driver';
+    let isExecutor = role === 'courier' || role === 'driver';
+
+    if (
+      !isExecutor &&
+      ctx.session.isAuthenticated === false &&
+      ctx.auth.user.role === 'guest'
+    ) {
+      const sessionRole = ctx.session.executor?.role;
+      isExecutor = sessionRole === 'courier' || sessionRole === 'driver';
+    }
 
     if (!isExecutor) {
       await showMenu(ctx);
