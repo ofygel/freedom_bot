@@ -225,16 +225,9 @@ const resolveAuthorizedChatId = async (
     return chatId;
   }
 
-  try {
-    const binding = await getChannelBinding('drivers');
-    if (binding && binding.chatId === chatId) {
-      return chatId;
-    }
-  } catch (error) {
-    logger.error(
-      { err: error, orderId, chatId },
-      'Failed to resolve drivers channel binding while validating callback context',
-    );
+  const binding = await getChannelBinding('drivers');
+  if (binding && binding.chatId === chatId) {
+    return chatId;
   }
 
   return null;
@@ -331,22 +324,18 @@ export const handleClientOrderCancellation = async (
     orderStates.delete(order.id);
 
     if (typeof order.channelMessageId === 'number') {
-      try {
-        const binding = await getChannelBinding('drivers');
-        if (!binding) {
-          logger.warn({ orderId: order.id }, 'Drivers channel binding missing during cancellation');
-        } else {
-          try {
-            await telegram.deleteMessage(binding.chatId, order.channelMessageId);
-          } catch (error) {
-            logger.debug(
-              { err: error, orderId: order.id, chatId: binding.chatId, messageId: order.channelMessageId },
-              'Failed to delete drivers channel message for cancelled order',
-            );
-          }
+      const binding = await getChannelBinding('drivers');
+      if (!binding) {
+        logger.warn({ orderId: order.id }, 'Drivers channel binding missing during cancellation');
+      } else {
+        try {
+          await telegram.deleteMessage(binding.chatId, order.channelMessageId);
+        } catch (error) {
+          logger.debug(
+            { err: error, orderId: order.id, chatId: binding.chatId, messageId: order.channelMessageId },
+            'Failed to delete drivers channel message for cancelled order',
+          );
         }
-      } catch (error) {
-        logger.error({ err: error, orderId: order.id }, 'Failed to resolve drivers channel binding');
       }
     }
   }

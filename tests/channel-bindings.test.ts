@@ -92,6 +92,38 @@ describe('channel bindings', () => {
     assert.ok(executedText?.includes('stats_channel_id'));
   });
 
+  it('returns cached stats binding when database query fails', async () => {
+    let callCount = 0;
+    const queryStub: QueryFunction = async () => {
+      callCount += 1;
+
+      if (callCount === 1) {
+        return {
+          rows: [
+            {
+              verify_channel_id: null,
+              drivers_channel_id: null,
+              stats_channel_id: '-10077777',
+            },
+          ],
+        } as any;
+      }
+
+      throw new Error('database unavailable');
+    };
+
+    setPoolQuery(queryStub);
+
+    const initial = await getChannelBinding('stats');
+    assert.ok(initial);
+    assert.equal(initial?.chatId, -10077777);
+
+    const fallback = await getChannelBinding('stats');
+    assert.ok(fallback);
+    assert.equal(fallback?.chatId, -10077777);
+    assert.equal(callCount, 2);
+  });
+
   it('uses fallback drivers channel binding when env override is present', async () => {
     const previousEnv = process.env.DRIVERS_CHANNEL_ID;
     const previousNodeEnv = process.env.NODE_ENV;
@@ -164,5 +196,40 @@ describe('channel bindings', () => {
       }
       insertedChatId = undefined;
     }
+  });
+
+  it('returns fallback drivers binding when database query fails', async () => {
+    const fallbackChatId = Number.parseInt(process.env.DRIVERS_CHANNEL_ID ?? '', 10);
+    if (!Number.isFinite(fallbackChatId)) {
+      throw new Error('Expected DRIVERS_CHANNEL_ID to be set for tests');
+    }
+
+    let selectCount = 0;
+    let insertCount = 0;
+
+    const queryStub: QueryFunction = async (...args) => {
+      const { text } = extractQueryInvocation(args);
+
+      if (/SELECT\s+verify_channel_id/i.test(text)) {
+        selectCount += 1;
+        throw new Error('database unavailable');
+      }
+
+      if (/INSERT\s+INTO\s+channels/i.test(text)) {
+        insertCount += 1;
+        throw new Error('database unavailable');
+      }
+
+      return { rows: [] } as any;
+    };
+
+    setPoolQuery(queryStub);
+
+    const binding = await getChannelBinding('drivers');
+
+    assert.ok(binding);
+    assert.equal(binding?.chatId, fallbackChatId);
+    assert.equal(selectCount, 1);
+    assert.equal(insertCount, 1);
   });
 });

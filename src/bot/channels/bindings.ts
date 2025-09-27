@@ -41,6 +41,8 @@ interface CacheEntry {
 }
 
 const BINDING_CACHE = new Map<ChannelType, CacheEntry>();
+const LAST_KNOWN_BINDINGS = new Map<ChannelType, ChannelBinding | null>();
+const QUERY_FAILURE_LOGGED = new Set<ChannelType>();
 
 const getCacheTtl = (): number => (process.env.NODE_ENV === 'test' ? 0 : 60_000);
 
@@ -66,24 +68,27 @@ const readFromCache = (type: ChannelType): ChannelBinding | null | undefined => 
 const writeToCache = (type: ChannelType, value: ChannelBinding | null): void => {
   const ttl = getCacheTtl();
   if (ttl <= 0) {
+    LAST_KNOWN_BINDINGS.set(type, value);
     return;
   }
 
   BINDING_CACHE.set(type, { value, expiresAt: Date.now() + ttl });
+  LAST_KNOWN_BINDINGS.set(type, value);
 };
 
 const FALLBACK_CHAT_IDS: Partial<Record<ChannelType, number>> = {
   drivers: config.subscriptions.payment.driversChannelId,
 };
 
+const getConfiguredFallbackChatId = (type: ChannelType): number | null => {
+  const chatId = FALLBACK_CHAT_IDS[type];
+  return typeof chatId === 'number' ? chatId : null;
+};
+
 const persistFallbackBinding = async (
   type: ChannelType,
-): Promise<ChannelBinding | null> => {
-  const chatId = FALLBACK_CHAT_IDS[type];
-  if (typeof chatId !== 'number') {
-    return null;
-  }
-
+  chatId: number,
+): Promise<ChannelBinding> => {
   const binding: ChannelBinding = { type, chatId };
 
   try {
@@ -98,6 +103,15 @@ const persistFallbackBinding = async (
   writeToCache(type, binding);
 
   return binding;
+};
+
+const ensureFallbackBinding = async (type: ChannelType): Promise<ChannelBinding | null> => {
+  const chatId = getConfiguredFallbackChatId(type);
+  if (chatId === null) {
+    return null;
+  }
+
+  return persistFallbackBinding(type, chatId);
 };
 
 export const saveChannelBinding = async (
@@ -128,18 +142,39 @@ export const getChannelBinding = async (
 
   const column = CHANNEL_COLUMNS[type];
 
-  const { rows } = await pool.query<ChannelsRow>(
-    `
-      SELECT verify_channel_id, drivers_channel_id, stats_channel_id
-      FROM channels
-      WHERE id = 1
-      LIMIT 1
-    `,
-  );
+  let rows: ChannelsRow[];
+  try {
+    ({ rows } = await pool.query<ChannelsRow>(
+      `
+        SELECT verify_channel_id, drivers_channel_id, stats_channel_id
+        FROM channels
+        WHERE id = 1
+        LIMIT 1
+      `,
+    ));
+    QUERY_FAILURE_LOGGED.delete(type);
+  } catch (error) {
+    if (!QUERY_FAILURE_LOGGED.has(type)) {
+      logger.error({ err: error, type }, 'Failed to load channel binding');
+      QUERY_FAILURE_LOGGED.add(type);
+    }
+
+    const lastKnown = LAST_KNOWN_BINDINGS.get(type);
+    if (lastKnown !== undefined) {
+      return lastKnown;
+    }
+
+    const fallback = await ensureFallbackBinding(type);
+    if (fallback) {
+      return fallback;
+    }
+
+    return null;
+  }
 
   const [row] = rows;
   if (!row) {
-    const fallback = await persistFallbackBinding(type);
+    const fallback = await ensureFallbackBinding(type);
     if (fallback) {
       return fallback;
     }
@@ -149,7 +184,7 @@ export const getChannelBinding = async (
 
   const value = row[column];
   if (value === null || value === undefined) {
-    const fallback = await persistFallbackBinding(type);
+    const fallback = await ensureFallbackBinding(type);
     if (fallback) {
       return fallback;
     }
@@ -171,6 +206,8 @@ export const getChannelBinding = async (
 export const __testing = {
   clearBindingCache: (): void => {
     BINDING_CACHE.clear();
+    LAST_KNOWN_BINDINGS.clear();
+    QUERY_FAILURE_LOGGED.clear();
   },
 };
 
