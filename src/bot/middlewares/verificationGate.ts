@@ -15,7 +15,7 @@ import {
 import { startExecutorVerification } from '../flows/executor/verification';
 import type { BotContext, ExecutorRole } from '../types';
 
-const COLLECTING_SAFE_COMMANDS = new Set(['/start']);
+const COLLECTING_SAFE_COMMANDS = new Set(['/start', '/menu', '/help']);
 const COLLECTING_SAFE_CALLBACK_PREFIXES = ['role:'];
 const COLLECTING_SAFE_CALLBACKS = new Set([
   EXECUTOR_MENU_ACTION,
@@ -25,6 +25,7 @@ const COLLECTING_SAFE_CALLBACKS = new Set([
   EXECUTOR_SUPPORT_ACTION,
   EXECUTOR_VERIFICATION_ACTION,
 ]);
+const VERIFICATION_REMINDER_INTERVAL_MS = 60_000;
 
 const resolveExecutorRole = (ctx: BotContext, fallback: ExecutorRole): ExecutorRole => {
   const sessionRole = ctx.session.executor?.role;
@@ -106,7 +107,19 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
   }
 
   if (executorState?.status === 'collecting') {
-    await startExecutorVerification(ctx);
+    const now = Date.now();
+    const lastReminderAt = executorState.lastReminderAt ?? 0;
+
+    if (now - lastReminderAt >= VERIFICATION_REMINDER_INTERVAL_MS) {
+      try {
+        await ctx.reply('Жду две фотографии документов, чтобы продолжить.');
+      } catch (error) {
+        logger.debug({ err: error }, 'Failed to send verification reminder');
+      }
+
+      executorState.lastReminderAt = now;
+    }
+
     return;
   }
 

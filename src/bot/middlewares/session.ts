@@ -9,6 +9,11 @@ import {
   type SessionKey,
 } from '../../db/sessions';
 import {
+  deleteSessionCache,
+  loadSessionCache,
+  saveSessionCache,
+} from '../../infra/sessionCache';
+import {
   EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
   type BotContext,
@@ -238,6 +243,7 @@ export const clearSession = async (ctx: BotContext): Promise<void> => {
   }
 
   await deleteSessionState(pool, key);
+  await deleteSessionCache(key);
 };
 
 export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
@@ -254,6 +260,8 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   let nextError: unknown;
   let fallbackMode = false;
   let nextInvoked = false;
+  let cachedState: SessionState | null = null;
+  let finalState: SessionState | undefined;
 
   const invokeNext = async (): Promise<void> => {
     if (nextInvoked) {
@@ -270,22 +278,30 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
   try {
     try {
+      cachedState = await loadSessionCache(key);
+    } catch (error) {
+      logger.warn({ err: error, key }, 'Failed to load session cache, continuing');
+    }
+
+    try {
       client = await pool.connect();
     } catch (error) {
-      ctx.session = createDefaultState();
+      ctx.session = cachedState ?? createDefaultState();
       logger.warn({ err: error, key }, 'Failed to connect to database for session state');
 
       fallbackMode = true;
       await invokeNext();
+      finalState = ctx.session;
     }
 
     const dbClient = client;
     if (!fallbackMode && !dbClient) {
-      ctx.session = createDefaultState();
+      ctx.session = cachedState ?? createDefaultState();
       logger.warn({ key }, 'Database client was not initialised for session state');
 
       fallbackMode = true;
       await invokeNext();
+      finalState = ctx.session;
     }
 
     let state: SessionState | undefined;
@@ -294,20 +310,21 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       const activeClient = dbClient;
       try {
         const existing = await loadSessionState(activeClient, key);
-        state = existing ?? createDefaultState();
+        state = existing ?? cachedState ?? createDefaultState();
       } catch (error) {
-        ctx.session = createDefaultState();
+        ctx.session = cachedState ?? createDefaultState();
         logger.warn({ err: error, key }, 'Failed to load session state, using default state');
 
         fallbackMode = true;
         await invokeNext();
+        finalState = ctx.session;
       }
     }
 
     if (!fallbackMode && dbClient) {
       const activeClient = dbClient;
       if (!state) {
-        state = createDefaultState();
+        state = cachedState ?? createDefaultState();
       }
 
       if (!('city' in state)) {
@@ -328,6 +345,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       ctx.session = state;
 
       await invokeNext();
+      finalState = ctx.session;
 
       if (meta.cleared) {
         try {
@@ -346,6 +364,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
     if (fallbackMode) {
       await invokeNext();
+      finalState = ctx.session;
     }
   } finally {
     setSessionMeta(ctx, undefined);
@@ -354,6 +373,25 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
   if (nextError) {
     throw nextError;
+  }
+
+  if (meta.cleared) {
+    try {
+      await deleteSessionCache(key);
+    } catch (error) {
+      logger.warn({ err: error, key }, 'Failed to clear session cache after reset');
+    }
+    return;
+  }
+
+  if (!finalState) {
+    return;
+  }
+
+  try {
+    await saveSessionCache(key, finalState);
+  } catch (error) {
+    logger.warn({ err: error, key }, 'Failed to persist session cache');
   }
 };
 

@@ -82,6 +82,7 @@ export interface ExecutorVerificationRoleState {
   uploadedPhotos: ExecutorUploadedPhoto[];
   submittedAt?: number;
   moderation?: ExecutorVerificationModerationState;
+  lastReminderAt?: number;
 }
 
 export type ExecutorSubscriptionStatus =
