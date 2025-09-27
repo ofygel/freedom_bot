@@ -563,6 +563,13 @@ export const showExecutorMenu = async (
 
 export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
   bot.action(CITY_ACTION_PATTERN, async (ctx, next) => {
+    if (ctx.chat?.type !== 'private') {
+      if (typeof next === 'function') {
+        await next();
+      }
+      return;
+    }
+
     if (typeof next === 'function') {
       await next();
     }
