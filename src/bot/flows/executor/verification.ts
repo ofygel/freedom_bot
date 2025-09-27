@@ -779,7 +779,6 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
       'media_group_id' in message &&
       typeof (message as { media_group_id?: unknown }).media_group_id === 'string'
     ) {
-      await next();
       return;
     }
 
