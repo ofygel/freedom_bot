@@ -405,6 +405,52 @@ describe('executor role selection', () => {
     assert.equal(ctx.session.executor.role, 'courier');
   });
 
+  it('shows verification prompt and menu when /menu is used during a guest auth fallback', async () => {
+    const { bot, dispatchCommand } = createMockBot();
+    registerExecutorMenu(bot);
+    registerExecutorVerification(bot);
+
+    const { ctx } = createMockContext();
+    ctx.session.isAuthenticated = false;
+    ctx.auth.user.role = 'guest';
+    ctx.session.executor.role = 'courier';
+    ctx.auth.executor.isVerified = false;
+    ctx.auth.executor.hasActiveSubscription = false;
+    ctx.auth.executor.verifiedRoles.courier = false;
+
+    Object.assign(ctx as BotContext & { message?: typeof ctx.message; update?: typeof ctx.update }, {
+      updateType: 'message' as BotContext['updateType'],
+      message: {
+        message_id: 778,
+        chat: ctx.chat,
+        text: '/menu',
+        from: ctx.from,
+      } as typeof ctx.message,
+      update: {
+        message: {
+          message_id: 778,
+          chat: ctx.chat,
+          text: '/menu',
+          from: ctx.from,
+        },
+      } as typeof ctx.update,
+    });
+
+    await dispatchCommand('menu', ctx);
+
+    const verificationPrompt = recordedSteps.find(
+      (step) => step.id === 'executor:verification:prompt',
+    );
+    assert.ok(
+      verificationPrompt,
+      'verification prompt should be displayed when /menu runs during guest auth fallback',
+    );
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be shown alongside the verification prompt');
+    assert.equal(ctx.session.executor.verification.courier.status, 'collecting');
+  });
+
   it('shows the executor menu when the refresh action is used during a guest auth fallback', async () => {
     const { bot, dispatchAction } = createMockBot();
     registerExecutorMenu(bot);
