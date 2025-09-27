@@ -17,6 +17,7 @@ let registerExecutorMenu: typeof import('../src/bot/flows/executor/menu')['regis
 let EXECUTOR_MENU_CITY_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_CITY_ACTION'];
 let registerExecutorVerification: typeof import('../src/bot/flows/executor/verification')['registerExecutorVerification'];
 let registerCityAction: typeof import('../src/bot/flows/common/citySelect')['registerCityAction'];
+let CITY_ACTION_PATTERN: typeof import('../src/bot/flows/common/citySelect')['CITY_ACTION_PATTERN'];
 let commandsService: typeof import('../src/bot/services/commands');
 let uiHelper: typeof import('../src/bot/ui')['ui'];
 let usersDb: typeof import('../src/db/users');
@@ -41,7 +42,7 @@ before(async () => {
     '../src/bot/flows/executor/menu'
   ));
   ({ registerExecutorVerification } = await import('../src/bot/flows/executor/verification'));
-  ({ registerCityAction } = await import('../src/bot/flows/common/citySelect'));
+  ({ registerCityAction, CITY_ACTION_PATTERN } = await import('../src/bot/flows/common/citySelect'));
   commandsService = await import('../src/bot/services/commands');
   ({ ui: uiHelper } = await import('../src/bot/ui'));
   usersDb = await import('../src/db/users');
@@ -302,6 +303,50 @@ describe('executor role selection', () => {
     }).reply_markup;
     assert.ok(promptMarkup, 'city selection keyboard should be attached');
     assert.match(promptCall.text, /Сначала выбери город/);
+  });
+
+  it('shows the executor menu after city callback when another middleware stores the city', async () => {
+    const setUserCitySelectedMock = mock.method(
+      usersService,
+      'setUserCitySelected',
+      async () => undefined,
+    );
+
+    const { bot, dispatchAction } = createMockBot();
+    registerExecutorMenu(bot);
+
+    let cityMiddlewareExecuted = false;
+    bot.action(CITY_ACTION_PATTERN, async (ctx, next) => {
+      cityMiddlewareExecuted = true;
+      ctx.session.city = DEFAULT_CITY;
+      ctx.auth.user.citySelected = DEFAULT_CITY;
+      await next();
+    });
+
+    registerCityAction(bot);
+
+    const { ctx } = createMockContext();
+    ctx.session.city = undefined;
+    ctx.auth.user.citySelected = undefined;
+    ctx.session.ui.pendingCityAction = EXECUTOR_MENU_CITY_ACTION;
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: 'city:almaty',
+        message: { message_id: 150, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    try {
+      await dispatchAction('city:almaty', ctx);
+    } finally {
+      setUserCitySelectedMock.mock.restore();
+    }
+
+    assert.equal(cityMiddlewareExecuted, true);
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be displayed after city callback');
+    assert.equal(ctx.session.ui.pendingCityAction, undefined);
   });
 
   it('starts driver verification after confirming the work city', async () => {
