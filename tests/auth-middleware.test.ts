@@ -176,6 +176,12 @@ describe('auth middleware', () => {
     assert.equal(ctx.session.isAuthenticated, true);
     assert.equal(ctx.auth.user.telegramId, 321);
     assert.equal(ctx.auth.user.username, 'authuser');
+    assert.equal(ctx.session.authSnapshot.role, 'courier');
+    assert.equal(ctx.session.authSnapshot.status, 'active_executor');
+    assert.equal(ctx.session.authSnapshot.executor.verifiedRoles.courier, true);
+    assert.equal(ctx.session.authSnapshot.executor.hasActiveSubscription, true);
+    assert.equal(ctx.session.authSnapshot.executor.isVerified, true);
+    assert.equal(ctx.session.authSnapshot.stale, false);
     assert.equal(ctx.session.user?.id, 321);
     assert.equal(ctx.session.phoneNumber, '+7 700 000 00 00');
   });
