@@ -15,6 +15,11 @@ export interface UpdateUserRoleParams {
   menuRole?: 'client' | 'courier';
 }
 
+export interface SetUserBlockedStatusParams {
+  telegramId: number;
+  isBlocked: boolean;
+}
+
 export const ensureClientRole = async ({
   telegramId,
   username,
@@ -124,5 +129,21 @@ export const updateUserRole = async ({
       WHERE tg_id = $1
     `,
     [telegramId, role, effectiveStatus, effectiveMenuRole],
+  );
+};
+
+export const setUserBlockedStatus = async ({
+  telegramId,
+  isBlocked,
+}: SetUserBlockedStatusParams): Promise<void> => {
+  await pool.query(
+    `
+      UPDATE users
+      SET
+        is_blocked = $2,
+        updated_at = now()
+      WHERE tg_id = $1
+    `,
+    [telegramId, isBlocked],
   );
 };
