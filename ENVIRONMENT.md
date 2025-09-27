@@ -36,6 +36,17 @@ are missing or blank.
   driver to each query. Defaults to `20000` and should be equal to or greater
   than the statement timeout.
 
+## Session cache
+
+- `REDIS_URL` – Optional Redis connection string. When provided, Freedom Bot
+  mirrors the per-user session payload in Redis to shield conversations from
+  short-lived PostgreSQL outages.
+- `SESSION_TTL_SECONDS` – Session cache expiration in seconds. Defaults to
+  86400 (24 hours). Lower the value to reduce memory usage when Redis is
+  shared with other services.
+- `SESSION_CACHE_PREFIX` – Prefix appended to Redis keys that store session
+  payloads. Defaults to `session:`.
+
 ## Subscription settings
 
 - `SUB_PRICE_7`, `SUB_PRICE_15`, `SUB_PRICE_30` – Override subscription prices (in

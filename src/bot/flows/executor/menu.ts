@@ -77,6 +77,7 @@ const createRoleVerificationState = (): ExecutorVerificationRoleState => ({
   uploadedPhotos: [],
   submittedAt: undefined,
   moderation: undefined,
+  lastReminderAt: undefined,
 });
 
 const createSubscriptionState = (): ExecutorSubscriptionState => ({
@@ -97,6 +98,7 @@ const normaliseRoleVerificationState = (
   uploadedPhotos: cloneUploadedPhotos(value?.uploadedPhotos),
   submittedAt: value?.submittedAt,
   moderation: cloneModerationState(value?.moderation),
+  lastReminderAt: typeof value?.lastReminderAt === 'number' ? value.lastReminderAt : undefined,
 });
 
 const createDefaultVerificationState = () => {
