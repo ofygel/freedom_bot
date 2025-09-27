@@ -192,4 +192,27 @@ describe('session middleware', () => {
 
     assert.equal(nextCalled, true);
   });
+
+  it('propagates errors from next when database connection fails', async () => {
+    const middleware = session();
+    const ctx = {
+      chat: { id: 321, type: 'private' as const },
+      from: { id: 654 },
+      auth: createAuthState(654),
+    } as unknown as BotContext;
+
+    (pool as unknown as { connect: () => Promise<never> }).connect = async () => {
+      throw new Error('database unavailable');
+    };
+
+    const nextError = new Error('next failed');
+
+    await assert.rejects(
+      async () =>
+        middleware(ctx, async () => {
+          throw nextError;
+        }),
+      (error: unknown) => error === nextError,
+    );
+  });
 });
