@@ -10,6 +10,8 @@ import {
   type BotContext,
   type SessionState,
 } from '../src/bot/types';
+import { auth } from '../src/bot/middlewares/auth';
+import { pool } from '../src/db';
 import type { UiStepOptions } from '../src/bot/ui';
 
 let registerExecutorRoleSelect: typeof import('../src/bot/flows/executor/roleSelect')['registerExecutorRoleSelect'];
@@ -508,6 +510,70 @@ describe('executor role selection', () => {
     const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
     assert.ok(menuStep, 'executor menu should be displayed using the cached session role');
     assert.equal(ctx.auth.user.role, 'guest');
+  });
+
+  it('uses the cached auth snapshot when auth query fails during city callbacks', async () => {
+    const setUserCitySelectedMock = mock.method(
+      usersService,
+      'setUserCitySelected',
+      async () => undefined,
+    );
+
+    const { bot, dispatchAction } = createMockBot();
+    registerCityAction(bot);
+    registerExecutorMenu(bot);
+    registerExecutorVerification(bot);
+
+    const { ctx } = createMockContext();
+    ctx.session.isAuthenticated = true;
+    ctx.session.user = {
+      id: ctx.from!.id,
+      username: 'cached_user',
+      firstName: 'Cache',
+      lastName: 'User',
+      phoneVerified: true,
+    };
+    ctx.session.phoneNumber = '+7 700 000 00 00';
+    ctx.session.authSnapshot = {
+      role: 'courier',
+      executor: {
+        verifiedRoles: { courier: true, driver: false },
+        hasActiveSubscription: true,
+        isVerified: true,
+      },
+      city: DEFAULT_CITY,
+      stale: false,
+    };
+
+    const authMiddleware = auth();
+    const queryMock = mock.method(pool, 'query', async () => {
+      throw new Error('temporary failure');
+    });
+
+    try {
+      await authMiddleware(ctx, async () => {});
+    } finally {
+      queryMock.mock.restore();
+    }
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: 'city:almaty',
+        message: { message_id: 361, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    try {
+      await dispatchAction('city:almaty', ctx);
+    } finally {
+      setUserCitySelectedMock.mock.restore();
+    }
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be displayed after auth snapshot fallback');
+    assert.equal(ctx.session.isAuthenticated, false);
+    assert.equal(ctx.session.authSnapshot?.stale, true);
+    assert.equal(ctx.auth.user.role, 'courier');
   });
 
   it('retains the session executor role during guest fallback city callbacks', async () => {

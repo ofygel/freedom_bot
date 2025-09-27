@@ -498,7 +498,7 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       const cachedSnapshot = ctx.session.authSnapshot;
       if (cachedSnapshot) {
         const authState = buildAuthStateFromSnapshot(ctx, cachedSnapshot);
-        applyAuthState(ctx, authState, { isAuthenticated: true, isStale: true });
+        applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
         logger.warn(
           { err: error.cause ?? error, update: ctx.update },
           'Failed to load auth state, using cached snapshot',
