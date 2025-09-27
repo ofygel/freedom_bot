@@ -184,7 +184,7 @@ export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
     return true;
   }
 
-  if (ctx.session.isAuthenticated === false && authRole === 'guest') {
+  if (authRole === 'guest' && ctx.session.isAuthenticated === false) {
     return isExecutorRole(ctx.session.executor?.role);
   }
 
@@ -199,26 +199,12 @@ const deriveAuthExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
 
   if (ctx.session.isAuthenticated === false && ctx.auth.user.role === 'guest') {
     const sessionRole = ctx.session.executor?.role;
-    if (sessionRole === 'courier' || sessionRole === 'driver') {
+    if (isExecutorRole(sessionRole)) {
       return sessionRole;
     }
   }
 
   return undefined;
-};
-
-const userLooksLikeExecutor = (ctx: BotContext): boolean => {
-  const authRole = ctx.auth.user.role;
-  if (authRole === 'courier' || authRole === 'driver') {
-    return true;
-  }
-
-  if (authRole === 'guest' && ctx.session.isAuthenticated === false) {
-    const sessionRole = ctx.session.executor?.role;
-    return sessionRole === 'courier' || sessionRole === 'driver';
-  }
-
-  return false;
 };
 
 export const requireExecutorRole = (state: ExecutorFlowState): ExecutorRole => {
@@ -673,6 +659,12 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
+    if (!userLooksLikeExecutor(ctx)) {
+      await ctx.answerCbQuery();
+      await showMenu(ctx);
+      return;
+    }
+
     await ctx.answerCbQuery();
     ensureExecutorState(ctx);
     await showExecutorMenu(ctx);
@@ -683,27 +675,8 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-<<<<<<< HEAD
-    const role = ctx.auth.user.role;
-    let isExecutor = role === 'courier' || role === 'driver';
-
-    if (
-      !isExecutor &&
-      ctx.session.isAuthenticated === false &&
-      ctx.auth.user.role === 'guest'
-    ) {
-      const sessionRole = ctx.session.executor?.role;
-      isExecutor = sessionRole === 'courier' || sessionRole === 'driver';
-    }
-=======
-<<<<<<< HEAD
-    if (!userLooksLikeExecutor(ctx)) {
-=======
     const looksLikeExecutor = userLooksLikeExecutor(ctx);
->>>>>>> origin/main
-
     if (!looksLikeExecutor) {
->>>>>>> origin/main
       await showMenu(ctx);
       return;
     }
@@ -714,6 +687,11 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
 
   bot.hears(EXECUTOR_MENU_TEXT_LABELS.refresh, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
+      return;
+    }
+
+    if (!userLooksLikeExecutor(ctx)) {
+      await showMenu(ctx);
       return;
     }
 

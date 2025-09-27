@@ -17,6 +17,7 @@ import type { UiStepOptions } from '../src/bot/ui';
 let registerExecutorRoleSelect: typeof import('../src/bot/flows/executor/roleSelect')['registerExecutorRoleSelect'];
 let ensureExecutorState: typeof import('../src/bot/flows/executor/menu')['ensureExecutorState'];
 let registerExecutorMenu: typeof import('../src/bot/flows/executor/menu')['registerExecutorMenu'];
+let EXECUTOR_MENU_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_ACTION'];
 let EXECUTOR_MENU_CITY_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_CITY_ACTION'];
 let registerExecutorVerification: typeof import('../src/bot/flows/executor/verification')['registerExecutorVerification'];
 let registerCityAction: typeof import('../src/bot/flows/common/citySelect')['registerCityAction'];
@@ -41,9 +42,12 @@ before(async () => {
   process.env.SUB_PRICE_30 = process.env.SUB_PRICE_30 ?? '16000';
 
   ({ registerExecutorRoleSelect } = await import('../src/bot/flows/executor/roleSelect'));
-  ({ ensureExecutorState, registerExecutorMenu, EXECUTOR_MENU_CITY_ACTION } = await import(
-    '../src/bot/flows/executor/menu'
-  ));
+  ({
+    ensureExecutorState,
+    registerExecutorMenu,
+    EXECUTOR_MENU_ACTION,
+    EXECUTOR_MENU_CITY_ACTION,
+  } = await import('../src/bot/flows/executor/menu'));
   ({ registerExecutorVerification } = await import('../src/bot/flows/executor/verification'));
   ({ registerCityAction, CITY_ACTION_PATTERN } = await import('../src/bot/flows/common/citySelect'));
   commandsService = await import('../src/bot/services/commands');
@@ -384,6 +388,60 @@ describe('executor role selection', () => {
       'executor menu should still be shown when /menu is used and auth temporarily falls back to guest',
     );
     assert.equal(ctx.session.executor.role, 'courier');
+  });
+
+  it('shows the executor menu when the refresh action is used during a guest auth fallback', async () => {
+    const { bot, dispatchAction } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const { ctx } = createMockContext();
+    ctx.session.isAuthenticated = false;
+    ctx.auth.user.role = 'guest';
+    ctx.session.executor.role = 'courier';
+    ctx.auth.executor.verifiedRoles.courier = true;
+    ctx.auth.executor.hasActiveSubscription = true;
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: EXECUTOR_MENU_ACTION,
+        message: { message_id: 888, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    await dispatchAction(EXECUTOR_MENU_ACTION, ctx);
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(
+      menuStep,
+      'executor menu should be shown when refresh action is used and auth falls back to guest',
+    );
+  });
+
+  it('keeps clients in the client menu when the executor refresh action is used', async () => {
+    const { bot, dispatchAction } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const { ctx } = createMockContext();
+    ctx.auth.user.role = 'client';
+    ctx.auth.user.status = 'active_client';
+    ctx.session.executor.role = undefined;
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: EXECUTOR_MENU_ACTION,
+        message: { message_id: 889, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    await dispatchAction(EXECUTOR_MENU_ACTION, ctx);
+
+    const executorMenuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.equal(
+      executorMenuStep,
+      undefined,
+      'executor menu should not be displayed for clients when refresh action is triggered',
+    );
+    assert.equal(ctx.session.executor.role, undefined);
   });
 
   it('shows the executor menu after city callback when another middleware stores the city', async () => {
