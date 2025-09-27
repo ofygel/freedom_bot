@@ -348,6 +348,49 @@ describe('executor role selection', () => {
     assert.equal(ctx.session.ui.pendingCityAction, undefined);
   });
 
+  it('shows verification prompt and menu for courier after city callback without pending action', async () => {
+    const setUserCitySelectedMock = mock.method(
+      usersService,
+      'setUserCitySelected',
+      async () => undefined,
+    );
+
+    const { bot, dispatchAction } = createMockBot();
+    registerCityAction(bot);
+    registerExecutorMenu(bot);
+    registerExecutorVerification(bot);
+
+    const { ctx } = createMockContext();
+    ctx.session.city = undefined;
+    ctx.auth.user.citySelected = undefined;
+    ctx.session.ui.pendingCityAction = undefined;
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: 'city:almaty',
+        message: { message_id: 250, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    try {
+      await dispatchAction('city:almaty', ctx);
+    } finally {
+      setUserCitySelectedMock.mock.restore();
+    }
+
+    const verificationPrompt = recordedSteps.find(
+      (step) => step.id === 'executor:verification:prompt',
+    );
+    assert.ok(
+      verificationPrompt,
+      'courier should see verification prompt after selecting city without pending action',
+    );
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be displayed after verification prompt');
+    assert.equal(ctx.session.executor.verification.courier.status, 'collecting');
+  });
+
   it('starts driver verification after confirming the work city', async () => {
     const setChatCommandsMock = mock.method(
       commandsService,
