@@ -223,6 +223,74 @@ describe('executor verification media group handler', () => {
     );
   });
 
+  it('waits for all media group updates before processing album photos', async () => {
+    const { handleMediaGroup } = registerHandlers();
+    const { ctx } = createContext();
+
+    ctx.session.executor.verification.courier.status = 'collecting';
+
+    const createAlbumMessage = (index: number): Message.PhotoMessage => ({
+      message_id: 600 + index,
+      chat: { id: ctx.chat!.id, type: 'private' as const, first_name: 'Tester' },
+      date: Date.now(),
+      media_group_id: 'album-split',
+      photo: [
+        { file_id: `photo-small-${index}`, file_unique_id: `unique-${index}`, width: 100, height: 100 },
+        { file_id: `photo-best-${index}`, file_unique_id: `unique-${index}`, width: 1000, height: 1000 },
+      ],
+    });
+
+    const firstMessage = createAlbumMessage(1);
+    const secondMessage = createAlbumMessage(2);
+
+    const firstCtx = { ...ctx } as BotContext;
+    const secondCtx = { ...ctx } as BotContext;
+
+    (firstCtx as unknown as { message: Message.PhotoMessage; update: { message: Message.PhotoMessage } }).message =
+      firstMessage;
+    (firstCtx as unknown as { update: { message: Message.PhotoMessage } }).update = { message: firstMessage };
+
+    (secondCtx as unknown as { message: Message.PhotoMessage; update: { message: Message.PhotoMessage } }).message =
+      secondMessage;
+    (secondCtx as unknown as { update: { message: Message.PhotoMessage } }).update = { message: secondMessage };
+
+    let firstNextCalled = false;
+    const firstPromise = handleMediaGroup(firstCtx, async () => {
+      firstNextCalled = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    let secondNextCalled = false;
+    const secondPromise = handleMediaGroup(secondCtx, async () => {
+      secondNextCalled = true;
+    });
+
+    await Promise.all([firstPromise, secondPromise]);
+
+    assert.equal(firstNextCalled, false);
+    assert.equal(secondNextCalled, false);
+
+    const verification = ctx.session.executor.verification.courier;
+    assert.equal(verification.status, 'submitted');
+    assert.equal(verification.uploadedPhotos.length, 0);
+
+    const finalProgress = recordedSteps.find(
+      (step) =>
+        step.id === 'executor:verification:progress' &&
+        step.text === `Фото ${EXECUTOR_VERIFICATION_PHOTO_COUNT}/${EXECUTOR_VERIFICATION_PHOTO_COUNT} получено.`,
+    );
+
+    assert.ok(finalProgress, 'final progress step should acknowledge full album');
+    assert.equal(persistMock.mock.callCount(), 1);
+    assert.equal(publishMock.mock.callCount(), 1);
+    assert.equal(reportMock.mock.callCount(), 1);
+    assert.equal(
+      reportMock.mock.calls[0]?.arguments[3],
+      EXECUTOR_VERIFICATION_PHOTO_COUNT,
+    );
+  });
+
   it('allows switching executor role during verification and shows role picker on next /start', async () => {
     const { getActionHandler } = registerHandlers();
     const { ctx, commandLog } = createContext();

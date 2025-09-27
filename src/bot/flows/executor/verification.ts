@@ -477,12 +477,23 @@ const handleIncomingPhoto = async (
   const photoSizes = message.photo;
   const bestPhoto = photoSizes[photoSizes.length - 1];
   const bestPhotoUniqueId = bestPhoto.file_unique_id;
-  const uploadedBefore = verification.uploadedPhotos.length;
+  const initialPhotos = verification.uploadedPhotos;
+  const uploadedBefore = initialPhotos.length;
+  const messageId = message.message_id;
 
-  if (
-    typeof bestPhotoUniqueId === 'string' &&
-    verification.uploadedPhotos.some((photo) => photo.fileUniqueId === bestPhotoUniqueId)
-  ) {
+  const isDuplicate = (): boolean => {
+    const currentPhotos = verification.uploadedPhotos;
+    const duplicateByUniqueId =
+      typeof bestPhotoUniqueId === 'string' &&
+      currentPhotos.some((photo) => photo.fileUniqueId === bestPhotoUniqueId);
+    if (duplicateByUniqueId) {
+      return true;
+    }
+
+    return currentPhotos.some((photo) => photo.messageId === messageId);
+  };
+
+  if (isDuplicate()) {
     await ui.step(ctx, {
       id: VERIFICATION_PROGRESS_STEP_ID,
       text: `Фото ${uploadedBefore}/${verification.requiredPhotos} получено.`,
@@ -492,11 +503,24 @@ const handleIncomingPhoto = async (
     return true;
   }
 
-  verification.uploadedPhotos.push({
+  if (verification.uploadedPhotos !== initialPhotos && isDuplicate()) {
+    await ui.step(ctx, {
+      id: VERIFICATION_PROGRESS_STEP_ID,
+      text: `Фото ${uploadedBefore}/${verification.requiredPhotos} получено.`,
+      cleanup: true,
+    });
+    await showExecutorMenu(ctx, { skipAccessCheck: true });
+    return true;
+  }
+
+  const updatedPhotos = [...verification.uploadedPhotos, {
     fileId: bestPhoto.file_id,
-    messageId: message.message_id,
+    messageId,
     fileUniqueId: bestPhotoUniqueId,
-  });
+  }];
+
+  updatedPhotos.sort((left, right) => left.messageId - right.messageId);
+  verification.uploadedPhotos = updatedPhotos;
 
   const uploaded = verification.uploadedPhotos.length;
   const required = verification.requiredPhotos;
@@ -611,6 +635,100 @@ const collectMediaGroupPhotos = (
   return found;
 };
 
+const MEDIA_GROUP_FLUSH_DELAY_MS = 200;
+
+interface PendingMediaGroupResult {
+  ownerMessageId: number;
+  messages: Message.PhotoMessage[];
+}
+
+interface PendingMediaGroup {
+  ownerMessageId: number;
+  messages: Map<number, Message.PhotoMessage>;
+  promise: Promise<PendingMediaGroupResult>;
+  resolve?: (value: PendingMediaGroupResult) => void;
+  timeout?: NodeJS.Timeout;
+}
+
+const pendingMediaGroups = new Map<string, PendingMediaGroup>();
+
+const buildMediaGroupKey = (ctx: BotContext, mediaGroupId: string): string | undefined => {
+  const scopeId = ctx.chat?.id ?? ctx.from?.id;
+
+  if (scopeId === undefined || scopeId === null) {
+    return undefined;
+  }
+
+  if (
+    typeof scopeId === 'string' ||
+    typeof scopeId === 'number' ||
+    typeof scopeId === 'bigint'
+  ) {
+    return `${String(scopeId)}:${mediaGroupId}`;
+  }
+
+  return undefined;
+};
+
+const ensurePendingMediaGroup = (
+  key: string,
+  ownerMessageId: number,
+): PendingMediaGroup => {
+  let entry = pendingMediaGroups.get(key);
+  if (!entry) {
+    let resolve: ((value: PendingMediaGroupResult) => void) | undefined;
+    const promise = new Promise<PendingMediaGroupResult>((resolveFn) => {
+      resolve = resolveFn;
+    });
+
+    entry = {
+      ownerMessageId,
+      messages: new Map<number, Message.PhotoMessage>(),
+      promise,
+      resolve,
+    } satisfies PendingMediaGroup;
+
+    pendingMediaGroups.set(key, entry);
+  }
+
+  return entry;
+};
+
+const registerPendingMediaGroupMessage = (
+  entry: PendingMediaGroup,
+  message: Message.PhotoMessage,
+): void => {
+  entry.messages.set(message.message_id, message);
+};
+
+const resolvePendingMediaGroup = (key: string, entry: PendingMediaGroup): void => {
+  if (entry.timeout) {
+    clearTimeout(entry.timeout);
+    entry.timeout = undefined;
+  }
+
+  pendingMediaGroups.delete(key);
+
+  const payload: PendingMediaGroupResult = {
+    ownerMessageId: entry.ownerMessageId,
+    messages: [...entry.messages.values()].sort(
+      (left, right) => left.message_id - right.message_id,
+    ),
+  };
+
+  entry.resolve?.(payload);
+};
+
+const schedulePendingMediaGroupFlush = (key: string, entry: PendingMediaGroup): void => {
+  if (entry.timeout) {
+    clearTimeout(entry.timeout);
+  }
+
+  entry.timeout = setTimeout(() => {
+    resolvePendingMediaGroup(key, entry);
+  }, MEDIA_GROUP_FLUSH_DELAY_MS);
+};
+
 export const registerExecutorVerification = (bot: Telegraf<BotContext>): void => {
   bot.action(EXECUTOR_VERIFICATION_ACTION, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
@@ -653,6 +771,18 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
   });
 
   bot.on('photo', async (ctx, next) => {
+    const message = ctx.message;
+
+    if (
+      message &&
+      typeof message === 'object' &&
+      'media_group_id' in message &&
+      typeof (message as { media_group_id?: unknown }).media_group_id === 'string'
+    ) {
+      await next();
+      return;
+    }
+
     const handled = await handleIncomingPhoto(ctx);
     if (!handled) {
       await next();
@@ -661,29 +791,49 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
 
   bot.on('media_group' as any, async (ctx, next) => {
     const message = ctx.message;
-    const mediaGroupId =
-      typeof message === 'object' && message !== null && 'media_group_id' in message
-        ? (message as Message.PhotoMessage).media_group_id
-        : undefined;
-
-    const albumMembers = collectMediaGroupPhotos(ctx.update, mediaGroupId);
-    const processedIds = new Set<number>();
-    let handledAny = false;
-
-    if (message && typeof message === 'object' && 'photo' in message) {
-      const photoMessage = message as Message.PhotoMessage;
-      processedIds.add(photoMessage.message_id);
-      handledAny = (await handleIncomingPhoto(ctx as BotContext, photoMessage)) || handledAny;
+    if (!message || typeof message !== 'object' || !('media_group_id' in message)) {
+      await next();
+      return;
     }
 
-    for (const media of albumMembers) {
-      if (processedIds.has(media.message_id)) {
-        continue;
-      }
+    const photoMessage = message as Message.PhotoMessage;
+    const mediaGroupId = photoMessage.media_group_id;
+    if (typeof mediaGroupId !== 'string') {
+      await next();
+      return;
+    }
 
-      const handled = await handleIncomingPhoto(ctx as BotContext, media);
+    const botCtx = ctx as BotContext;
+    const mediaGroupKey = buildMediaGroupKey(botCtx, mediaGroupId);
+    if (!mediaGroupKey) {
+      await next();
+      return;
+    }
+
+    const albumMembers = collectMediaGroupPhotos(botCtx.update, mediaGroupId);
+    const pending = ensurePendingMediaGroup(mediaGroupKey, photoMessage.message_id);
+
+    registerPendingMediaGroupMessage(pending, photoMessage);
+    for (const media of albumMembers) {
+      registerPendingMediaGroupMessage(pending, media);
+    }
+
+    if (albumMembers.length > 0) {
+      resolvePendingMediaGroup(mediaGroupKey, pending);
+    } else {
+      schedulePendingMediaGroupFlush(mediaGroupKey, pending);
+    }
+
+    const { ownerMessageId, messages } = await pending.promise;
+
+    if (photoMessage.message_id !== ownerMessageId) {
+      return;
+    }
+
+    let handledAny = false;
+    for (const media of messages) {
+      const handled = await handleIncomingPhoto(botCtx, media);
       handledAny = handledAny || handled;
-      processedIds.add(media.message_id);
     }
 
     if (!handledAny) {

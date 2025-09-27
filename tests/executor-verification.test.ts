@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it, mock } from 'node:test';
 
 import type { BotContext, SessionState } from '../src/bot/types';
+import type { Message } from 'telegraf/typings/core/types/typegram';
 import { EXECUTOR_VERIFICATION_PHOTO_COUNT } from '../src/bot/types';
 import type { UiStepOptions } from '../src/bot/ui';
 import * as menuModule from '../src/bot/flows/executor/menu';
@@ -231,5 +232,86 @@ describe('executor verification handlers', () => {
     const verification = ctx.session.executor.verification.courier;
     assert.equal(verification.uploadedPhotos.length, 1);
     assert.equal(verification.uploadedPhotos[0]?.fileUniqueId, 'ph-shared');
+  });
+
+  it('merges uploaded photos when two photo updates are processed in parallel', async () => {
+    const { handlePhoto } = registerVerificationHandlers();
+    const { ctx } = createContext();
+
+    ctx.session.executor.verification.courier.status = 'collecting';
+    ctx.session.executor.verification.courier.requiredPhotos = 5;
+
+    const createMessage = (messageId: number) => ({
+      message_id: messageId,
+      chat: { id: ctx.chat!.id, type: 'private' as const },
+      date: Date.now(),
+      photo: [
+        { file_id: `photo-small-${messageId}`, file_unique_id: `ph-${messageId}`, width: 100, height: 100 },
+        { file_id: `photo-best-${messageId}`, file_unique_id: `ph-${messageId}`, width: 1000, height: 1000 },
+      ],
+    });
+
+    const firstMessage = createMessage(401);
+    const secondMessage = createMessage(402);
+
+    const firstCtx = { ...ctx } as BotContext;
+    const secondCtx = { ...ctx } as BotContext;
+
+    (firstCtx as unknown as { message: typeof firstMessage; update: { message: typeof firstMessage } }).message =
+      firstMessage;
+    (firstCtx as unknown as { update: { message: typeof firstMessage } }).update = { message: firstMessage };
+
+    (secondCtx as unknown as { message: typeof secondMessage; update: { message: typeof secondMessage } }).message =
+      secondMessage;
+    (secondCtx as unknown as { update: { message: typeof secondMessage } }).update = { message: secondMessage };
+
+    await Promise.all([handlePhoto(firstCtx, async () => {}), handlePhoto(secondCtx, async () => {})]);
+
+    const uploaded = ctx.session.executor.verification.courier.uploadedPhotos;
+    assert.equal(uploaded.length, 2);
+    assert.deepEqual(
+      uploaded.map((photo) => photo.messageId).sort((a, b) => a - b),
+      [401, 402],
+    );
+  });
+
+  it('merges uploaded photos when media group albums extend existing state', async () => {
+    const { handleMediaGroup } = registerVerificationHandlers();
+    const { ctx } = createContext();
+
+    ctx.session.executor.verification.courier.status = 'collecting';
+    ctx.session.executor.verification.courier.requiredPhotos = 5;
+    ctx.session.executor.verification.courier.uploadedPhotos = [
+      { fileId: 'existing-photo', messageId: 350, fileUniqueId: 'existing-unique' },
+    ];
+
+    const createAlbumMessage = (index: number): Message.PhotoMessage => ({
+      message_id: 500 + index,
+      chat: { id: ctx.chat!.id, type: 'private' as const, first_name: 'Tester' },
+      date: Date.now(),
+      media_group_id: 'album-merge',
+      photo: [
+        { file_id: `photo-small-${index}`, file_unique_id: `unique-${index}`, width: 100, height: 100 },
+        { file_id: `photo-best-${index}`, file_unique_id: `unique-${index}`, width: 1000, height: 1000 },
+      ],
+    });
+
+    const album = [createAlbumMessage(1), createAlbumMessage(2)];
+    const updates = album.map((message, index) => ({
+      update_id: 900 + index,
+      message,
+    }));
+
+    (ctx as unknown as { update: BotContext['update'] }).update = updates as unknown as BotContext['update'];
+    (ctx as unknown as { message: Message.PhotoMessage }).message = album[0];
+
+    await handleMediaGroup(ctx, async () => {});
+
+    const uploaded = ctx.session.executor.verification.courier.uploadedPhotos;
+    assert.equal(uploaded.length, 3);
+    assert.deepEqual(
+      uploaded.map((photo) => photo.messageId).sort((a, b) => a - b),
+      [350, 501, 502],
+    );
   });
 });
