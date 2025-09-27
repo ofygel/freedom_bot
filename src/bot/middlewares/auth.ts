@@ -513,6 +513,9 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         stale: true,
       } satisfies AuthStateSnapshot;
 
+      ctx.session.isAuthenticated = false;
+      ctx.session.authSnapshot = snapshot;
+
       const authState = buildAuthStateFromSnapshot(ctx, snapshot);
       applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
       logger.warn(
