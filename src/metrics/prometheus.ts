@@ -27,6 +27,13 @@ const dbErrorsCounter = new Counter({
   registers: [registry],
 });
 
+const startupTaskRetriesCounter = new Counter({
+  name: 'startup_task_retries_total',
+  help: 'Total number of retries performed for startup tasks',
+  labelNames: ['task', 'event'] as const,
+  registers: [registry],
+});
+
 export const metricsRegistry = registry;
 
 export const metricsSnapshot = async (): Promise<string> => {
@@ -40,6 +47,14 @@ export const metricsSnapshot = async (): Promise<string> => {
 
 export const observeDatabaseError = (): void => {
   dbErrorsCounter.inc();
+};
+
+export const observeStartupTaskRetryScheduled = (task: string): void => {
+  startupTaskRetriesCounter.inc({ task, event: 'scheduled' });
+};
+
+export const observeStartupTaskRetrySuccess = (task: string): void => {
+  startupTaskRetriesCounter.inc({ task, event: 'success' });
 };
 
 export const observeUpdateStart = (type: string): (() => void) => {
@@ -60,5 +75,6 @@ export const __testing__ = {
     updateCounter.reset();
     updateLatency.reset();
     dbErrorsCounter.reset();
+    startupTaskRetriesCounter.reset();
   },
 };

@@ -46,6 +46,7 @@ import type { BotContext } from './bot/types';
 import { config, logger } from './config';
 import { pool } from './db';
 import { ensureDatabaseSchema } from './db/bootstrap';
+import { observeStartupTaskRetryScheduled, observeStartupTaskRetrySuccess } from './metrics/prometheus';
 
 export const app = new Telegraf<BotContext>(config.bot.token);
 
@@ -113,6 +114,12 @@ const CONNECTION_ERROR_PATTERNS = [
 ];
 
 type CleanupTask = () => Promise<void> | void;
+
+type StartupTask = {
+  name: string;
+  label: string;
+  handler: () => Promise<void>;
+};
 
 const cleanupTasks: CleanupTask[] = [];
 
@@ -210,6 +217,46 @@ const scheduleRetry = (
   registerCleanupTask(() => {
     stopRetryTimer(name);
   });
+};
+
+const runStartupTaskWithRetry = async ({ name, label, handler }: StartupTask): Promise<void> => {
+  try {
+    await handler();
+    stopRetryTimer(name);
+  } catch (error) {
+    if (!isConnectionError(error)) {
+      logger.error({ err: error }, `Failed to restore ${label}`);
+      return;
+    }
+
+    logger.warn(
+      { err: error },
+      `Failed to restore ${label} due to connection error, scheduling retry`,
+    );
+    observeStartupTaskRetryScheduled(name);
+
+    scheduleRetry(
+      name,
+      handler,
+      () => {
+        observeStartupTaskRetrySuccess(name);
+        logger.info(`Successfully restored ${label} after retry`);
+      },
+      (retryError) => {
+        if (isConnectionError(retryError)) {
+          logger.warn(
+            { err: retryError },
+            `Retry to restore ${label} failed due to connection error, will continue retrying`,
+          );
+        } else {
+          logger.error(
+            { err: retryError },
+            `Retry to restore ${label} failed with unexpected error`,
+          );
+        }
+      },
+    );
+  }
 };
 
 export const isDatabaseFallbackActive = (): boolean => databaseConnectionFallback;
@@ -315,11 +362,7 @@ export const initialiseAppState = async (): Promise<void> => {
     );
   }
 
-  const startupTasks: Array<{
-    name: string;
-    label: string;
-    handler: () => Promise<void>;
-  }> = [
+  const startupTasks: StartupTask[] = [
     {
       name: 'restoreVerificationModerationQueue',
       label: 'verification moderation queue',
@@ -337,43 +380,7 @@ export const initialiseAppState = async (): Promise<void> => {
     },
   ];
 
-  const tasks = startupTasks.map(async ({ name, label, handler }) => {
-    try {
-      await handler();
-      stopRetryTimer(name);
-    } catch (error) {
-      if (isConnectionError(error)) {
-        logger.warn(
-          { err: error },
-          `Failed to restore ${label} due to connection error, scheduling retry`,
-        );
-        scheduleRetry(
-          name,
-          handler,
-          () => {
-            logger.info(`Successfully restored ${label} after retry`);
-          },
-          (retryError) => {
-            if (isConnectionError(retryError)) {
-              logger.warn(
-                { err: retryError },
-                `Retry to restore ${label} failed due to connection error, will continue retrying`,
-              );
-            } else {
-              logger.error(
-                { err: retryError },
-                `Retry to restore ${label} failed with unexpected error`,
-              );
-            }
-          },
-        );
-      } else {
-        logger.error({ err: error }, `Failed to restore ${label}`);
-      }
-    }
-  });
-
-  await Promise.all(tasks);
+  await Promise.all(startupTasks.map((task) => runStartupTaskWithRetry(task)));
 };
 
 /**
