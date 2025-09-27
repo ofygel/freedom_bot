@@ -24,6 +24,7 @@ import {
 } from './verification';
 import { CITY_LABEL } from '../../../domain/cities';
 import { CITY_ACTION_PATTERN, ensureCitySelected } from '../common/citySelect';
+import { showMenu } from '../client/menu';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
@@ -636,6 +637,14 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
 
   bot.command('menu', async (ctx) => {
     if (ctx.chat?.type !== 'private') {
+      return;
+    }
+
+    const role = ctx.auth.user.role;
+    const isExecutor = role === 'courier' || role === 'driver';
+
+    if (!isExecutor) {
+      await showMenu(ctx);
       return;
     }
 

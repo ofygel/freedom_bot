@@ -141,7 +141,7 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   }
 };
 
-const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
+export const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
   const role = ctx.auth?.user.role;
   if (!isClientChat(ctx, role)) {
     if (ctx.callbackQuery) {
