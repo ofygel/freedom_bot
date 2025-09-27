@@ -392,6 +392,46 @@ describe('executor role selection', () => {
     assert.equal(ctx.session.executor.verification.courier.status, 'collecting');
   });
 
+  it('shows the executor menu for guest fallback city callbacks without pending action', async () => {
+    const setUserCitySelectedMock = mock.method(
+      usersService,
+      'setUserCitySelected',
+      async () => undefined,
+    );
+
+    const { bot, dispatchAction } = createMockBot();
+    registerCityAction(bot);
+    registerExecutorMenu(bot);
+    registerExecutorVerification(bot);
+
+    const { ctx } = createMockContext();
+    ctx.session.city = DEFAULT_CITY;
+    ctx.auth.user.citySelected = DEFAULT_CITY;
+    ctx.session.ui.pendingCityAction = undefined;
+    ctx.session.isAuthenticated = false;
+    ctx.auth.user.role = 'guest';
+    ctx.session.executor.role = 'courier';
+    ctx.auth.executor.verifiedRoles.courier = true;
+    ctx.auth.executor.hasActiveSubscription = true;
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: 'city:almaty',
+        message: { message_id: 360, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    try {
+      await dispatchAction('city:almaty', ctx);
+    } finally {
+      setUserCitySelectedMock.mock.restore();
+    }
+
+    const menuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+    assert.ok(menuStep, 'executor menu should be displayed using the cached session role');
+    assert.equal(ctx.auth.user.role, 'guest');
+  });
+
   it('retains the session executor role during guest fallback city callbacks', async () => {
     const setUserCitySelectedMock = mock.method(
       usersService,
