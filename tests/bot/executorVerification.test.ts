@@ -17,6 +17,7 @@ import * as phoneCollect from '../../src/bot/flows/common/phoneCollect';
 import * as subscriptionModule from '../../src/bot/flows/executor/subscription';
 import * as reportsModule from '../../src/bot/services/reports';
 import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from '../../src/bot/commands/sets';
+import * as paymentQueue from '../../src/bot/moderation/paymentQueue';
 
 const DEFAULT_CITY = 'almaty' as const;
 
@@ -137,6 +138,61 @@ const registerHandlers = () => {
   return {
     handleMediaGroup: mediaGroupHandler,
     getActionHandler: (action: string) => actionHandlers.get(action),
+  };
+};
+
+const registerVerificationAndSubscriptionHandlers = () => {
+  type Handler = (ctx: BotContext, next: () => Promise<void>) => Promise<void>;
+
+  const photoHandlers: Handler[] = [];
+  const mediaGroupHandlers: Handler[] = [];
+  const unknownHandler = mock.fn<(ctx: BotContext) => Promise<void>>(async () => undefined);
+
+  const bot = {
+    action: () => bot,
+    on: (event: string, handler: unknown) => {
+      if (event === 'photo') {
+        photoHandlers.push(handler as Handler);
+      } else if (event === 'media_group') {
+        mediaGroupHandlers.push(handler as Handler);
+      }
+      return bot;
+    },
+    command: () => bot,
+    hears: () => bot,
+  } as unknown as import('telegraf').Telegraf<BotContext>;
+
+  executorVerification.registerExecutorVerification(bot);
+  subscriptionModule.registerExecutorSubscription(bot);
+
+  if (mediaGroupHandlers.length === 0) {
+    throw new Error('media group handler was not registered');
+  }
+
+  const runHandlerChain = async (handlers: Handler[] | undefined, ctx: BotContext): Promise<void> => {
+    if (!handlers || handlers.length === 0) {
+      await unknownHandler(ctx);
+      return;
+    }
+
+    const dispatch = async (index: number): Promise<void> => {
+      if (index >= handlers.length) {
+        await unknownHandler(ctx);
+        return;
+      }
+
+      await handlers[index](ctx, async () => {
+        await dispatch(index + 1);
+      });
+    };
+
+    await dispatch(0);
+  };
+
+  return {
+    runPhotoHandlers: (ctx: BotContext) => runHandlerChain(photoHandlers, ctx),
+    runMediaGroupHandler: (ctx: BotContext) => runHandlerChain(mediaGroupHandlers, ctx),
+    unknownHandler,
   };
 };
 
@@ -365,5 +421,138 @@ describe('executor verification media group handler', () => {
       startVerificationMock.mock.restore();
       startSubscriptionMock.mock.restore();
     }
+  });
+});
+
+describe('executor verification and subscription integration', () => {
+  let recordedSteps: UiStepOptions[];
+  let stepMock: ReturnType<typeof mock.method>;
+  let showMenuMock: ReturnType<typeof mock.method>;
+  let persistMock: ReturnType<typeof mock.method>;
+  let publishMock: ReturnType<typeof mock.method>;
+  let reportVerificationMock: ReturnType<typeof mock.method>;
+  let submitPaymentMock: ReturnType<typeof mock.method>;
+  let reportPaymentMock: ReturnType<typeof mock.method>;
+
+  beforeEach(() => {
+    recordedSteps = [];
+    stepMock = mock.method(ui, 'step', async (_ctx: BotContext, options: UiStepOptions) => {
+      recordedSteps.push(options);
+      return { messageId: recordedSteps.length, sent: true };
+    });
+    showMenuMock = mock.method(menuModule, 'showExecutorMenu', async (_ctx: BotContext) => undefined);
+    persistMock = mock.method(verificationsDb, 'persistVerificationSubmission', async () => undefined);
+    publishMock = mock.method(verifyQueue, 'publishVerificationApplication', async () => ({
+      status: 'success',
+      chatId: 1,
+      messageId: 1,
+      token: 'token',
+    }));
+    reportVerificationMock = mock.method(reportsModule, 'reportVerificationSubmitted', async () => undefined);
+    submitPaymentMock = mock.method(paymentQueue, 'submitSubscriptionPaymentReview', async () => ({
+      status: 'published',
+      chatId: 210,
+      messageId: 220,
+    }));
+    reportPaymentMock = mock.method(reportsModule, 'reportSubscriptionPaymentSubmitted', async () => undefined);
+  });
+
+  afterEach(() => {
+    stepMock.mock.restore();
+    showMenuMock.mock.restore();
+    persistMock.mock.restore();
+    publishMock.mock.restore();
+    reportVerificationMock.mock.restore();
+    submitPaymentMock.mock.restore();
+    reportPaymentMock.mock.restore();
+  });
+
+  it('handles executor albums without invoking the unknown fallback handler', async () => {
+    const { runPhotoHandlers, runMediaGroupHandler, unknownHandler } =
+      registerVerificationAndSubscriptionHandlers();
+    const { ctx } = createContext();
+
+    const createAlbumMessage = (index: number): Message.PhotoMessage => ({
+      message_id: 800 + index,
+      chat: { id: ctx.chat!.id, type: 'private' as const, first_name: 'Executor' },
+      date: Date.now(),
+      media_group_id: 'album-integration',
+      photo: [
+        {
+          file_id: `photo-small-${index}`,
+          file_unique_id: `unique-${index}`,
+          width: 100,
+          height: 100,
+        },
+        {
+          file_id: `photo-best-${index}`,
+          file_unique_id: `unique-${index}`,
+          width: 1000,
+          height: 1000,
+        },
+      ],
+    });
+
+    const album = [createAlbumMessage(1), createAlbumMessage(2)];
+    const updates = album.map((message, index) => ({
+      update_id: 900 + index,
+      message,
+    }));
+
+    (ctx as unknown as { message: Message.PhotoMessage }).message = album[0];
+    (ctx as unknown as { update: BotContext['update'] }).update = updates as unknown as BotContext['update'];
+
+    await runPhotoHandlers(ctx);
+    assert.equal(unknownHandler.mock.callCount(), 0);
+
+    await runMediaGroupHandler(ctx);
+
+    assert.equal(unknownHandler.mock.callCount(), 0);
+
+    const verification = ctx.session.executor.verification.courier;
+    assert.equal(verification.status, 'submitted');
+    assert.equal(persistMock.mock.callCount(), 1);
+    assert.equal(publishMock.mock.callCount(), 1);
+    assert.equal(reportVerificationMock.mock.callCount(), 1);
+
+    const progressStep = recordedSteps.find((step) => step.id === 'executor:verification:progress');
+    assert.ok(progressStep, 'progress step should be shown for album uploads');
+    const submittedStep = recordedSteps.find((step) => step.id === 'executor:verification:submitted');
+    assert.ok(submittedStep, 'submitted step should be shown after album uploads');
+  });
+
+  it('delegates photo receipts to the subscription handler when awaitingReceipt', async () => {
+    const { runPhotoHandlers, unknownHandler } = registerVerificationAndSubscriptionHandlers();
+    const { ctx } = createContext();
+
+    ctx.session.executor.subscription.status = 'awaitingReceipt';
+    ctx.session.executor.subscription.selectedPeriodId = '7';
+
+    const message: Message.PhotoMessage = {
+      message_id: 950,
+      chat: { id: ctx.chat!.id, type: 'private' as const, first_name: 'Executor' },
+      date: Date.now(),
+      photo: [
+        { file_id: 'receipt-small', file_unique_id: 'receipt', width: 100, height: 100 },
+        { file_id: 'receipt-best', file_unique_id: 'receipt', width: 1000, height: 1000 },
+      ],
+    };
+
+    (ctx as unknown as { message: Message.PhotoMessage }).message = message;
+
+    await runPhotoHandlers(ctx);
+
+    assert.equal(unknownHandler.mock.callCount(), 0);
+    assert.equal(persistMock.mock.callCount(), 0);
+    assert.equal(publishMock.mock.callCount(), 0);
+    assert.equal(reportVerificationMock.mock.callCount(), 0);
+    assert.equal(submitPaymentMock.mock.callCount(), 1);
+    assert.equal(reportPaymentMock.mock.callCount(), 1);
+    assert.equal(ctx.session.executor.subscription.status, 'pendingModeration');
+
+    const receiptStep = recordedSteps.find(
+      (step) => step.id === 'executor:subscription:receipt-accepted',
+    );
+    assert.ok(receiptStep, 'receipt confirmation step should be shown');
   });
 });
