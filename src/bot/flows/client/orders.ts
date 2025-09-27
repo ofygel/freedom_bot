@@ -31,10 +31,67 @@ import { CITY_LABEL } from '../../../domain/cities';
 import { buildStatusMessage } from '../../ui/status';
 import { registerFlowRecovery } from '../recovery';
 import { sendProcessingFeedback } from '../../services/feedback';
+import { logger } from '../../../config';
+import { copy } from '../../copy';
+
+type ClientOrdersFailureScope = 'list' | 'detail' | 'status' | 'cancel';
+
+const handleClientOrdersFailure = async (
+  ctx: BotContext,
+  scope: ClientOrdersFailureScope,
+  error: unknown,
+): Promise<void> => {
+  logger.error(
+    {
+      err: error,
+      scope,
+      chatId: ctx.chat?.id,
+      telegramId: ctx.auth?.user.telegramId,
+    },
+    'Client orders flow failed',
+  );
+
+  try {
+    await ui.clear(ctx, { ids: [...CLIENT_ORDER_STEP_IDS], cleanupOnly: false });
+  } catch (clearError) {
+    logger.warn(
+      { err: clearError, scope, chatId: ctx.chat?.id },
+      'Failed to clear client order steps after failure',
+    );
+  }
+
+  if (ctx.callbackQuery) {
+    try {
+      await ctx.answerCbQuery(copy.serviceUnavailable, { show_alert: true });
+    } catch (answerError) {
+      logger.warn(
+        { err: answerError, scope, chatId: ctx.chat?.id },
+        'Failed to send client orders fallback callback response',
+      );
+    }
+  }
+
+  if (typeof ctx.reply === 'function' && ctx.chat?.id) {
+    try {
+      await ctx.reply(copy.serviceUnavailable);
+    } catch (replyError) {
+      logger.warn(
+        { err: replyError, scope, chatId: ctx.chat?.id },
+        'Failed to send client orders fallback message',
+      );
+    }
+  }
+};
 
 const CLIENT_ORDERS_LIST_STEP_ID = 'client:orders:list';
 const CLIENT_ORDER_DETAIL_STEP_ID = 'client:orders:detail';
 const CLIENT_ORDER_STATUS_STEP_ID = 'client:orders:status';
+
+const CLIENT_ORDER_STEP_IDS = [
+  CLIENT_ORDERS_LIST_STEP_ID,
+  CLIENT_ORDER_DETAIL_STEP_ID,
+  CLIENT_ORDER_STATUS_STEP_ID,
+];
 
 const ACTIVE_ORDER_STATUSES: OrderStatus[] = ['open', 'claimed'];
 
@@ -324,11 +381,23 @@ const buildOrdersListKeyboard = (orders: OrderWithExecutor[]): InlineKeyboardMar
 const renderOrdersList = async (
   ctx: BotContext,
   orders?: OrderWithExecutor[],
-): Promise<OrderWithExecutor[]> => {
-  const items = orders ?? (await listClientOrders(ctx.auth.user.telegramId, {
-    statuses: ACTIVE_ORDER_STATUSES,
-    limit: 10,
-  }));
+): Promise<OrderWithExecutor[] | null> => {
+  let items = orders;
+  if (!items) {
+    try {
+      items = await listClientOrders(ctx.auth.user.telegramId, {
+        statuses: ACTIVE_ORDER_STATUSES,
+        limit: 10,
+      });
+    } catch (error) {
+      await handleClientOrdersFailure(ctx, 'list', error);
+      return null;
+    }
+  }
+
+  if (!items) {
+    return null;
+  }
 
   const text = buildOrdersListText(items);
   const keyboard = buildOrdersListKeyboard(items);
@@ -349,7 +418,14 @@ const showClientOrderDetail = async (
   orderId: number,
   options: OrderDetailOptions = {},
 ): Promise<OrderWithExecutor | null> => {
-  const order = await getOrderWithExecutorById(orderId);
+  let order: OrderWithExecutor | null;
+  try {
+    order = await getOrderWithExecutorById(orderId);
+  } catch (error) {
+    await handleClientOrdersFailure(ctx, 'detail', error);
+    return null;
+  }
+
   if (!order || order.clientId !== ctx.auth.user.telegramId) {
     await ctx.answerCbQuery('Заказ недоступен.');
     return null;
@@ -360,8 +436,8 @@ const showClientOrderDetail = async (
 };
 
 registerFlowRecovery('client:orders:list', async (ctx) => {
-  await renderOrdersList(ctx);
-  return true;
+  const orders = await renderOrdersList(ctx);
+  return orders !== null;
 });
 
 registerFlowRecovery('client:orders:detail', async (ctx, payload) => {
@@ -390,7 +466,14 @@ registerFlowRecovery('client:orders:status', async (ctx, payload) => {
     return false;
   }
 
-  const order = await getOrderWithExecutorById(orderId);
+  let order: OrderWithExecutor | null;
+  try {
+    order = await getOrderWithExecutorById(orderId);
+  } catch (error) {
+    await handleClientOrdersFailure(ctx, 'status', error);
+    return false;
+  }
+
   if (!order || order.clientId !== ctx.auth.user.telegramId) {
     await ui.clear(ctx, { ids: CLIENT_ORDER_STATUS_STEP_ID });
     return false;
@@ -406,11 +489,24 @@ const confirmClientOrderCancellation = async (
 ): Promise<void> => {
   const clientId = ctx.auth.user.telegramId;
   await sendProcessingFeedback(ctx);
-  const cancelled = await cancelClientOrder(orderId, clientId);
+  let cancelled: OrderWithExecutor | null;
+  try {
+    cancelled = await cancelClientOrder(orderId, clientId);
+  } catch (error) {
+    await handleClientOrdersFailure(ctx, 'cancel', error);
+    return;
+  }
 
   if (!cancelled) {
     await ctx.answerCbQuery('Не удалось отменить заказ. Возможно, он уже обработан.');
-    const current = await getOrderWithExecutorById(orderId);
+    let current: OrderWithExecutor | null;
+    try {
+      current = await getOrderWithExecutorById(orderId);
+    } catch (error) {
+      await handleClientOrdersFailure(ctx, 'detail', error);
+      return;
+    }
+
     if (current && current.clientId === clientId) {
       await renderOrderDetail(ctx, current);
     }
@@ -426,7 +522,10 @@ const confirmClientOrderCancellation = async (
 
   await ctx.answerCbQuery('Заказ отменён.');
   await renderOrderDetail(ctx, cancelled);
-  await renderOrdersList(ctx);
+  const orders = await renderOrdersList(ctx);
+  if (orders === null) {
+    return;
+  }
   await sendClientMenu(ctx, 'Заказ отменён. Что дальше?');
 };
 
