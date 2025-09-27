@@ -40,7 +40,7 @@ const createSubscriptionState = (): ExecutorSubscriptionState => ({
 });
 
 const createExecutorState = (): ExecutorFlowState => ({
-  role: 'courier',
+  role: undefined,
   verification: createVerificationState(),
   subscription: createSubscriptionState(),
 });
@@ -78,6 +78,8 @@ const rebuildExecutorState = (value: unknown): ExecutorFlowState => {
 
   if (isExecutorRole(executor.role)) {
     state.role = executor.role;
+  } else {
+    state.role = undefined;
   }
 
   if (executor.subscription && typeof executor.subscription === 'object') {

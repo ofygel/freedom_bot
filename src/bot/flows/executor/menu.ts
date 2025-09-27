@@ -172,31 +172,35 @@ const normaliseSubscriptionState = (
   lastReminderAt: normaliseReminderTimestamp(value?.lastReminderAt),
 });
 
-const resolveExecutorRole = (ctx: BotContext): ExecutorRole => {
-  const sessionRole = ctx.session.executor?.role;
-  if (sessionRole && EXECUTOR_ROLES.includes(sessionRole)) {
-    return sessionRole;
-  }
-
+const deriveAuthExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
   const authRole = ctx.auth.user.role;
   if (authRole === 'courier' || authRole === 'driver') {
     return authRole;
   }
 
-  return 'courier';
+  return undefined;
+};
+
+export const requireExecutorRole = (state: ExecutorFlowState): ExecutorRole => {
+  const role = state.role;
+  if (role && EXECUTOR_ROLES.includes(role)) {
+    return role;
+  }
+
+  throw new Error('Executor role is not set in session state');
 };
 
 export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
+  const derivedRole = deriveAuthExecutorRole(ctx);
+
   if (!ctx.session.executor) {
     ctx.session.executor = {
-      role: resolveExecutorRole(ctx),
+      role: derivedRole,
       verification: createDefaultVerificationState(),
       subscription: createSubscriptionState(),
     } satisfies ExecutorFlowState;
   } else {
-    if (!ctx.session.executor.role || !EXECUTOR_ROLES.includes(ctx.session.executor.role)) {
-      ctx.session.executor.role = resolveExecutorRole(ctx);
-    }
+    ctx.session.executor.role = derivedRole;
     ctx.session.executor.verification = normaliseVerificationState(
       ctx.session.executor.verification,
     );
@@ -230,6 +234,9 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
 
 export const resetVerificationState = (state: ExecutorFlowState): void => {
   const role = state.role;
+  if (!role || !EXECUTOR_ROLES.includes(role)) {
+    return;
+  }
   const current = state.verification[role];
   state.verification[role] = {
     ...createRoleVerificationState(),
@@ -296,7 +303,8 @@ const determineExecutorAccessStatus = (
   ctx: BotContext,
   state: ExecutorFlowState,
 ): ExecutorAccessStatus => {
-  const isVerified = isExecutorRoleVerified(ctx, state.role);
+  const role = requireExecutorRole(state);
+  const isVerified = isExecutorRoleVerified(ctx, role);
 
   return {
     isVerified,
@@ -312,7 +320,8 @@ const shouldRedirectToVerification = (
     return false;
   }
 
-  const verification = state.verification[state.role];
+  const role = requireExecutorRole(state);
+  const verification = state.verification[role];
   return verification.status === 'idle';
 };
 
@@ -335,8 +344,9 @@ const buildVerificationSection = (
   state: ExecutorFlowState,
   access: ExecutorAccessStatus,
 ): string[] => {
-  const copy = getExecutorRoleCopy(state.role);
-  const guidance = getVerificationRoleGuidance(state.role);
+  const role = requireExecutorRole(state);
+  const copy = getExecutorRoleCopy(role);
+  const guidance = getVerificationRoleGuidance(role);
 
   if (access.isVerified) {
     return [
@@ -346,7 +356,7 @@ const buildVerificationSection = (
     ];
   }
 
-  const verification = state.verification[state.role];
+  const verification = state.verification[role];
   const uploaded = verification.uploadedPhotos.length;
   const required = ensurePositiveRequirement(verification.requiredPhotos);
 
@@ -386,7 +396,8 @@ const buildSubscriptionSection = (
   access: ExecutorAccessStatus,
 ): string[] => {
   const { subscription } = state;
-  const copy = getExecutorRoleCopy(state.role);
+  const role = requireExecutorRole(state);
+  const copy = getExecutorRoleCopy(role);
   const channelLabel = `канал ${copy.pluralGenitive}`;
 
   if (!access.isVerified) {
@@ -432,8 +443,9 @@ const buildNextStepsSection = (
   state: ExecutorFlowState,
   access: ExecutorAccessStatus,
 ): string[] => {
-  const copy = getExecutorRoleCopy(state.role);
-  const guidance = getVerificationRoleGuidance(state.role);
+  const role = requireExecutorRole(state);
+  const copy = getExecutorRoleCopy(role);
+  const guidance = getVerificationRoleGuidance(role);
 
   if (!access.isVerified) {
     return [
@@ -476,7 +488,8 @@ const buildMenuText = (
   cityLabel: string,
   user: AuthUser,
 ): string => {
-  const copy = getExecutorRoleCopy(state.role);
+  const role = requireExecutorRole(state);
+  const copy = getExecutorRoleCopy(role);
 
   const statusLines: string[] = [];
   if (user.trialEndsAt && Number.isFinite(user.trialEndsAt.getTime())) {
@@ -489,7 +502,7 @@ const buildMenuText = (
     }
   }
 
-  const verification = state.verification[state.role];
+  const verification = state.verification[role];
   const uploadedPhotos = verification.uploadedPhotos.length;
   const requiredPhotos = ensurePositiveRequirement(verification.requiredPhotos);
   const verificationStatusLabel =
@@ -550,6 +563,9 @@ export const showExecutorMenu = async (
   uiState.pendingCityAction = undefined;
 
   const state = ensureExecutorState(ctx);
+  if (!state.role || !EXECUTOR_ROLES.includes(state.role)) {
+    return;
+  }
   const access = determineExecutorAccessStatus(ctx, state);
 
   if (!options.skipAccessCheck) {

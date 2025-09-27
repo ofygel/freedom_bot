@@ -145,18 +145,23 @@ const notifyTrialFailure = async (ctx: BotContext): Promise<void> => {
 
 const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
   const state = ensureExecutorState(ctx);
+  const role = state.role;
+  if (!role) {
+    await ctx.answerCbQuery();
+    return;
+  }
 
   if (!config.features.trialEnabled) {
     await ctx.answerCbQuery('Пробный период недоступен.');
     return;
   }
 
-  const isVerified = isExecutorRoleVerified(ctx, state.role);
+  const isVerified = isExecutorRoleVerified(ctx, role);
   if (!isVerified) {
     state.subscription.status = 'idle';
     state.subscription.selectedPeriodId = undefined;
     state.subscription.pendingPaymentId = undefined;
-    const verificationRequiredMessage = buildVerificationRequiredMessage(state.role);
+    const verificationRequiredMessage = buildVerificationRequiredMessage(role);
     await ctx.answerCbQuery(verificationRequiredMessage);
     await ui.step(ctx, {
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
@@ -192,7 +197,7 @@ const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
       firstName: ctx.auth.user.firstName ?? undefined,
       lastName: ctx.auth.user.lastName ?? undefined,
       phone: ctx.auth.user.phone ?? ctx.session.phoneNumber ?? undefined,
-      role: state.role,
+      role,
       chatId: binding.chatId,
       trialDays: config.subscriptions.trialDays,
       currency: config.subscriptions.prices.currency,
@@ -267,15 +272,19 @@ export const startExecutorSubscription = async (
   options: StartExecutorSubscriptionOptions = {},
 ): Promise<void> => {
   const state = ensureExecutorState(ctx);
-  const copy = getExecutorRoleCopy(state.role);
+  const role = state.role;
+  if (!role) {
+    return;
+  }
+  const copy = getExecutorRoleCopy(role);
 
-  const isVerified = isExecutorRoleVerified(ctx, state.role);
+  const isVerified = isExecutorRoleVerified(ctx, role);
 
   if (!options.skipVerificationCheck && !isVerified) {
     state.subscription.status = 'idle';
     state.subscription.selectedPeriodId = undefined;
     state.subscription.pendingPaymentId = undefined;
-    const verificationRequiredMessage = buildVerificationRequiredMessage(state.role);
+    const verificationRequiredMessage = buildVerificationRequiredMessage(role);
     await ui.step(ctx, {
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
       text: verificationRequiredMessage,
@@ -328,13 +337,18 @@ const handlePeriodSelection = async (
   }
 
   const state = ensureExecutorState(ctx);
-  const isVerified = isExecutorRoleVerified(ctx, state.role);
+  const role = state.role;
+  if (!role) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  const isVerified = isExecutorRoleVerified(ctx, role);
 
   if (!isVerified) {
     state.subscription.status = 'idle';
     state.subscription.selectedPeriodId = undefined;
     state.subscription.pendingPaymentId = undefined;
-    const verificationRequiredMessage = buildVerificationRequiredMessage(state.role);
+    const verificationRequiredMessage = buildVerificationRequiredMessage(role);
     await ctx.answerCbQuery(verificationRequiredMessage);
     await ui.step(ctx, {
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
@@ -351,7 +365,7 @@ const handlePeriodSelection = async (
 
   await ctx.answerCbQuery(`Период: ${period.label}`);
 
-  const copy = getExecutorRoleCopy(state.role);
+  const copy = getExecutorRoleCopy(role);
   await ui.step(ctx, {
     id: SUBSCRIPTION_CONFIRMATION_STEP_ID,
     text: buildPeriodConfirmationMessage(period, copy),
@@ -413,6 +427,10 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<boolean> => {
   }
 
   const state = ensureExecutorState(ctx);
+  const role = state.role;
+  if (!role) {
+    return false;
+  }
   const subscription = state.subscription;
 
   if (subscription.status !== 'awaitingReceipt') {
@@ -451,7 +469,7 @@ const handleReceiptUpload = async (ctx: BotContext): Promise<boolean> => {
       period,
       submittedAt,
       executor: {
-        role: state.role,
+        role,
         telegramId: ctx.auth.user.telegramId,
         chatId: ctx.chat.id,
         username: ctx.auth.user.username ?? undefined,

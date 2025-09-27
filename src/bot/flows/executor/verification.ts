@@ -19,6 +19,7 @@ import {
   ensureExecutorState,
   isExecutorRoleVerified,
   isExecutorMenuTextCommand,
+  requireExecutorRole,
   resetVerificationState,
   showExecutorMenu,
 } from './menu';
@@ -134,6 +135,19 @@ const submitForModeration = async (
   }
 
   const role = state.role;
+  if (!role) {
+    logger.error(
+      { chatId: ctx.chat?.id },
+      'Cannot submit verification without executor role',
+    );
+    await ui.step(ctx, {
+      id: VERIFICATION_SUBMISSION_FAILED_STEP_ID,
+      text: 'Не удалось отправить документы на проверку. Попробуйте позже.',
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+    return false;
+  }
   const verification = state.verification[role];
   const copy = getExecutorRoleCopy(role);
   const submittedAt = Date.now();
@@ -351,6 +365,9 @@ export const startExecutorVerification = async (
   ensureExecutorState(ctx);
   const state = ctx.session.executor;
   const role = state.role;
+  if (!role) {
+    return;
+  }
   const verification = state.verification[role];
   const alreadyVerified = isExecutorRoleVerified(ctx, role);
   const copy = getExecutorRoleCopy(role);
@@ -406,6 +423,9 @@ const handleIncomingPhoto = async (
   }
 
   const role = state.role;
+  if (!role) {
+    return false;
+  }
   let verification = state.verification[role];
   const copy = getExecutorRoleCopy(role);
   const alreadyVerified = isExecutorRoleVerified(ctx, role);
@@ -547,7 +567,12 @@ const handleTextDuringCollection = async (ctx: BotContext, next: () => Promise<v
   }
 
   const state = ensureExecutorState(ctx);
-  const verification = state.verification[state.role];
+  const role = state.role;
+  if (!role) {
+    await next();
+    return;
+  }
+  const verification = state.verification[role];
   if (verification.status !== 'collecting') {
     await next();
     return;
@@ -751,7 +776,11 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
     const state = ensureExecutorState(ctx);
     resetVerificationState(state);
 
-    const roleState = state.verification[state.role];
+    const role = state.role;
+    if (!role) {
+      return;
+    }
+    const roleState = state.verification[role];
     roleState.status = 'idle';
 
     if (ctx.chat?.id) {

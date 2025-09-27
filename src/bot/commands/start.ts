@@ -87,7 +87,12 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
   await hideClientMenu(ctx, 'Возвращаю стандартную клавиатуру…');
 
   const executorState = ensureExecutorState(ctx);
-  const verification = executorState.verification[executorState.role];
+  const role = executorState.role;
+  if (!role) {
+    await presentRoleSelection(ctx);
+    return;
+  }
+  const verification = executorState.verification[role];
   if (verification.status === 'collecting') {
     await startExecutorVerification(ctx);
     return;

@@ -39,11 +39,15 @@ export const buildVerificationSummary = (
   options: VerificationSummaryOptions = {},
 ): string => {
   const applicant = ctx.auth.user;
-  const copy = getExecutorRoleCopy(state.role);
-  const verification = state.verification[state.role];
+  const role = state.role;
+  if (!role) {
+    throw new Error('Cannot build verification summary without executor role');
+  }
+  const copy = getExecutorRoleCopy(role);
+  const verification = state.verification[role];
   const lines = [
     `🆕 Новая заявка на верификацию ${copy.genitive}.`,
-    `Роль: ${copy.noun} (${state.role})`,
+    `Роль: ${copy.noun} (${role})`,
     `Telegram ID: ${ctx.from?.id ?? 'неизвестно'}`,
   ];
 
@@ -80,7 +84,11 @@ export const remainingVerificationCooldown = (
   now = Date.now(),
   cooldownMs = DEFAULT_COOLDOWN_MS,
 ): number => {
-  const verification = state.verification[state.role];
+  const role = state.role;
+  if (!role) {
+    return 0;
+  }
+  const verification = state.verification[role];
   if (!verification.submittedAt) {
     return 0;
   }

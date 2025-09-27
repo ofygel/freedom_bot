@@ -104,7 +104,7 @@ export interface ExecutorSubscriptionState {
 export type ExecutorVerificationState = Record<ExecutorRole, ExecutorVerificationRoleState>;
 
 export interface ExecutorFlowState {
-  role: ExecutorRole;
+  role?: ExecutorRole;
   verification: ExecutorVerificationState;
   subscription: ExecutorSubscriptionState;
 }
