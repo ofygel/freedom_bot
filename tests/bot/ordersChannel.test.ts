@@ -316,7 +316,7 @@ describe('registerOrdersChannel', () => {
     withIdempotencyMock = undefined;
   });
 
-  it('answers callback with service unavailable when idempotency guard fails', async () => {
+  it('answers callback with duplicate warning when idempotency guard detects repeat', async () => {
     const actions: Array<{ pattern: RegExp; handler: (ctx: BotContext) => Promise<void> }> = [];
     const bot = {
       action: (pattern: RegExp, handler: (ctx: BotContext) => Promise<void>) => {
@@ -339,7 +339,7 @@ describe('registerOrdersChannel', () => {
       from: { id: 12345 },
     } as unknown as BotContext;
 
-    withIdempotencyMock = mock.method(idempotency, 'withIdempotency', async () => ({ status: 'error' }));
+    withIdempotencyMock = mock.method(idempotency, 'withIdempotency', async () => ({ status: 'duplicate' }));
 
     await acceptAction.handler(ctx);
 
@@ -349,7 +349,7 @@ describe('registerOrdersChannel', () => {
     assert.equal(answerCbQuery.mock.callCount(), 1);
     const [answerCall] = answerCbQuery.mock.calls;
     assert.ok(answerCall, 'answerCbQuery should be invoked');
-    assert.equal(answerCall.arguments[0], copy.serviceUnavailable);
-    assert.deepEqual(answerCall.arguments[1], { show_alert: true });
+    assert.equal(answerCall.arguments[0], 'Запрос уже обработан.');
+    assert.deepEqual(answerCall.arguments[1], undefined);
   });
 });
