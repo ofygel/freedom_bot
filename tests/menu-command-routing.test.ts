@@ -15,6 +15,7 @@ import { pool } from '../src/db';
 let executorMenuModule: typeof import('../src/bot/flows/executor/menu');
 let clientMenuModule: typeof import('../src/bot/flows/client/menu');
 let registerExecutorMenu: typeof import('../src/bot/flows/executor/menu')['registerExecutorMenu'];
+let registerClientMenu: typeof import('../src/bot/flows/client/menu')['registerClientMenu'];
 
 before(async () => {
   process.env.BOT_TOKEN = process.env.BOT_TOKEN ?? 'test-token';
@@ -33,6 +34,7 @@ before(async () => {
   executorMenuModule = await import('../src/bot/flows/executor/menu');
   clientMenuModule = await import('../src/bot/flows/client/menu');
   ({ registerExecutorMenu } = executorMenuModule);
+  ({ registerClientMenu } = clientMenuModule);
 });
 
 const DEFAULT_CITY = 'almaty' as const;
@@ -164,32 +166,63 @@ const createMockBot = () => {
   }) as unknown) as Telegraf<BotContext>['command'];
 
   const triggerAction = async (payload: string, ctx: BotContext): Promise<void> => {
-    for (const action of actions) {
-      if (typeof action.trigger === 'string') {
-        if (action.trigger === payload) {
-          (ctx as BotContext & { match?: string }).match = payload;
-          await action.handler(ctx);
-          delete (ctx as BotContext & { match?: string }).match;
-          return;
+    const matchedActions = actions
+      .map((entry) => {
+        if (typeof entry.trigger === 'string') {
+          if (entry.trigger !== payload) {
+            return undefined;
+          }
+
+          return { entry, match: payload } as const;
         }
-        continue;
-      }
 
-      const match = action.trigger.exec(payload);
-      if (!match) {
-        continue;
-      }
+        entry.trigger.lastIndex = 0;
+        const match = entry.trigger.exec(payload);
+        if (!match) {
+          return undefined;
+        }
 
-      (ctx as BotContext & { match?: RegExpExecArray }).match = match;
-      try {
-        await action.handler(ctx, undefined);
-      } finally {
-        delete (ctx as BotContext & { match?: RegExpExecArray }).match;
-      }
-      return;
+        return { entry, match } as const;
+      })
+      .filter(Boolean) as Array<{
+      entry: { handler: ActionHandler };
+      match: string | RegExpExecArray;
+    }>;
+
+    if (matchedActions.length === 0) {
+      throw new Error(`Action handler not found for payload: ${payload}`);
     }
 
-    throw new Error(`Action handler not found for payload: ${payload}`);
+    const mutableCtx = ctx as BotContext & { match?: string | RegExpExecArray };
+
+    const run = async (position: number): Promise<void> => {
+      const candidate = matchedActions[position];
+      if (!candidate) {
+        return;
+      }
+
+      const {
+        entry: { handler },
+        match,
+      } = candidate;
+
+      const previousMatch = mutableCtx.match;
+      mutableCtx.match = match;
+
+      try {
+        await handler(mutableCtx, async () => {
+          await run(position + 1);
+        });
+      } finally {
+        if (previousMatch !== undefined) {
+          mutableCtx.match = previousMatch;
+        } else {
+          delete mutableCtx.match;
+        }
+      }
+    };
+
+    await run(0);
   };
 
   return {
@@ -477,6 +510,32 @@ describe("/menu command routing", () => {
       assert.equal(ctx.session.executor.role, 'courier');
     } finally {
       queryMock.mock.restore();
+      showExecutorMenuMock.mock.restore();
+      showClientMenuMock.mock.restore();
+    }
+  });
+
+  it('keeps clients in the client menu flow when switching cities', async () => {
+    const showExecutorMenuMock = mock.method(
+      executorMenuModule,
+      'showExecutorMenu',
+      async () => undefined,
+    );
+    const showClientMenuMock = mock.method(clientMenuModule, 'showMenu', async () => undefined);
+
+    const { bot, triggerAction } = createMockBot();
+    registerClientMenu(bot);
+    registerExecutorMenu(bot);
+
+    const ctx = createContext('client');
+    ctx.session.ui.pendingCityAction = 'clientMenu';
+
+    try {
+      await triggerAction('city:almaty', ctx);
+
+      assert.equal(showExecutorMenuMock.mock.callCount(), 0);
+      assert.equal(showClientMenuMock.mock.callCount(), 1);
+    } finally {
       showExecutorMenuMock.mock.restore();
       showClientMenuMock.mock.restore();
     }
