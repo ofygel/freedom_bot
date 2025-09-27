@@ -391,6 +391,48 @@ describe('executor role selection', () => {
     assert.equal(ctx.session.executor.verification.courier.status, 'collecting');
   });
 
+  it('keeps clients in the client menu when changing the city', async () => {
+    const setUserCitySelectedMock = mock.method(
+      usersService,
+      'setUserCitySelected',
+      async () => undefined,
+    );
+
+    const { bot, dispatchAction } = createMockBot();
+    registerCityAction(bot);
+    registerExecutorMenu(bot);
+
+    const { ctx } = createMockContext();
+    ctx.auth.user.role = 'client';
+    ctx.auth.user.status = 'active_client';
+    ctx.session.city = undefined;
+    ctx.auth.user.citySelected = undefined;
+    ctx.session.ui.pendingCityAction = 'clientMenu';
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: 'city:almaty',
+        message: { message_id: 350, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    try {
+      await dispatchAction('city:almaty', ctx);
+    } finally {
+      setUserCitySelectedMock.mock.restore();
+    }
+
+    const verificationPrompt = recordedSteps.find(
+      (step) => step.id === 'executor:verification:prompt',
+    );
+    const executorMenuStep = recordedSteps.find((step) => step.id === 'executor:menu:main');
+
+    assert.equal(verificationPrompt, undefined);
+    assert.equal(executorMenuStep, undefined);
+    assert.equal(ctx.session.executor.verification.courier.status, 'idle');
+    assert.equal(ctx.session.ui.pendingCityAction, 'clientMenu');
+  });
+
   it('starts driver verification after confirming the work city', async () => {
     const setChatCommandsMock = mock.method(
       commandsService,

@@ -172,16 +172,30 @@ const normaliseSubscriptionState = (
   lastReminderAt: normaliseReminderTimestamp(value?.lastReminderAt),
 });
 
+const resolveExecutorRole = (ctx: BotContext): ExecutorRole => {
+  const sessionRole = ctx.session.executor?.role;
+  if (sessionRole && EXECUTOR_ROLES.includes(sessionRole)) {
+    return sessionRole;
+  }
+
+  const authRole = ctx.auth.user.role;
+  if (authRole === 'courier' || authRole === 'driver') {
+    return authRole;
+  }
+
+  return 'courier';
+};
+
 export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
   if (!ctx.session.executor) {
     ctx.session.executor = {
-      role: 'courier',
+      role: resolveExecutorRole(ctx),
       verification: createDefaultVerificationState(),
       subscription: createSubscriptionState(),
     } satisfies ExecutorFlowState;
   } else {
     if (!ctx.session.executor.role || !EXECUTOR_ROLES.includes(ctx.session.executor.role)) {
-      ctx.session.executor.role = 'courier';
+      ctx.session.executor.role = resolveExecutorRole(ctx);
     }
     ctx.session.executor.verification = normaliseVerificationState(
       ctx.session.executor.verification,
@@ -580,11 +594,7 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
 
     const pendingCityAction = ctx.session.ui?.pendingCityAction;
     const userRole = ctx.auth.user.role;
-    const sessionExecutorRole = ctx.session.executor?.role;
-    const hasExecutorRole =
-      userRole === 'courier' ||
-      userRole === 'driver' ||
-      (sessionExecutorRole ? EXECUTOR_ROLES.includes(sessionExecutorRole) : false);
+    const hasExecutorRole = userRole === 'courier' || userRole === 'driver';
 
     const shouldShowExecutorMenu =
       pendingCityAction === EXECUTOR_MENU_CITY_ACTION || (!pendingCityAction && hasExecutorRole);
