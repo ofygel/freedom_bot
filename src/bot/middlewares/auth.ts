@@ -185,7 +185,7 @@ const buildAuthStateFromSnapshot = (
   }
 
   base.user.role = snapshot.role;
-  base.user.status = deriveSnapshotStatus(snapshot.role);
+  base.user.status = snapshot.status ?? deriveSnapshotStatus(snapshot.role);
   base.user.citySelected = snapshot.city ?? base.user.citySelected;
   base.user.isVerified = snapshot.executor.isVerified;
   base.executor = cloneExecutorState(snapshot.executor);
@@ -410,6 +410,7 @@ const applyAuthState = (
 
   ctx.session.authSnapshot = {
     role: authState.user.role,
+    status: authState.user.status,
     executor: cloneExecutorState(authState.executor),
     city: authState.user.citySelected,
     stale: options?.isStale ?? false,
@@ -497,8 +498,18 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     if (error instanceof AuthStateQueryError) {
       const cachedSnapshot = ctx.session.authSnapshot;
       if (cachedSnapshot) {
-        const authState = buildAuthStateFromSnapshot(ctx, cachedSnapshot);
-        applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
+        const snapshot: AuthStateSnapshot = {
+          role: cachedSnapshot.role,
+          status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
+          executor: cloneExecutorState(cachedSnapshot.executor),
+          city: cachedSnapshot.city,
+          stale: true,
+        };
+
+        ctx.session.authSnapshot = snapshot;
+        const authState = buildAuthStateFromSnapshot(ctx, snapshot);
+        ctx.auth = authState;
+        ctx.session.isAuthenticated = false;
         logger.warn(
           { err: error.cause ?? error, update: ctx.update },
           'Failed to load auth state, using cached snapshot',
@@ -508,7 +519,17 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       }
 
       const authState = createGuestAuthState(ctx.from);
-      applyAuthState(ctx, authState, { isAuthenticated: false, isStale: false });
+      const snapshot: AuthStateSnapshot = {
+        role: authState.user.role,
+        status: authState.user.status,
+        executor: cloneExecutorState(authState.executor),
+        city: authState.user.citySelected,
+        stale: true,
+      };
+
+      ctx.session.authSnapshot = snapshot;
+      ctx.auth = authState;
+      ctx.session.isAuthenticated = false;
       logger.warn({ err: error.cause ?? error, update: ctx.update }, 'Failed to load auth state, using guest context');
       await next();
       return;

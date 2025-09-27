@@ -63,6 +63,7 @@ export interface AuthState {
 
 export interface AuthStateSnapshot {
   role: UserRole;
+  status: UserStatus;
   executor: AuthExecutorState;
   city?: AppCity;
   stale: boolean;

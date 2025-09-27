@@ -665,6 +665,7 @@ describe('executor role selection', () => {
     ctx.session.phoneNumber = '+7 700 000 00 00';
     ctx.session.authSnapshot = {
       role: 'courier',
+      status: 'active_executor',
       executor: {
         verifiedRoles: { courier: true, driver: false },
         hasActiveSubscription: true,
@@ -702,7 +703,12 @@ describe('executor role selection', () => {
     assert.ok(menuStep, 'executor menu should be displayed after auth snapshot fallback');
     assert.equal(ctx.session.isAuthenticated, false);
     assert.equal(ctx.session.authSnapshot?.stale, true);
+    assert.equal(ctx.session.authSnapshot?.status, 'active_executor');
     assert.equal(ctx.auth.user.role, 'courier');
+    assert.equal(ctx.auth.user.status, 'active_executor');
+    assert.equal(ctx.auth.executor.verifiedRoles.courier, true);
+    assert.equal(ctx.auth.executor.hasActiveSubscription, true);
+    assert.equal(ctx.auth.executor.isVerified, true);
   });
 
   it('retains the session executor role during guest fallback city callbacks', async () => {

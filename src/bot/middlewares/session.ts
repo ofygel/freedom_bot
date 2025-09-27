@@ -29,6 +29,7 @@ import {
   type SupportSessionState,
   type UiSessionState,
   type UserRole,
+  type UserStatus,
   type ExecutorRole,
 } from '../types';
 
@@ -75,9 +76,20 @@ const createSupportState = (): SupportSessionState => ({
 });
 
 const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'courier', 'driver', 'moderator'];
+const USER_STATUSES: readonly UserStatus[] = [
+  'guest',
+  'onboarding',
+  'awaiting_phone',
+  'active_client',
+  'active_executor',
+  'trial_expired',
+  'suspended',
+  'banned',
+];
 
 const createAuthSnapshot = (): AuthStateSnapshot => ({
   role: 'guest',
+  status: 'guest',
   executor: {
     verifiedRoles: { courier: false, driver: false },
     hasActiveSubscription: false,
@@ -101,6 +113,10 @@ const rebuildAuthSnapshot = (value: unknown): AuthStateSnapshot => {
 
   if (typeof candidate.role === 'string' && USER_ROLES.includes(candidate.role as UserRole)) {
     snapshot.role = candidate.role as UserRole;
+  }
+
+  if (typeof candidate.status === 'string' && USER_STATUSES.includes(candidate.status as UserStatus)) {
+    snapshot.status = candidate.status as UserStatus;
   }
 
   if (candidate.executor && typeof candidate.executor === 'object') {
