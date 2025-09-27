@@ -49,14 +49,7 @@ export const registerMembershipSync = (
       return;
     }
 
-    let binding;
-    try {
-      binding = await getChannelBinding('drivers');
-    } catch (error) {
-      logger.error({ err: error }, 'Failed to resolve drivers channel binding');
-      return;
-    }
-
+    const binding = await getChannelBinding('drivers');
     if (!binding || binding.chatId !== update.chat.id) {
       return;
     }
