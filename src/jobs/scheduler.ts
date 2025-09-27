@@ -40,6 +40,7 @@ const formatDateTime = (date: Date): string =>
   new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'long',
     timeStyle: 'short',
+    timeZone: config.timezone,
   }).format(date);
 
 const buildUserLabel = (subscription: SubscriptionWithUser): string => {
@@ -274,17 +275,21 @@ export const startSubscriptionScheduler = (
     return;
   }
 
-  task = cron.schedule(config.jobs.subscription, () => {
-    if (running) {
-      logger.warn('Previous subscription maintenance is still running, skipping');
-      return;
-    }
+  task = cron.schedule(
+    config.jobs.subscription,
+    () => {
+      if (running) {
+        logger.warn('Previous subscription maintenance is still running, skipping');
+        return;
+      }
 
-    running = true;
-    void runMaintenance(bot.telegram).finally(() => {
-      running = false;
-    });
-  });
+      running = true;
+      void runMaintenance(bot.telegram).finally(() => {
+        running = false;
+      });
+    },
+    { timezone: config.timezone },
+  );
 
   logger.info('Subscription scheduler initialised');
 };

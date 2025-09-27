@@ -197,6 +197,7 @@ const formatDateTime = (date: Date): string =>
   new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: config.timezone,
   }).format(date);
 
 const buildReminderMessage = (
@@ -365,7 +366,11 @@ export const startPaymentReminderJob = (bot: Telegraf<BotContext>): void => {
     return;
   }
 
-  task = cron.schedule(config.jobs.paymentReminder, () => runSafely(bot));
+  task = cron.schedule(
+    config.jobs.paymentReminder,
+    () => runSafely(bot),
+    { timezone: config.timezone },
+  );
 };
 
 export const stopPaymentReminderJob = (): void => {

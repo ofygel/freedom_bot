@@ -10,14 +10,18 @@ export const startMetricsReporter = (): void => {
     return;
   }
 
-  task = cron.schedule(config.jobs.metrics, () => {
-    try {
-      const current = snapshot();
-      logger.info({ metric: 'agg', snapshot: current }, 'metrics_snapshot');
-    } catch (error) {
-      logger.error({ err: error }, 'metrics_reporter_failed');
-    }
-  });
+  task = cron.schedule(
+    config.jobs.metrics,
+    () => {
+      try {
+        const current = snapshot();
+        logger.info({ metric: 'agg', snapshot: current }, 'metrics_snapshot');
+      } catch (error) {
+        logger.error({ err: error }, 'metrics_reporter_failed');
+      }
+    },
+    { timezone: config.timezone },
+  );
 };
 
 export const stopMetricsReporter = (): void => {

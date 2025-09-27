@@ -80,6 +80,7 @@ const formatDateTime = (value?: Date | number | string): string | undefined => {
   return new Intl.DateTimeFormat('ru-RU', {
     dateStyle: 'short',
     timeStyle: 'short',
+    timeZone: config.timezone,
   }).format(date);
 };
 
