@@ -92,6 +92,25 @@ app.on('message', unknownHandler);
 
 let gracefulShutdownConfigured = false;
 let cleanupStarted = false;
+let databaseConnectionFallback = false;
+
+const RETRY_INTERVAL_MS = 10_000;
+const retryTimers = new Map<string, NodeJS.Timeout>();
+const CONNECTION_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'EPIPE',
+]);
+const POSTGRES_CONNECTION_CODE_PREFIXES = ['57P', '08'];
+const CONNECTION_ERROR_PATTERNS = [
+  /connect(?:ion)? (?:was )?refused/i,
+  /connect(?:ion)? (?:failed|terminated|closed)/i,
+  /terminating connection/i,
+  /server closed the connection unexpectedly/i,
+];
 
 type CleanupTask = () => Promise<void> | void;
 
@@ -100,6 +119,100 @@ const cleanupTasks: CleanupTask[] = [];
 export const registerCleanupTask = (task: CleanupTask): void => {
   cleanupTasks.push(task);
 };
+
+const stopRetryTimer = (name: string): void => {
+  const timer = retryTimers.get(name);
+  if (timer) {
+    clearInterval(timer);
+    retryTimers.delete(name);
+  }
+};
+
+const extractErrorMessage = (error: unknown): string | undefined => {
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (error && typeof error === 'object' && 'message' in error) {
+    const candidate = (error as { message?: unknown }).message;
+    if (typeof candidate === 'string') {
+      return candidate;
+    }
+  }
+
+  return undefined;
+};
+
+const isConnectionError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') {
+    const message = extractErrorMessage(error);
+    return message ? CONNECTION_ERROR_PATTERNS.some((pattern) => pattern.test(message)) : false;
+  }
+
+  const candidate = error as { code?: unknown };
+  const code = candidate.code;
+
+  if (typeof code === 'string') {
+    if (CONNECTION_ERROR_CODES.has(code)) {
+      return true;
+    }
+
+    if (POSTGRES_CONNECTION_CODE_PREFIXES.some((prefix) => code.startsWith(prefix))) {
+      return true;
+    }
+  }
+
+  const message = extractErrorMessage(error);
+  if (!message) {
+    return false;
+  }
+
+  return CONNECTION_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+};
+
+const scheduleRetry = (
+  name: string,
+  task: () => Promise<void>,
+  onSuccess?: () => void,
+  onFailure?: (error: unknown) => void,
+): void => {
+  if (retryTimers.has(name)) {
+    return;
+  }
+
+  let running = false;
+
+  const invoke = async (): Promise<void> => {
+    if (running) {
+      return;
+    }
+    running = true;
+    try {
+      await task();
+      stopRetryTimer(name);
+      onSuccess?.();
+    } catch (error) {
+      onFailure?.(error);
+    } finally {
+      running = false;
+    }
+  };
+
+  const timer = setInterval(() => {
+    void invoke();
+  }, RETRY_INTERVAL_MS);
+
+  retryTimers.set(name, timer);
+  registerCleanupTask(() => {
+    stopRetryTimer(name);
+  });
+};
+
+export const isDatabaseFallbackActive = (): boolean => databaseConnectionFallback;
 
 export const isShutdownInProgress = (): boolean => cleanupStarted;
 
@@ -171,19 +284,104 @@ export const setupGracefulShutdown = (bot: Telegraf<BotContext>): void => {
 setupGracefulShutdown(app);
 
 export const initialiseAppState = async (): Promise<void> => {
-  await ensureDatabaseSchema();
+  try {
+    await ensureDatabaseSchema();
+    databaseConnectionFallback = false;
+    stopRetryTimer('ensureDatabaseSchema');
+  } catch (error) {
+    if (!isConnectionError(error)) {
+      throw error;
+    }
 
-  const tasks: Promise<void>[] = [
-    restoreVerificationModerationQueue().catch((error) => {
-      logger.error({ err: error }, 'Failed to restore verification moderation queue');
-    }),
-    restorePaymentModerationQueue().catch((error) => {
-      logger.error({ err: error }, 'Failed to restore payment moderation queue');
-    }),
-    restoreSupportThreads().catch((error) => {
-      logger.error({ err: error }, 'Failed to restore support threads');
-    }),
+    databaseConnectionFallback = true;
+    logger.warn({ err: error }, 'Database schema check failed due to connection error, scheduling retry');
+    scheduleRetry(
+      'ensureDatabaseSchema',
+      ensureDatabaseSchema,
+      () => {
+        databaseConnectionFallback = false;
+        logger.info('Database schema check succeeded after retry, disabling fallback mode');
+      },
+      (retryError) => {
+        if (isConnectionError(retryError)) {
+          logger.warn(
+            { err: retryError },
+            'Database schema retry failed due to connection error, will continue retrying',
+          );
+        } else {
+          logger.error({ err: retryError }, 'Database schema retry failed with unexpected error');
+        }
+      },
+    );
+  }
+
+  const startupTasks: Array<{
+    name: string;
+    label: string;
+    handler: () => Promise<void>;
+  }> = [
+    {
+      name: 'restoreVerificationModerationQueue',
+      label: 'verification moderation queue',
+      handler: restoreVerificationModerationQueue,
+    },
+    {
+      name: 'restorePaymentModerationQueue',
+      label: 'payment moderation queue',
+      handler: restorePaymentModerationQueue,
+    },
+    {
+      name: 'restoreSupportThreads',
+      label: 'support threads',
+      handler: restoreSupportThreads,
+    },
   ];
 
+  const tasks = startupTasks.map(async ({ name, label, handler }) => {
+    try {
+      await handler();
+      stopRetryTimer(name);
+    } catch (error) {
+      if (isConnectionError(error)) {
+        logger.warn(
+          { err: error },
+          `Failed to restore ${label} due to connection error, scheduling retry`,
+        );
+        scheduleRetry(
+          name,
+          handler,
+          () => {
+            logger.info(`Successfully restored ${label} after retry`);
+          },
+          (retryError) => {
+            if (isConnectionError(retryError)) {
+              logger.warn(
+                { err: retryError },
+                `Retry to restore ${label} failed due to connection error, will continue retrying`,
+              );
+            } else {
+              logger.error(
+                { err: retryError },
+                `Retry to restore ${label} failed with unexpected error`,
+              );
+            }
+          },
+        );
+      } else {
+        logger.error({ err: error }, `Failed to restore ${label}`);
+      }
+    }
+  });
+
   await Promise.all(tasks);
+};
+
+/**
+ * Testing helper used to reset retry state between test cases.
+ */
+export const resetStartupRetryStateForTests = (): void => {
+  for (const name of [...retryTimers.keys()]) {
+    stopRetryTimer(name);
+  }
+  databaseConnectionFallback = false;
 };
