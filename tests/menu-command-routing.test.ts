@@ -261,6 +261,7 @@ describe("/menu command routing", () => {
     session.executor.role = 'courier';
     session.authSnapshot = {
       role: 'courier',
+      status: 'active_executor',
       executor: {
         verifiedRoles: { courier: true, driver: false },
         hasActiveSubscription: true,
@@ -317,9 +318,12 @@ describe("/menu command routing", () => {
       assert.equal(ctx.session.authSnapshot?.stale, true);
       assert.equal(ctx.session.authSnapshot?.executor.verifiedRoles.courier, true);
       assert.equal(ctx.session.authSnapshot?.executor.hasActiveSubscription, true);
+      assert.equal(ctx.session.authSnapshot?.status, 'active_executor');
       assert.equal(ctx.auth.user.role, 'courier');
       assert.equal(ctx.auth.user.status, 'active_executor');
+      assert.equal(ctx.auth.executor.verifiedRoles.courier, true);
       assert.equal(ctx.auth.executor.hasActiveSubscription, true);
+      assert.equal(ctx.auth.executor.isVerified, true);
 
       await handler(ctx);
 
