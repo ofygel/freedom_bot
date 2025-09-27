@@ -11,10 +11,13 @@ import {
   type SessionState,
 } from '../src/bot/types';
 import { auth } from '../src/bot/middlewares/auth';
+import { session as sessionMiddlewareFactory } from '../src/bot/middlewares/session';
 import { pool } from '../src/db';
+import * as sessionCache from '../src/infra/sessionCache';
 import type { UiStepOptions } from '../src/bot/ui';
 
 let registerExecutorRoleSelect: typeof import('../src/bot/flows/executor/roleSelect')['registerExecutorRoleSelect'];
+let executorMenuModule: typeof import('../src/bot/flows/executor/menu');
 let ensureExecutorState: typeof import('../src/bot/flows/executor/menu')['ensureExecutorState'];
 let registerExecutorMenu: typeof import('../src/bot/flows/executor/menu')['registerExecutorMenu'];
 let EXECUTOR_MENU_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_ACTION'];
@@ -42,12 +45,13 @@ before(async () => {
   process.env.SUB_PRICE_30 = process.env.SUB_PRICE_30 ?? '16000';
 
   ({ registerExecutorRoleSelect } = await import('../src/bot/flows/executor/roleSelect'));
+  executorMenuModule = await import('../src/bot/flows/executor/menu');
   ({
     ensureExecutorState,
     registerExecutorMenu,
     EXECUTOR_MENU_ACTION,
     EXECUTOR_MENU_CITY_ACTION,
-  } = await import('../src/bot/flows/executor/menu'));
+  } = executorMenuModule);
   ({ registerExecutorVerification } = await import('../src/bot/flows/executor/verification'));
   ({ registerCityAction, CITY_ACTION_PATTERN } = await import('../src/bot/flows/common/citySelect'));
   commandsService = await import('../src/bot/services/commands');
@@ -415,6 +419,73 @@ describe('executor role selection', () => {
       menuStep,
       'executor menu should be shown when refresh action is used and auth falls back to guest',
     );
+  });
+
+  it('uses the cached executor role when session falls back to Redis during a DB outage', async () => {
+    const { bot, dispatchAction } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const { ctx } = createMockContext();
+    ctx.auth.user.role = 'guest';
+    ctx.auth.executor.verifiedRoles.courier = true;
+    ctx.auth.executor.hasActiveSubscription = true;
+    ctx.auth.executor.isVerified = true;
+    ctx.auth.user.citySelected = DEFAULT_CITY;
+
+    Object.assign(ctx as BotContext & { callbackQuery?: typeof ctx.callbackQuery }, {
+      callbackQuery: {
+        data: EXECUTOR_MENU_ACTION,
+        message: { message_id: 990, chat: ctx.chat },
+      } as typeof ctx.callbackQuery,
+    });
+
+    const cachedState = createSessionState();
+    cachedState.executor.role = 'courier';
+    cachedState.isAuthenticated = true;
+    cachedState.city = DEFAULT_CITY;
+
+    const loadCacheMock = mock.method(sessionCache, 'loadSessionCache', async () => cachedState);
+    const saveCacheMock = mock.method(sessionCache, 'saveSessionCache', async () => undefined);
+    const connectMock = mock.method(pool, 'connect', async () => {
+      throw new Error('database offline');
+    });
+    const showExecutorMenuMock = mock.method(
+      executorMenuModule,
+      'showExecutorMenu',
+      async () => undefined,
+    );
+
+    const sessionMiddleware = sessionMiddlewareFactory();
+
+    let cachedCalls: typeof saveCacheMock.mock.calls = [];
+    let showExecutorCallCount = 0;
+
+    try {
+      await sessionMiddleware(ctx, async () => {
+        await dispatchAction(EXECUTOR_MENU_ACTION, ctx);
+      });
+      cachedCalls = saveCacheMock.mock.calls;
+      showExecutorCallCount = showExecutorMenuMock.mock.callCount();
+    } finally {
+      connectMock.mock.restore();
+      loadCacheMock.mock.restore();
+      saveCacheMock.mock.restore();
+      showExecutorMenuMock.mock.restore();
+    }
+
+    assert.equal(
+      showExecutorCallCount,
+      1,
+      'executor menu should be rendered even when session relies on cache fallback',
+    );
+    assert.equal(ctx.session.executor.role, 'courier');
+    assert.equal(ctx.session.isAuthenticated, false);
+
+    const lastCall = cachedCalls.at(-1);
+    assert.ok(lastCall, 'session state should be saved back to cache');
+    const savedState = lastCall.arguments[1] as SessionState;
+    assert.equal(savedState.isAuthenticated, false);
+    assert.equal(savedState.executor.role, 'courier');
   });
 
   it('keeps clients in the client menu when the executor refresh action is used', async () => {

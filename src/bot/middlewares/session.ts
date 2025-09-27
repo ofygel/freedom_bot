@@ -345,6 +345,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       client = await pool.connect();
     } catch (error) {
       ctx.session = cachedState ?? createDefaultState();
+      ctx.session.isAuthenticated = false;
       logger.warn({ err: error, key }, 'Failed to connect to database for session state');
 
       fallbackMode = true;
@@ -355,6 +356,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     const dbClient = client;
     if (!fallbackMode && !dbClient) {
       ctx.session = cachedState ?? createDefaultState();
+      ctx.session.isAuthenticated = false;
       logger.warn({ key }, 'Database client was not initialised for session state');
 
       fallbackMode = true;
@@ -371,6 +373,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         state = existing ?? cachedState ?? createDefaultState();
       } catch (error) {
         ctx.session = cachedState ?? createDefaultState();
+        ctx.session.isAuthenticated = false;
         logger.warn({ err: error, key }, 'Failed to load session state, using default state');
 
         fallbackMode = true;
