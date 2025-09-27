@@ -5,6 +5,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 
 import { pool } from '../src/db';
 import {
+  encodeRecentLocationId,
   findRecentLocation,
   loadRecentLocations,
   rememberLocation,
@@ -227,16 +228,24 @@ describe('client flows continue when recent locations fail', () => {
 
     const recentPickupHandler = findRegexActionHandler(
       actions,
-      /^client:order:delivery:recent:pickup:([a-f0-9]+)/,
+      /^client:order:delivery:recent:pickup:([A-Za-z0-9_-]+)/,
     );
 
     const { ctx, session, answeredCallbacks } = createClientContext();
     session.client.delivery.stage = 'collectingPickup';
+    const rawLocationId = 'deadbeef'.repeat(5);
+    const encodedLocationId = encodeRecentLocationId(rawLocationId);
+    if (!encodedLocationId) {
+      throw new Error('Failed to encode test location id');
+    }
     (ctx as any).callbackQuery = {
       id: 'callback',
-      data: 'client:order:delivery:recent:pickup:deadbeef',
+      data: `client:order:delivery:recent:pickup:${encodedLocationId}`,
     };
-    (ctx as any).match = ['client:order:delivery:recent:pickup:deadbeef', 'deadbeef'];
+    (ctx as any).match = [
+      `client:order:delivery:recent:pickup:${encodedLocationId}`,
+      encodedLocationId,
+    ];
 
     await recentPickupHandler(ctx);
 
