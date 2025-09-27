@@ -704,8 +704,8 @@ describe('executor role selection', () => {
     assert.equal(ctx.session.isAuthenticated, false);
     assert.equal(ctx.session.authSnapshot?.stale, true);
     assert.equal(ctx.session.authSnapshot?.status, 'active_executor');
-    assert.equal(ctx.auth.user.role, 'courier');
-    assert.equal(ctx.auth.user.status, 'active_executor');
+    assert.equal(ctx.auth.user.role, 'guest');
+    assert.equal(ctx.auth.user.status, 'guest');
     assert.equal(ctx.auth.executor.verifiedRoles.courier, true);
     assert.equal(ctx.auth.executor.hasActiveSubscription, true);
     assert.equal(ctx.auth.executor.isVerified, true);
