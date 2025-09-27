@@ -168,6 +168,21 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   setSessionMeta(ctx, meta);
 
   let nextError: unknown;
+  let fallbackMode = false;
+  let nextInvoked = false;
+
+  const invokeNext = async (): Promise<void> => {
+    if (nextInvoked) {
+      return;
+    }
+
+    nextInvoked = true;
+    try {
+      await next();
+    } catch (error) {
+      nextError = error;
+    }
+  };
 
   try {
     try {
@@ -176,79 +191,74 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       ctx.session = createDefaultState();
       logger.warn({ err: error, key }, 'Failed to connect to database for session state');
 
-      try {
-        await next();
-      } catch (innerError) {
-        nextError = innerError;
-      }
-
-      return;
+      fallbackMode = true;
+      await invokeNext();
     }
 
     const dbClient = client;
-    if (!dbClient) {
+    if (!fallbackMode && !dbClient) {
       ctx.session = createDefaultState();
       logger.warn({ key }, 'Database client was not initialised for session state');
 
+      fallbackMode = true;
+      await invokeNext();
+    }
+
+    let state: SessionState | undefined;
+
+    if (!fallbackMode && dbClient) {
+      const activeClient = dbClient;
       try {
-        await next();
-      } catch (innerError) {
-        nextError = innerError;
-      }
-
-      return;
-    }
-
-    let state: SessionState;
-
-    try {
-      const existing = await loadSessionState(dbClient, key);
-      state = existing ?? createDefaultState();
-    } catch (error) {
-      ctx.session = createDefaultState();
-      logger.warn({ err: error, key }, 'Failed to load session state, using default state');
-
-      try {
-        await next();
-      } catch (innerError) {
-        nextError = innerError;
-      }
-
-      return;
-    }
-
-    if (!('city' in state)) {
-      state.city = undefined;
-    }
-
-    if (!state.ui) {
-      state.ui = createUiState();
-    }
-
-    if (!state.support) {
-      state.support = createSupportState();
-    }
-
-    ctx.session = state;
-
-    try {
-      await next();
-    } catch (error) {
-      nextError = error;
-    }
-
-    if (meta.cleared) {
-      try {
-        await deleteSessionState(dbClient, key);
+        const existing = await loadSessionState(activeClient, key);
+        state = existing ?? createDefaultState();
       } catch (error) {
-        logger.warn({ err: error, key }, 'Failed to delete session state, continuing without persistence');
+        ctx.session = createDefaultState();
+        logger.warn({ err: error, key }, 'Failed to load session state, using default state');
+
+        fallbackMode = true;
+        await invokeNext();
       }
-    } else {
-      try {
-        await saveSessionState(dbClient, key, ctx.session);
-      } catch (error) {
-        logger.warn({ err: error, key }, 'Failed to save session state, continuing without persistence');
+    }
+
+    if (!fallbackMode && dbClient) {
+      const activeClient = dbClient;
+      if (!state) {
+        state = createDefaultState();
       }
+
+      if (!('city' in state)) {
+        state.city = undefined;
+      }
+
+      if (!state.ui) {
+        state.ui = createUiState();
+      }
+
+      if (!state.support) {
+        state.support = createSupportState();
+      }
+
+      ctx.session = state;
+
+      await invokeNext();
+
+      if (meta.cleared) {
+        try {
+          await deleteSessionState(activeClient, key);
+        } catch (error) {
+          logger.warn({ err: error, key }, 'Failed to delete session state, continuing without persistence');
+        }
+      } else {
+        try {
+          await saveSessionState(activeClient, key, ctx.session);
+        } catch (error) {
+          logger.warn({ err: error, key }, 'Failed to save session state, continuing without persistence');
+        }
+      }
+    }
+
+    if (fallbackMode) {
+      await invokeNext();
     }
   } finally {
     setSessionMeta(ctx, undefined);
