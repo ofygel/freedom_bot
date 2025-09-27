@@ -9,6 +9,8 @@ import {
   type BotContext,
   type SessionState,
 } from '../src/bot/types';
+import { auth } from '../src/bot/middlewares/auth';
+import { pool } from '../src/db';
 
 let executorMenuModule: typeof import('../src/bot/flows/executor/menu');
 let clientMenuModule: typeof import('../src/bot/flows/client/menu');
@@ -198,6 +200,104 @@ describe("/menu command routing", () => {
       assert.equal(showExecutorMenuMock.mock.callCount(), 0);
       assert.equal(showClientMenuMock.mock.callCount(), 1);
     } finally {
+      showExecutorMenuMock.mock.restore();
+      showClientMenuMock.mock.restore();
+    }
+  });
+
+  it('uses cached executor snapshot when auth query fails', async () => {
+    const showExecutorMenuMock = mock.method(
+      executorMenuModule,
+      'showExecutorMenu',
+      async () => undefined,
+    );
+    const showClientMenuMock = mock.method(clientMenuModule, 'showMenu', async () => undefined);
+
+    const { bot, getCommand } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const handler = getCommand('menu');
+    assert.ok(handler, 'menu command should be registered');
+
+    const session = createSessionState();
+    session.isAuthenticated = true;
+    session.user = {
+      id: 101,
+      username: 'cached_user',
+      firstName: 'Cache',
+      lastName: 'User',
+      phoneVerified: true,
+    };
+    session.phoneNumber = '+7 700 000 00 00';
+    session.executor.role = 'courier';
+    session.authSnapshot = {
+      role: 'courier',
+      executor: {
+        verifiedRoles: { courier: true, driver: false },
+        hasActiveSubscription: true,
+        isVerified: true,
+      },
+      city: DEFAULT_CITY,
+      stale: false,
+    };
+
+    const ctx = {
+      chat: { id: 77, type: 'private' as const },
+      from: {
+        id: 101,
+        username: 'cached_user',
+        first_name: 'Cache',
+        last_name: 'User',
+      },
+      session,
+      auth: undefined as any,
+      reply: async () => ({
+        message_id: 1,
+        chat: { id: 77, type: 'private' as const },
+        date: Math.floor(Date.now() / 1000),
+        text: 'ok',
+      }),
+      telegram: {
+        sendMessage: async () => ({
+          message_id: 1,
+          chat: { id: 77, type: 'private' as const },
+          date: Math.floor(Date.now() / 1000),
+          text: 'ok',
+        }),
+        editMessageText: async () => true,
+        deleteMessage: async () => true,
+        setMyCommands: async () => undefined,
+        setChatMenuButton: async () => undefined,
+      },
+      answerCbQuery: async () => undefined,
+      update: { message: { chat: { id: 77, type: 'private' as const } } },
+      updateType: 'message',
+      botInfo: {} as never,
+      state: {},
+    } as unknown as BotContext;
+
+    const authMiddleware = auth();
+    const queryMock = mock.method(pool, 'query', async () => {
+      throw new Error('temporary failure');
+    });
+
+    try {
+      await authMiddleware(ctx, async () => {});
+
+      assert.equal(ctx.session.isAuthenticated, true);
+      assert.equal(ctx.session.authSnapshot?.stale, true);
+      assert.equal(ctx.session.authSnapshot?.executor.verifiedRoles.courier, true);
+      assert.equal(ctx.session.authSnapshot?.executor.hasActiveSubscription, true);
+      assert.equal(ctx.auth.user.role, 'courier');
+      assert.equal(ctx.auth.user.status, 'active_executor');
+      assert.equal(ctx.auth.executor.hasActiveSubscription, true);
+
+      await handler(ctx);
+
+      assert.equal(showExecutorMenuMock.mock.callCount(), 1);
+      assert.equal(showClientMenuMock.mock.callCount(), 0);
+    } finally {
+      queryMock.mock.restore();
       showExecutorMenuMock.mock.restore();
       showClientMenuMock.mock.restore();
     }

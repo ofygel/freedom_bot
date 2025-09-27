@@ -13,9 +13,11 @@ import {
   loadSessionCache,
   saveSessionCache,
 } from '../../infra/sessionCache';
+import { isAppCity } from '../../domain/cities';
 import {
   EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
+  type AuthStateSnapshot,
   type BotContext,
   type ClientFlowState,
   type ClientOrderDraftState,
@@ -26,6 +28,8 @@ import {
   type SessionState,
   type SupportSessionState,
   type UiSessionState,
+  type UserRole,
+  type ExecutorRole,
 } from '../types';
 
 const createVerificationState = (): ExecutorVerificationState => {
@@ -69,6 +73,59 @@ const createUiState = (): UiSessionState => ({
 const createSupportState = (): SupportSessionState => ({
   status: 'idle',
 });
+
+const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'courier', 'driver', 'moderator'];
+
+const createAuthSnapshot = (): AuthStateSnapshot => ({
+  role: 'guest',
+  executor: {
+    verifiedRoles: { courier: false, driver: false },
+    hasActiveSubscription: false,
+    isVerified: false,
+  },
+  city: undefined,
+  stale: false,
+});
+
+const rebuildAuthSnapshot = (value: unknown): AuthStateSnapshot => {
+  const snapshot = createAuthSnapshot();
+  if (!value || typeof value !== 'object') {
+    return snapshot;
+  }
+
+  const candidate = value as Partial<AuthStateSnapshot> & {
+    executor?: Partial<AuthStateSnapshot['executor']> & {
+      verifiedRoles?: Partial<Record<ExecutorRole, unknown>>;
+    };
+  };
+
+  if (typeof candidate.role === 'string' && USER_ROLES.includes(candidate.role as UserRole)) {
+    snapshot.role = candidate.role as UserRole;
+  }
+
+  if (candidate.executor && typeof candidate.executor === 'object') {
+    const executor = candidate.executor;
+    const verifiedRoles = executor.verifiedRoles ?? {};
+    snapshot.executor = {
+      verifiedRoles: {
+        courier: Boolean((verifiedRoles as Record<ExecutorRole, unknown>).courier),
+        driver: Boolean((verifiedRoles as Record<ExecutorRole, unknown>).driver),
+      },
+      hasActiveSubscription: Boolean(executor.hasActiveSubscription),
+      isVerified: Boolean(executor.isVerified),
+    };
+  }
+
+  if (candidate.city && isAppCity(candidate.city)) {
+    snapshot.city = candidate.city;
+  }
+
+  if (typeof candidate.stale === 'boolean') {
+    snapshot.stale = candidate.stale;
+  }
+
+  return snapshot;
+};
 
 const isExecutorRole = (value: unknown): value is ExecutorFlowState['role'] =>
   typeof value === 'string' && EXECUTOR_ROLES.includes(value as (typeof EXECUTOR_ROLES)[number]);
@@ -158,6 +215,7 @@ const createDefaultState = (): SessionState => ({
   isAuthenticated: false,
   awaitingPhone: false,
   city: undefined,
+  authSnapshot: createAuthSnapshot(),
   executor: createExecutorState(),
   client: createClientState(),
   ui: createUiState(),
@@ -338,6 +396,8 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       if (!state.support) {
         state.support = createSupportState();
       }
+
+      state.authSnapshot = rebuildAuthSnapshot((state as { authSnapshot?: unknown }).authSnapshot);
 
       state.executor = rebuildExecutorState((state as { executor?: unknown }).executor);
       state.client = rebuildClientState((state as { client?: unknown }).client);
