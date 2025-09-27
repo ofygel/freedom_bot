@@ -477,6 +477,21 @@ export const tryCancelOrder = async (
   return mapOrderRow(row);
 };
 
+export const markOrderAsCancelled = async (orderId: number): Promise<OrderRecord | null> => {
+  const { rows } = await pool.query<OrderRow>(
+    `UPDATE orders SET status = 'cancelled' WHERE id = $1 RETURNING *`,
+    [orderId],
+  );
+
+  const [row] = rows;
+  if (!row) {
+    return null;
+  }
+
+  await updateActiveOrdersGauge(pool);
+  return mapOrderRow(row);
+};
+
 export interface ListClientOrdersOptions {
   statuses?: OrderStatus[];
   limit?: number;
