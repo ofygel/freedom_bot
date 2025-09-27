@@ -30,6 +30,47 @@ const mapRowToLocation = (row: RecentLocationRow): OrderLocation => ({
   twoGisUrl: row.two_gis_url ?? undefined,
 });
 
+const RECENT_LOCATION_ID_HEX_LENGTH = 40;
+const HEX_LOCATION_ID_PATTERN = /^[a-f0-9]+$/;
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+export const encodeRecentLocationId = (locationId: string): string | null => {
+  if (!HEX_LOCATION_ID_PATTERN.test(locationId) || locationId.length !== RECENT_LOCATION_ID_HEX_LENGTH) {
+    logger.warn({ locationId }, 'Attempted to encode invalid recent location id');
+    return null;
+  }
+
+  try {
+    return Buffer.from(locationId, 'hex').toString('base64url');
+  } catch (error) {
+    logger.warn({ err: error, locationId }, 'Failed to encode recent location id');
+    return null;
+  }
+};
+
+export const decodeRecentLocationId = (value: string): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  if (HEX_LOCATION_ID_PATTERN.test(value) && value.length === RECENT_LOCATION_ID_HEX_LENGTH) {
+    return value;
+  }
+
+  if (!BASE64URL_PATTERN.test(value)) {
+    return null;
+  }
+
+  try {
+    const buffer = Buffer.from(value, 'base64url');
+    const hex = buffer.toString('hex');
+    return hex.length === RECENT_LOCATION_ID_HEX_LENGTH ? hex : null;
+  } catch (error) {
+    logger.warn({ err: error, value }, 'Failed to decode recent location id');
+    return null;
+  }
+};
+
 export const rememberLocation = async (
   userId: number,
   city: AppCity,

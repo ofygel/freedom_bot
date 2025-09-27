@@ -28,6 +28,7 @@ import {
   buildInlineKeyboard,
   buildUrlKeyboard,
   mergeInlineKeyboards,
+  type KeyboardButton,
 } from '../../keyboards/common';
 import { buildOrderLocationsKeyboard } from '../../keyboards/orders';
 import type { BotContext, ClientOrderDraftState } from '../../types';
@@ -40,6 +41,8 @@ import type { AppCity } from '../../../domain/cities';
 import { dgBase } from '../../../utils/2gis';
 import { reportOrderCreated, type UserIdentity } from '../../services/reports';
 import {
+  decodeRecentLocationId,
+  encodeRecentLocationId,
   findRecentLocation,
   loadRecentLocations,
   rememberLocation,
@@ -55,8 +58,13 @@ const CONFIRM_TAXI_ORDER_ACTION = 'client:order:taxi:confirm';
 const CANCEL_TAXI_ORDER_ACTION = 'client:order:taxi:cancel';
 const TAXI_RECENT_PICKUP_ACTION_PREFIX = 'client:order:taxi:recent:pickup';
 const TAXI_RECENT_DROPOFF_ACTION_PREFIX = 'client:order:taxi:recent:dropoff';
-const TAXI_RECENT_PICKUP_ACTION_PATTERN = /^client:order:taxi:recent:pickup:([a-f0-9]+)/;
-const TAXI_RECENT_DROPOFF_ACTION_PATTERN = /^client:order:taxi:recent:dropoff:([a-f0-9]+)/;
+const CALLBACK_ID_PATTERN = /([A-Za-z0-9_-]+)/;
+const TAXI_RECENT_PICKUP_ACTION_PATTERN = new RegExp(
+  `^${TAXI_RECENT_PICKUP_ACTION_PREFIX}:${CALLBACK_ID_PATTERN.source}`,
+);
+const TAXI_RECENT_DROPOFF_ACTION_PATTERN = new RegExp(
+  `^${TAXI_RECENT_DROPOFF_ACTION_PREFIX}:${CALLBACK_ID_PATTERN.source}`,
+);
 
 const getDraft = (ctx: BotContext): ClientOrderDraftState => ctx.session.client.taxi;
 
@@ -135,7 +143,33 @@ const buildRecentLocationsKeyboard = async (
     return undefined;
   }
 
-  const rows = recent.map((item) => [{ label: item.label, action: `${prefix}:${item.locationId}` }]);
+  const rows = recent.reduce<KeyboardButton[][]>((result, item) => {
+    const encodedId = encodeRecentLocationId(item.locationId);
+    if (!encodedId) {
+      logger.warn(
+        { locationId: item.locationId, prefix },
+        'Skipping recent taxi location with invalid id',
+      );
+      return result;
+    }
+
+    const action = `${prefix}:${encodedId}`;
+    if (action.length > 64) {
+      logger.warn(
+        { locationId: item.locationId, prefix },
+        'Skipping recent taxi location with oversized callback data',
+      );
+      return result;
+    }
+
+    result.push([{ label: item.label, action }]);
+    return result;
+  }, []);
+
+  if (rows.length === 0) {
+    return undefined;
+  }
+
   return buildInlineKeyboard(rows);
 };
 
@@ -803,7 +837,8 @@ export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
 
   bot.action(TAXI_RECENT_PICKUP_ACTION_PATTERN, async (ctx) => {
     const match = ctx.match as RegExpMatchArray | undefined;
-    const locationId = match?.[1];
+    const encodedId = match?.[1];
+    const locationId = encodedId ? decodeRecentLocationId(encodedId) : null;
     if (!locationId) {
       await ctx.answerCbQuery(copy.expiredButton);
       return;
@@ -814,7 +849,8 @@ export const registerTaxiOrderFlow = (bot: Telegraf<BotContext>): void => {
 
   bot.action(TAXI_RECENT_DROPOFF_ACTION_PATTERN, async (ctx) => {
     const match = ctx.match as RegExpMatchArray | undefined;
-    const locationId = match?.[1];
+    const encodedId = match?.[1];
+    const locationId = encodedId ? decodeRecentLocationId(encodedId) : null;
     if (!locationId) {
       await ctx.answerCbQuery(copy.expiredButton);
       return;

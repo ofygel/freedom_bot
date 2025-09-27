@@ -31,6 +31,7 @@ import {
   buildInlineKeyboard,
   buildUrlKeyboard,
   mergeInlineKeyboards,
+  type KeyboardButton,
 } from '../../keyboards/common';
 import { buildOrderLocationsKeyboard } from '../../keyboards/orders';
 import type { BotContext, ClientOrderDraftState } from '../../types';
@@ -43,6 +44,8 @@ import type { AppCity } from '../../../domain/cities';
 import { dgBase } from '../../../utils/2gis';
 import { reportOrderCreated, type UserIdentity } from '../../services/reports';
 import {
+  decodeRecentLocationId,
+  encodeRecentLocationId,
   findRecentLocation,
   loadRecentLocations,
   rememberLocation,
@@ -61,8 +64,13 @@ const DELIVERY_ADDRESS_TYPE_PRIVATE_ACTION = 'client:order:delivery:address-type
 const DELIVERY_ADDRESS_TYPE_APARTMENT_ACTION = 'client:order:delivery:address-type:apartment';
 const DELIVERY_RECENT_PICKUP_ACTION_PREFIX = 'client:order:delivery:recent:pickup';
 const DELIVERY_RECENT_DROPOFF_ACTION_PREFIX = 'client:order:delivery:recent:dropoff';
-const DELIVERY_RECENT_PICKUP_ACTION_PATTERN = /^client:order:delivery:recent:pickup:([a-f0-9]+)/;
-const DELIVERY_RECENT_DROPOFF_ACTION_PATTERN = /^client:order:delivery:recent:dropoff:([a-f0-9]+)/;
+const CALLBACK_ID_PATTERN = /([A-Za-z0-9_-]+)/;
+const DELIVERY_RECENT_PICKUP_ACTION_PATTERN = new RegExp(
+  `^${DELIVERY_RECENT_PICKUP_ACTION_PREFIX}:${CALLBACK_ID_PATTERN.source}`,
+);
+const DELIVERY_RECENT_DROPOFF_ACTION_PATTERN = new RegExp(
+  `^${DELIVERY_RECENT_DROPOFF_ACTION_PREFIX}:${CALLBACK_ID_PATTERN.source}`,
+);
 
 const getDraft = (ctx: BotContext): ClientOrderDraftState => ctx.session.client.delivery;
 
@@ -296,7 +304,33 @@ const buildRecentLocationsKeyboard = async (
     return undefined;
   }
 
-  const rows = recent.map((item) => [{ label: item.label, action: `${prefix}:${item.locationId}` }]);
+  const rows = recent.reduce<KeyboardButton[][]>((result, item) => {
+    const encodedId = encodeRecentLocationId(item.locationId);
+    if (!encodedId) {
+      logger.warn(
+        { locationId: item.locationId, prefix },
+        'Skipping recent delivery location with invalid id',
+      );
+      return result;
+    }
+
+    const action = `${prefix}:${encodedId}`;
+    if (action.length > 64) {
+      logger.warn(
+        { locationId: item.locationId, prefix },
+        'Skipping recent delivery location with oversized callback data',
+      );
+      return result;
+    }
+
+    result.push([{ label: item.label, action }]);
+    return result;
+  }, []);
+
+  if (rows.length === 0) {
+    return undefined;
+  }
+
   return buildInlineKeyboard(rows);
 };
 
@@ -1265,7 +1299,8 @@ export const registerDeliveryOrderFlow = (bot: Telegraf<BotContext>): void => {
 
   bot.action(DELIVERY_RECENT_PICKUP_ACTION_PATTERN, async (ctx) => {
     const match = ctx.match as RegExpMatchArray | undefined;
-    const locationId = match?.[1];
+    const encodedId = match?.[1];
+    const locationId = encodedId ? decodeRecentLocationId(encodedId) : null;
     if (!locationId) {
       await ctx.answerCbQuery(copy.expiredButton);
       return;
@@ -1276,7 +1311,8 @@ export const registerDeliveryOrderFlow = (bot: Telegraf<BotContext>): void => {
 
   bot.action(DELIVERY_RECENT_DROPOFF_ACTION_PATTERN, async (ctx) => {
     const match = ctx.match as RegExpMatchArray | undefined;
-    const locationId = match?.[1];
+    const encodedId = match?.[1];
+    const locationId = encodedId ? decodeRecentLocationId(encodedId) : null;
     if (!locationId) {
       await ctx.answerCbQuery(copy.expiredButton);
       return;
