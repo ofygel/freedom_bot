@@ -120,14 +120,37 @@ describe('ensureVerifiedExecutor middleware', () => {
     assert.equal(session.executor.verification.courier.status, 'collecting');
   });
 
-  it('does not restart verification when already collecting', async () => {
+  it('re-prompts when collecting and receives a non-photo message', async () => {
     const { ctx } = createContext();
 
     const roleState = ctx.session.executor.verification.courier;
     roleState.status = 'collecting';
 
-    await ensureVerifiedExecutor(ctx, async () => {});
+    (ctx as unknown as { message: { text: string } }).message = { text: 'hello' };
 
+    let nextCalled = false;
+    await ensureVerifiedExecutor(ctx, async () => {
+      nextCalled = true;
+    });
+
+    assert.equal(nextCalled, false, 'non-photo message should not bypass the gate');
+    assert.equal(startVerificationMock.mock.callCount(), 1);
+  });
+
+  it('allows commands while collecting to reach downstream handlers', async () => {
+    const { ctx } = createContext();
+
+    const roleState = ctx.session.executor.verification.courier;
+    roleState.status = 'collecting';
+
+    (ctx as unknown as { message: { text: string } }).message = { text: '/start' };
+
+    let nextCalled = false;
+    await ensureVerifiedExecutor(ctx, async () => {
+      nextCalled = true;
+    });
+
+    assert.equal(nextCalled, true, 'commands should reach their handlers while collecting');
     assert.equal(startVerificationMock.mock.callCount(), 0);
   });
 
