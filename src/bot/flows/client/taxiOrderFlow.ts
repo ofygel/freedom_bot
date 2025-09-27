@@ -7,7 +7,7 @@ import type {
 import { publishOrderToDriversChannel, type PublishOrderStatus } from '../../channels/ordersChannel';
 import { logger } from '../../../config';
 import { createOrder } from '../../../db/orders';
-import type { OrderRecord } from '../../../types';
+import type { OrderRecord, OrderLocation } from '../../../types';
 import {
   buildCustomerName,
   buildOrderSummary,
@@ -44,6 +44,7 @@ import {
   loadRecentLocations,
   rememberLocation,
 } from '../../services/recentLocations';
+import type { RecentLocationOption } from '../../services/recentLocations';
 import { copy } from '../../copy';
 import { buildStatusMessage } from '../../ui/status';
 import { flowStart, flowComplete } from '../../../metrics/agg';
@@ -119,7 +120,15 @@ const buildRecentLocationsKeyboard = async (
   kind: 'pickup' | 'dropoff',
   prefix: string,
 ) => {
-  const recent = await loadRecentLocations(ctx.auth.user.telegramId, city, kind);
+  let recent: RecentLocationOption[] = [];
+  try {
+    recent = await loadRecentLocations(ctx.auth.user.telegramId, city, kind);
+  } catch (error) {
+    logger.warn(
+      { err: error, city, kind, userId: ctx.auth.user.telegramId },
+      'Failed to load recent taxi locations; continuing without suggestions',
+    );
+  }
   if (recent.length === 0) {
     return undefined;
   }
@@ -189,7 +198,14 @@ const applyPickupDetails = async (
     return;
   }
 
-  await rememberLocation(ctx.auth.user.telegramId, city, 'pickup', pickup);
+  try {
+    await rememberLocation(ctx.auth.user.telegramId, city, 'pickup', pickup);
+  } catch (error) {
+    logger.warn(
+      { err: error, city, userId: ctx.auth.user.telegramId },
+      'Failed to remember taxi pickup location; continuing without persistence',
+    );
+  }
 
   await requestDropoffAddress(ctx, city, pickup);
 };
@@ -217,7 +233,14 @@ const applyDropoffDetails = async (
     return;
   }
 
-  await rememberLocation(ctx.auth.user.telegramId, city, 'dropoff', dropoff);
+  try {
+    await rememberLocation(ctx.auth.user.telegramId, city, 'dropoff', dropoff);
+  } catch (error) {
+    logger.warn(
+      { err: error, city, userId: ctx.auth.user.telegramId },
+      'Failed to remember taxi dropoff location; continuing without persistence',
+    );
+  }
 
   if (isOrderDraftComplete(draft)) {
     await showConfirmation(ctx, draft, city);
@@ -664,7 +687,15 @@ const handleRecentPickup = async (ctx: BotContext, locationId: string): Promise<
     return;
   }
 
-  const location = await findRecentLocation(ctx.auth.user.telegramId, city, 'pickup', locationId);
+  let location: OrderLocation | null = null;
+  try {
+    location = await findRecentLocation(ctx.auth.user.telegramId, city, 'pickup', locationId);
+  } catch (error) {
+    logger.warn(
+      { err: error, city, userId: ctx.auth.user.telegramId, locationId },
+      'Failed to resolve recent taxi pickup location; falling back to manual input',
+    );
+  }
   if (!location) {
     await ctx.answerCbQuery(copy.expiredButton);
     return;
@@ -691,7 +722,15 @@ const handleRecentDropoff = async (ctx: BotContext, locationId: string): Promise
     return;
   }
 
-  const location = await findRecentLocation(ctx.auth.user.telegramId, city, 'dropoff', locationId);
+  let location: OrderLocation | null = null;
+  try {
+    location = await findRecentLocation(ctx.auth.user.telegramId, city, 'dropoff', locationId);
+  } catch (error) {
+    logger.warn(
+      { err: error, city, userId: ctx.auth.user.telegramId, locationId },
+      'Failed to resolve recent taxi dropoff location; falling back to manual input',
+    );
+  }
   if (!location) {
     await ctx.answerCbQuery(copy.expiredButton);
     return;
