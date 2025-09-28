@@ -30,7 +30,7 @@ const buildSafeModeKeyboard = () =>
 const buildSafeModeCardText = (prompt?: string): string => {
   const lines = [
     '⚠️ Freedom Bot работает в безопасном режиме — часть функций недоступна.',
-    prompt ?? 'Пока доступны только базовые действия ниже:',
+    prompt ?? 'Пока доступны только базовые действия: [Профиль], [Сменить город], [Помощь].',
     '',
     '• 👤 Профиль — посмотрите актуальные данные аккаунта.',
     '• 🏙️ Сменить город — уточните рабочий город.',
@@ -65,7 +65,9 @@ const buildProfileSummary = (ctx: BotContext): string => {
 };
 
 export const isSafeModeSession = (ctx: BotContext): boolean =>
-  ctx.session.safeMode === true || ctx.auth?.user.status === 'safe_mode';
+  ctx.session.safeMode === true
+  || ctx.session.degraded === true
+  || ctx.auth?.user.status === 'safe_mode';
 
 export const showSafeModeCard = async (
   ctx: BotContext,

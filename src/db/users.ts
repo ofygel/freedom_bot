@@ -59,7 +59,7 @@ export const ensureClientRole = async ({
           ELSE EXCLUDED.role
         END,
         status = CASE
-          WHEN users.status IN ('suspended', 'banned') THEN users.status
+          WHEN users.status IN ('suspended', 'banned', 'safe_mode') THEN users.status
           ELSE 'active_client'
         END,
         executor_kind = CASE
@@ -99,7 +99,7 @@ export const updateUserPhone = async ({
         phone = $2,
         phone_verified = true,
         status = CASE
-          WHEN status IN ('suspended', 'banned') THEN status
+          WHEN status IN ('suspended', 'banned', 'safe_mode') THEN status
           ELSE 'active_client'
         END,
         updated_at = now()
@@ -134,7 +134,7 @@ export const updateUserRole = async ({
           ELSE NULL
         END,
         status = CASE
-          WHEN status IN ('suspended', 'banned') THEN status
+          WHEN status IN ('suspended', 'banned', 'safe_mode') THEN status
           ELSE $3
         END,
         last_menu_role = $4,

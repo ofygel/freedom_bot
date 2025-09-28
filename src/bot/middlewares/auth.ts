@@ -4,6 +4,7 @@ import { logger } from '../../config';
 import { hasUsersCitySelectedColumn, pool } from '../../db';
 import { isAppCity } from '../../domain/cities';
 import { copy } from '../copy';
+import { enterSafeMode } from '../services/cleanup';
 import {
   EXECUTOR_ROLES,
   type AuthExecutorState,
@@ -509,11 +510,17 @@ const createGuestAuthState = (from: NonNullable<BotContext['from']>): AuthState 
 const applyAuthState = (
   ctx: BotContext,
   authState: AuthState,
-  options?: { isAuthenticated?: boolean; isStale?: boolean; safeMode?: boolean },
+  options?: {
+    isAuthenticated?: boolean;
+    isStale?: boolean;
+    safeMode?: boolean;
+    degraded?: boolean;
+  },
 ): void => {
   ctx.auth = authState;
   ctx.session.isAuthenticated = options?.isAuthenticated ?? true;
   ctx.session.safeMode = options?.safeMode ?? false;
+  ctx.session.degraded = options?.degraded ?? false;
   ctx.session.user = {
     id: authState.user.telegramId,
     username: authState.user.username,
@@ -620,7 +627,7 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
   try {
     const authState = await loadAuthState(ctx.from);
-    applyAuthState(ctx, authState, { isStale: false });
+    applyAuthState(ctx, authState, { isStale: false, degraded: false });
   } catch (error) {
     if (error instanceof AuthStateQueryError) {
       const cachedSnapshot = ctx.session.authSnapshot;
@@ -649,6 +656,7 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
           isAuthenticated: false,
           isStale: true,
           safeMode: true,
+          degraded: true,
         });
       } else {
         const guestState = createGuestAuthState(ctx.from!);
@@ -657,12 +665,11 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
           isAuthenticated: false,
           isStale: true,
           safeMode: true,
+          degraded: true,
         });
       }
 
-      ctx.session.isAuthenticated = false;
-      ctx.session.safeMode = true;
-      ctx.session.authSnapshot.stale = true;
+      await enterSafeMode(ctx, { reason: 'auth-state-query-failed' });
       logger.warn(
         { err: error.cause ?? error, update: ctx.update },
         'Failed to load auth state, using cached snapshot',
@@ -671,6 +678,7 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       return;
     }
 
+    await enterSafeMode(ctx, { reason: 'auth-state-unexpected-error' });
     logger.error({ err: error, update: ctx.update }, 'Failed to authenticate update');
     if (typeof ctx.answerCbQuery === 'function') {
       try {
