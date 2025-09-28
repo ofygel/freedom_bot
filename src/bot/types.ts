@@ -9,7 +9,7 @@ export type ExecutorRole = 'courier' | 'driver';
 
 export const EXECUTOR_ROLES: readonly ExecutorRole[] = ['courier', 'driver'];
 
-export type UserRole = 'guest' | 'client' | 'executor' | 'moderator';
+export type UserRole = 'guest' | 'client' | 'executor';
 
 export type UserVerifyStatus = 'none' | 'pending' | 'active' | 'rejected' | 'expired';
 
@@ -74,6 +74,7 @@ export interface AuthStateSnapshot {
   verifyStatus: UserVerifyStatus;
   userIsVerified: boolean;
   executor: AuthExecutorState;
+  isModerator: boolean;
   trialStartedAt?: Date;
   trialExpiresAt?: Date;
   city?: AppCity;

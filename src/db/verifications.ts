@@ -1,7 +1,8 @@
 import { pool, withTx } from './client';
 import type { PoolClient } from './client';
+import type { ExecutorRole } from '../bot/types';
 
-export type VerificationRole = 'courier' | 'driver';
+export type VerificationRole = ExecutorRole;
 
 export interface VerificationApplicant {
   telegramId: number;

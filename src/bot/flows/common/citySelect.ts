@@ -35,7 +35,8 @@ const resolveHomeAction = (ctx: BotContext): string => {
   }
 
   const role = ctx.auth?.user.role;
-  if (role === 'client' || role === 'guest' || role === 'moderator') {
+  const isModerator = ctx.auth?.isModerator === true;
+  if (isModerator || role === 'client' || role === 'guest') {
     return CLIENT_MENU_HOME_ACTION;
   }
 
