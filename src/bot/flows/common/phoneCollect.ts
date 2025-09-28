@@ -6,6 +6,40 @@ import { setUserBlockedStatus } from '../../../db/users';
 import { reportUserRegistration, toUserIdentity } from '../../services/reports';
 import type { BotContext } from '../../types';
 
+export const PHONE_HELP_BUTTON_LABEL = '🆘 Помощь';
+
+const rememberEphemeralMessage = (ctx: BotContext, messageId?: number): void => {
+  if (!messageId) {
+    return;
+  }
+
+  ctx.session.ephemeralMessages.push(messageId);
+};
+
+const buildPhoneCollectKeyboard = () =>
+  Markup.keyboard([
+    [Markup.button.contactRequest('📲 Поделиться контактом')],
+    [Markup.button.text(PHONE_HELP_BUTTON_LABEL)],
+  ])
+    .oneTime()
+    .resize();
+
+const buildPhoneRequestText = (): string =>
+  [
+    'Для работы с ботом нужен ваш номер телефона.',
+    'Нажмите «📲 Поделиться контактом» или отправьте его вручную.',
+    '',
+    'Если возникли сложности, нажмите «🆘 Помощь» — подскажем, что делать.',
+  ].join('\n');
+
+const buildPhoneHelpText = (): string =>
+  [
+    'ℹ️ Подсказка по обмену номером:',
+    '• Откройте этот чат на своём телефоне.',
+    '• Нажмите «📲 Поделиться контактом», чтобы Telegram отправил номер автоматически.',
+    '• Или пришлите номер вручную в формате +79991234567.',
+  ].join('\n');
+
 const normalisePhone = (phone: string): string => {
   const trimmed = phone.trim();
   if (trimmed.startsWith('+')) {
@@ -46,17 +80,10 @@ export const askPhone = async (ctx: BotContext): Promise<void> => {
   }
 
   try {
-    const message = await ctx.reply(
-      'Для работы с ботом нужен ваш номер. Нажмите кнопку ниже 👇',
-      Markup.keyboard([Markup.button.contactRequest('📲 Поделиться контактом')])
-        .oneTime()
-        .resize(),
-    );
+    const message = await ctx.reply(buildPhoneRequestText(), buildPhoneCollectKeyboard());
 
     ctx.session.awaitingPhone = true;
-    if (message?.message_id) {
-      ctx.session.ephemeralMessages.push(message.message_id);
-    }
+    rememberEphemeralMessage(ctx, message?.message_id);
   } catch (error) {
     if (!isBlockedByUserError(error)) {
       throw error;
@@ -167,6 +194,22 @@ export const savePhone: MiddlewareFn<BotContext> = async (ctx, next) => {
   (ctx.state as { phoneJustVerified?: boolean }).phoneJustVerified = !wasVerified;
 
   await next();
+};
+
+export const respondToPhoneHelp: MiddlewareFn<BotContext> = async (ctx, next) => {
+  if (ctx.chat?.type !== 'private') {
+    await next();
+    return;
+  }
+
+  if (!ctx.session.awaitingPhone) {
+    await next();
+    return;
+  }
+
+  const message = await ctx.reply(buildPhoneHelpText(), buildPhoneCollectKeyboard());
+  ctx.session.awaitingPhone = true;
+  rememberEphemeralMessage(ctx, message?.message_id);
 };
 
 export const ensurePhone: MiddlewareFn<BotContext> = async (ctx, next) => {

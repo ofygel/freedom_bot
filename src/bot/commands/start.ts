@@ -12,46 +12,45 @@ import { buildInlineKeyboard } from '../keyboards/common';
 import { ui } from '../ui';
 import {
   ROLE_SELECTION_BACK_ACTION,
+  ROLE_PICK_HELP_ACTION,
+  ROLE_PICK_EXECUTOR_ACTION,
+  EXECUTOR_KIND_BACK_ACTION,
+  EXECUTOR_KIND_COURIER_ACTION,
+  EXECUTOR_KIND_DRIVER_ACTION,
   EXECUTOR_ROLE_PENDING_CITY_ACTION,
 } from '../flows/executor/roleSelectionConstants';
 
-const ROLE_SELECTION_STEP_ID = 'start:role:selection';
+const ROLE_PICK_STEP_ID = 'start:role:pick';
+const EXECUTOR_KIND_STEP_ID = 'start:role:executor-kind';
 const ROLE_CLIENT_ACTION = 'role:client';
-const ROLE_EXECUTOR_ACTION = 'role:executor';
-const ROLE_COURIER_ACTION = 'role:courier';
-const ROLE_DRIVER_ACTION = 'role:driver';
-const SUPPORT_CONTACT_ACTION = 'support:contact';
 
-const ROLE_SELECTION_TITLE = 'Выбор роли';
-const ROLE_SELECTION_DESCRIPTION =
+const ROLE_PICK_TITLE = 'Выбор роли';
+const ROLE_PICK_DESCRIPTION =
   'Freedom Bot помогает клиентам оформлять заказы и исполнителям брать их в работу. Выберите подходящую роль.';
+const ROLE_PICK_HINT =
+  'ℹ️ Подсказка: выберите «Клиент», если хотите оформлять заказы. Нажмите «Исполнитель», чтобы брать заказы в работу.';
 
-const SPECIALISATION_TITLE = 'Выбор специализации';
-const SPECIALISATION_DESCRIPTION =
+const EXECUTOR_KIND_TITLE = 'Выбор специализации';
+const EXECUTOR_KIND_DESCRIPTION =
   'Уточните, какие заказы хотите получать: доставка подходит курьерам, поездки — водителям.';
+const EXECUTOR_KIND_HINT = 'ℹ️ Курьеры занимаются доставкой, водители помогают с поездками.';
 
-const buildRoleSelectionKeyboard = () =>
+const buildRolePickKeyboard = () =>
   buildInlineKeyboard([
     [
-      { label: '🧑‍💼 Я клиент', action: ROLE_CLIENT_ACTION },
-      { label: '🛠️ Я исполнитель', action: ROLE_EXECUTOR_ACTION },
+      { label: '🧑‍💼 Клиент', action: ROLE_CLIENT_ACTION },
+      { label: '🛠️ Исполнитель', action: ROLE_PICK_EXECUTOR_ACTION },
     ],
-    [
-      { label: '🆘 Помощь', action: SUPPORT_CONTACT_ACTION },
-      { label: '❓ Где я?', action: ROLE_SELECTION_BACK_ACTION },
-    ],
+    [{ label: '🆘 Помощь', action: ROLE_PICK_HELP_ACTION }],
   ]);
 
-const buildExecutorSpecialisationKeyboard = () =>
+const buildExecutorKindKeyboard = () =>
   buildInlineKeyboard([
     [
-      { label: '🚚 Я курьер', action: ROLE_COURIER_ACTION },
-      { label: '🚗 Я водитель', action: ROLE_DRIVER_ACTION },
+      { label: '🚚 Курьер', action: EXECUTOR_KIND_COURIER_ACTION },
+      { label: '🚗 Водитель', action: EXECUTOR_KIND_DRIVER_ACTION },
     ],
-    [
-      { label: '🆘 Помощь', action: SUPPORT_CONTACT_ACTION },
-      { label: '⬅️ Назад', action: ROLE_SELECTION_BACK_ACTION },
-    ],
+    [{ label: '⬅️ Назад', action: EXECUTOR_KIND_BACK_ACTION }],
   ]);
 
 const resetCitySelectionTracking = (ctx: BotContext): void => {
@@ -60,7 +59,26 @@ const resetCitySelectionTracking = (ctx: BotContext): void => {
   }
 };
 
-export const presentRoleSelection = async (ctx: BotContext): Promise<void> => {
+const buildRolePickText = (options?: { withHint?: boolean }): string => {
+  const lines = [ROLE_PICK_TITLE, '', ROLE_PICK_DESCRIPTION];
+  if (options?.withHint) {
+    lines.push('', ROLE_PICK_HINT);
+  }
+  return lines.join('\n');
+};
+
+const buildExecutorKindText = (options?: { withHint?: boolean }): string => {
+  const lines = [EXECUTOR_KIND_TITLE, '', EXECUTOR_KIND_DESCRIPTION];
+  if (options?.withHint) {
+    lines.push('', EXECUTOR_KIND_HINT);
+  }
+  return lines.join('\n');
+};
+
+export const presentRolePick = async (
+  ctx: BotContext,
+  options?: { withHint?: boolean },
+): Promise<void> => {
   const executorState = ensureExecutorState(ctx);
   executorState.awaitingRoleSelection = true;
   executorState.role = undefined;
@@ -69,26 +87,27 @@ export const presentRoleSelection = async (ctx: BotContext): Promise<void> => {
   resetCitySelectionTracking(ctx);
 
   await ui.step(ctx, {
-    id: ROLE_SELECTION_STEP_ID,
-    text: `${ROLE_SELECTION_TITLE}\n\n${ROLE_SELECTION_DESCRIPTION}`,
-    keyboard: buildRoleSelectionKeyboard(),
+    id: ROLE_PICK_STEP_ID,
+    text: buildRolePickText(options),
+    keyboard: buildRolePickKeyboard(),
   });
 };
 
-export const presentExecutorSpecialisationSelection = async (
+export const presentExecutorKindSelection = async (
   ctx: BotContext,
+  options?: { withHint?: boolean },
 ): Promise<void> => {
   const executorState = ensureExecutorState(ctx);
   executorState.awaitingRoleSelection = true;
   executorState.role = undefined;
-  executorState.roleSelectionStage = 'specialization';
+  executorState.roleSelectionStage = 'executorKind';
   ctx.auth.user.executorKind = undefined;
   resetCitySelectionTracking(ctx);
 
   await ui.step(ctx, {
-    id: ROLE_SELECTION_STEP_ID,
-    text: `${SPECIALISATION_TITLE}\n\n${SPECIALISATION_DESCRIPTION}`,
-    keyboard: buildExecutorSpecialisationKeyboard(),
+    id: EXECUTOR_KIND_STEP_ID,
+    text: buildExecutorKindText(options ?? { withHint: true }),
+    keyboard: buildExecutorKindKeyboard(),
   });
 };
 
@@ -131,17 +150,17 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
   const role = executorState.role;
   const stage = executorState.roleSelectionStage;
   const awaitingRoleSelection = executorState.awaitingRoleSelection === true;
-  if (!role || awaitingRoleSelection || stage === 'role' || stage === 'specialization') {
+  if (!role || awaitingRoleSelection || stage === 'role' || stage === 'executorKind') {
     executorState.awaitingRoleSelection = true;
     executorState.role = undefined;
-    const prompt = stage === 'specialization'
+    const prompt = stage === 'executorKind'
       ? 'Выберите специализацию исполнителя ниже.'
       : 'Меняем роль — выберите подходящий вариант ниже.';
     await hideClientMenu(ctx, prompt);
-    if (stage === 'specialization') {
-      await presentExecutorSpecialisationSelection(ctx);
+    if (stage === 'executorKind') {
+      await presentExecutorKindSelection(ctx);
     } else {
-      await presentRoleSelection(ctx);
+      await presentRolePick(ctx);
     }
     return;
   }
@@ -165,7 +184,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
   bot.start(handleStart);
   bot.hears(/^start$/i, handleStart);
 
-  bot.action(ROLE_EXECUTOR_ACTION, async (ctx) => {
+  bot.action(ROLE_PICK_EXECUTOR_ACTION, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
       try {
         await ctx.answerCbQuery('Пожалуйста, продолжите в личном чате с ботом.');
@@ -178,7 +197,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
     const executorState = ensureExecutorState(ctx);
     executorState.awaitingRoleSelection = true;
     executorState.role = undefined;
-    executorState.roleSelectionStage = 'specialization';
+    executorState.roleSelectionStage = 'executorKind';
     ctx.auth.user.executorKind = undefined;
     resetCitySelectionTracking(ctx);
 
@@ -188,7 +207,59 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
       // Ignore callback errors
     }
 
-    await presentExecutorSpecialisationSelection(ctx);
+    await presentExecutorKindSelection(ctx);
+  });
+
+  bot.action(ROLE_PICK_HELP_ACTION, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      try {
+        await ctx.answerCbQuery('Подсказки доступны только в личном чате с ботом.');
+      } catch {
+        // Ignore
+      }
+      return;
+    }
+
+    const executorState = ensureExecutorState(ctx);
+    executorState.awaitingRoleSelection = true;
+    executorState.role = undefined;
+    executorState.roleSelectionStage = 'role';
+    ctx.auth.user.executorKind = undefined;
+    resetCitySelectionTracking(ctx);
+
+    try {
+      await ctx.answerCbQuery('Подсказка отправлена.');
+    } catch {
+      // Ignore callback errors
+    }
+
+    await presentRolePick(ctx, { withHint: true });
+  });
+
+  bot.action(EXECUTOR_KIND_BACK_ACTION, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      try {
+        await ctx.answerCbQuery('Доступно только в личном чате с ботом.');
+      } catch {
+        // Ignore
+      }
+      return;
+    }
+
+    const executorState = ensureExecutorState(ctx);
+    executorState.awaitingRoleSelection = true;
+    executorState.role = undefined;
+    executorState.roleSelectionStage = 'role';
+    ctx.auth.user.executorKind = undefined;
+    resetCitySelectionTracking(ctx);
+
+    try {
+      await ctx.answerCbQuery('Вернёмся к выбору роли.');
+    } catch {
+      // Ignore callback errors
+    }
+
+    await presentRolePick(ctx, { withHint: true });
   });
 
   bot.action(ROLE_SELECTION_BACK_ACTION, async (ctx) => {
@@ -204,7 +275,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
     const executorState = ensureExecutorState(ctx);
     const stage = executorState.roleSelectionStage;
 
-    const goToRoleSelection = async (message: string) => {
+    const goToRoleSelection = async (message: string, options?: { withHint?: boolean }) => {
       executorState.awaitingRoleSelection = true;
       executorState.role = undefined;
       executorState.roleSelectionStage = 'role';
@@ -217,13 +288,13 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
         // Ignore callback errors
       }
 
-      await presentRoleSelection(ctx);
+      await presentRolePick(ctx, options);
     };
 
     if (stage === 'city') {
       executorState.awaitingRoleSelection = true;
       executorState.role = undefined;
-      executorState.roleSelectionStage = 'specialization';
+      executorState.roleSelectionStage = 'executorKind';
       ctx.auth.user.executorKind = undefined;
       resetCitySelectionTracking(ctx);
 
@@ -233,12 +304,12 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
         // Ignore callback errors
       }
 
-      await presentExecutorSpecialisationSelection(ctx);
+      await presentExecutorKindSelection(ctx, { withHint: true });
       return;
     }
 
-    if (stage === 'specialization') {
-      await goToRoleSelection('Вернёмся к выбору роли.');
+    if (stage === 'executorKind') {
+      await goToRoleSelection('Вернёмся к выбору роли.', { withHint: true });
       return;
     }
 
@@ -263,7 +334,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
     const executorState = ensureExecutorState(ctx);
     executorState.awaitingRoleSelection = true;
     executorState.role = undefined;
-    await presentRoleSelection(ctx);
+    await presentRolePick(ctx);
   });
 };
 
