@@ -14,7 +14,7 @@ import { formatDistance, formatEtaMinutes, formatPriceAmount } from '../../servi
 import type { BotContext } from '../../types';
 import type { OrderStatus, OrderWithExecutor } from '../../../types';
 import { ui } from '../../ui';
-import { CLIENT_MENU, isClientChat, sendClientMenu } from '../../../ui/clientMenu';
+import { sendClientMenu } from '../../../ui/clientMenu';
 import { CLIENT_MENU_ACTION, logClientMenuClick } from './menu';
 import {
   CLIENT_CANCEL_ORDER_ACTION_PATTERN,
@@ -378,7 +378,7 @@ const buildOrdersListKeyboard = (orders: OrderWithExecutor[]): InlineKeyboardMar
   return buildInlineKeyboard(rows);
 };
 
-const renderOrdersList = async (
+export const renderOrdersList = async (
   ctx: BotContext,
   orders?: OrderWithExecutor[],
 ): Promise<OrderWithExecutor[] | null> => {
@@ -586,14 +586,6 @@ export const registerClientOrdersFlow = (bot: Telegraf<BotContext>): void => {
     }
 
     await confirmClientOrderCancellation(ctx, orderId);
-  });
-
-  bot.hears(CLIENT_MENU.orders, async (ctx) => {
-    if (!isClientChat(ctx, ctx.auth?.user.role)) {
-      return;
-    }
-
-    await renderOrdersList(ctx);
   });
 
   bot.command('orders', async (ctx) => {

@@ -366,6 +366,17 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     await sendClientMenu(ctx, 'Меню обновлено.');
   });
 
+  bot.hears(CLIENT_MENU.orders, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      return;
+    }
+
+    await logClientMenuClick(ctx, 'client_home_menu:orders');
+
+    const { renderOrdersList } = await import('./orders');
+    await renderOrdersList(ctx);
+  });
+
   bot.hears(CLIENT_MENU.support, async (ctx) => {
     if (!isClientChat(ctx, ctx.auth?.user.role)) {
       return;
