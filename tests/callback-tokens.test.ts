@@ -48,8 +48,7 @@ const createContext = (overrides: Partial<BotContext['auth']['user']>): BotConte
       },
       support: { status: 'idle' },
       ui: { steps: {}, homeActions: [] },
-      authSnapshot: { stale: false },
-    },
+        },
   } as unknown as BotContext;
 };
 
