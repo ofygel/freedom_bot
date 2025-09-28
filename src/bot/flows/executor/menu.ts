@@ -695,7 +695,14 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     const looksLikeExecutor = userLooksLikeExecutor(ctx);
-    if (!looksLikeExecutor) {
+    const cachedExecutorRole =
+      !looksLikeExecutor &&
+      ctx.session.isAuthenticated === false &&
+      ctx.auth.user.role === 'guest'
+        ? getCachedExecutorRole(ctx)
+        : undefined;
+
+    if (!looksLikeExecutor && !cachedExecutorRole) {
       await showMenu(ctx);
       return;
     }

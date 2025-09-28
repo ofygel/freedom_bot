@@ -293,6 +293,41 @@ describe("/menu command routing", () => {
     }
   });
 
+  it('shows the executor menu when guest auth fallback relies on the cached snapshot role', async () => {
+    const showExecutorMenuMock = mock.method(
+      executorMenuModule,
+      'showExecutorMenu',
+      async () => undefined,
+    );
+    const showClientMenuMock = mock.method(clientMenuModule, 'showMenu', async () => undefined);
+
+    const { bot, getCommand } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const handler = getCommand('menu');
+    assert.ok(handler, 'menu command should be registered');
+
+    const ctx = createContext('guest');
+    ctx.session.isAuthenticated = false;
+    ctx.session.authSnapshot.role = 'courier';
+    ctx.session.authSnapshot.status = 'active_executor';
+    ctx.session.authSnapshot.executor.verifiedRoles.courier = true;
+    ctx.session.authSnapshot.executor.hasActiveSubscription = true;
+    ctx.auth.executor.verifiedRoles.courier = true;
+    ctx.auth.executor.hasActiveSubscription = true;
+
+    try {
+      await handler(ctx);
+
+      assert.equal(showExecutorMenuMock.mock.callCount(), 1);
+      assert.equal(showClientMenuMock.mock.callCount(), 0);
+      assert.equal(ctx.session.executor.role, 'courier');
+    } finally {
+      showExecutorMenuMock.mock.restore();
+      showClientMenuMock.mock.restore();
+    }
+  });
+
   it('shows verification prompt and menu when /menu runs during guest auth fallback', async () => {
     const { bot, getCommand } = createMockBot();
     registerExecutorMenu(bot);
