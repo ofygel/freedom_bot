@@ -27,7 +27,7 @@ import {
 import { presentRolePick } from '../../commands/start';
 import { publishVerificationApplication, type VerificationApplication } from '../../moderation/verifyQueue';
 import { getExecutorRoleCopy } from '../../copy';
-import { ui } from '../../ui';
+import { ui, type UiStepResult } from '../../ui';
 import { reportVerificationSubmitted, type UserIdentity } from '../../services/reports';
 import { setChatCommands } from '../../services/commands';
 import { CLIENT_COMMANDS } from '../../commands/sets';
@@ -84,16 +84,17 @@ const buildVerificationPrompt = (role: ExecutorRole): string => {
   const requiredPhotos = requirements.length || EXECUTOR_VERIFICATION_PHOTO_COUNT;
   const requirementLines = requirements.map((item, index) => `${index + 1}. ${item}`);
 
+  const requirementsParagraph = ['Нужно:', ...requirementLines].join('\n');
+
   return [
     '🛡️ Проверка документов.',
     '',
-    `Чтобы получить доступ к заказам ${copy.genitive}, пришлите ${requiredPhotos} фото:`,
-    ...requirementLines,
+    `Чтобы получить доступ к заказам ${copy.genitive}, пришлите ${requiredPhotos} фото в этот чат.`,
     '',
-    `ℹ️ ${VERIFICATION_ALBUM_HINT}`,
+    requirementsParagraph,
     '',
-    'Не уверены, что отправлять? Нажмите «Что подходит?» — покажем примеры.',
-    'Запутались? Воспользуйтесь «Назад/Где я?» или «Помощь».',
+    `ℹ️ ${VERIFICATION_ALBUM_HINT} Не уверены, что отправлять? Нажмите «Что подходит?» — покажем примеры. ` +
+      'Запутались? Воспользуйтесь «Назад/Где я?» или «Помощь».',
   ].join('\n');
 };
 
@@ -101,7 +102,7 @@ const VERIFICATION_CHANNEL_MISSING_STEP_ID = 'executor:verification:channel-miss
 const VERIFICATION_SUBMISSION_FAILED_STEP_ID = 'executor:verification:submission-failed';
 const VERIFICATION_SUBMITTED_STEP_ID = 'executor:verification:submitted';
 const VERIFICATION_ALREADY_SUBMITTED_STEP_ID = 'executor:verification:already-submitted';
-const VERIFICATION_PROMPT_STEP_ID = 'executor:verification:prompt';
+export const VERIFICATION_PROMPT_STEP_ID = 'executor:verification:prompt';
 const VERIFICATION_ALREADY_ON_REVIEW_STEP_ID = 'executor:verification:on-review';
 const VERIFICATION_START_REMINDER_STEP_ID = 'executor:verification:start-reminder';
 const VERIFICATION_PROGRESS_STEP_ID = 'executor:verification:progress';
@@ -147,10 +148,10 @@ const VERIFICATION_GUIDANCE_STEP_ID = 'executor:verification:guidance';
 export const showExecutorVerificationPrompt = async (
   ctx: BotContext,
   role: ExecutorRole,
-): Promise<void> => {
+): Promise<UiStepResult | undefined> => {
   const promptText = buildVerificationPrompt(role);
 
-  await ui.step(ctx, {
+  const stepResult = await ui.step(ctx, {
     id: VERIFICATION_PROMPT_STEP_ID,
     text: promptText,
     keyboard: buildVerificationPromptKeyboard(),
@@ -158,11 +159,7 @@ export const showExecutorVerificationPrompt = async (
     homeAction: EXECUTOR_MENU_ACTION,
   });
 
-  const state = ensureExecutorState(ctx);
-  const verificationState = state.verification[role];
-  if (verificationState) {
-    verificationState.lastReminderAt = Date.now();
-  }
+  return stepResult;
 };
 
 const buildVerificationApprovedText = (
@@ -455,7 +452,11 @@ export const startExecutorVerification = async (
   resetVerificationState(state);
   state.verification[role].status = 'collecting';
 
-  await showExecutorVerificationPrompt(ctx, role);
+  const promptResult = await showExecutorVerificationPrompt(ctx, role);
+  const verificationState = state.verification[role];
+  if (verificationState && promptResult) {
+    verificationState.lastReminderAt = Date.now();
+  }
 
   await showExecutorMenu(ctx, { skipAccessCheck: true });
 };
@@ -528,7 +529,10 @@ const handleIncomingPhoto = async (
     verification = state.verification[role];
     verification.status = 'collecting';
 
-    await showExecutorVerificationPrompt(ctx, role);
+    const promptResult = await showExecutorVerificationPrompt(ctx, role);
+    if (promptResult) {
+      verification.lastReminderAt = Date.now();
+    }
   } else if (verification.status !== 'collecting') {
     await ui.step(ctx, {
       id: VERIFICATION_START_REMINDER_STEP_ID,
@@ -640,7 +644,10 @@ const handleTextDuringCollection = async (ctx: BotContext, next: () => Promise<v
     return;
   }
 
-  await showExecutorVerificationPrompt(ctx, role);
+  const promptResult = await showExecutorVerificationPrompt(ctx, role);
+  if (promptResult) {
+    verification.lastReminderAt = Date.now();
+  }
 };
 
 

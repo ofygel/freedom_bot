@@ -15,6 +15,7 @@ import {
 import {
   EXECUTOR_ROLE_SWITCH_ACTION,
   EXECUTOR_VERIFICATION_GUIDE_ACTION,
+  VERIFICATION_PROMPT_STEP_ID,
   showExecutorVerificationPrompt,
   startExecutorVerification,
 } from '../flows/executor/verification';
@@ -125,15 +126,17 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
   if (executorState?.status === 'collecting') {
     const now = Date.now();
     const lastReminderAt = executorState.lastReminderAt ?? 0;
+    const shouldSendReminder = now - lastReminderAt >= VERIFICATION_REMINDER_INTERVAL_MS;
+    const promptStep = ctx.session.ui?.steps?.[VERIFICATION_PROMPT_STEP_ID];
+    const hasPromptStep = Boolean(promptStep && promptStep.chatId === ctx.chat?.id);
 
-    if (now - lastReminderAt >= VERIFICATION_REMINDER_INTERVAL_MS) {
-      try {
-        await showExecutorVerificationPrompt(ctx, executorRole);
-      } catch (error) {
-        logger.debug({ err: error }, 'Failed to send verification reminder');
+    try {
+      const promptResult = await showExecutorVerificationPrompt(ctx, executorRole);
+      if (promptResult && (shouldSendReminder || !hasPromptStep || promptResult.sent)) {
+        executorState.lastReminderAt = now;
       }
-
-      executorState.lastReminderAt = now;
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to send verification reminder');
     }
 
     return;
