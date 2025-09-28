@@ -422,6 +422,8 @@ const handleSubscriptionApproval = async (
     lastName: subscription.lastName ?? undefined,
     phone: subscription.phone,
     shortId: activation.subscriptionId ? String(activation.subscriptionId) : undefined,
+    subscriptionStatus: 'active',
+    subscriptionExpiresAt: activation.nextBillingAt,
   };
 
   await reportSubscriptionApproved(
@@ -521,6 +523,7 @@ const handleSubscriptionRejection = async (
     firstName: subscription.firstName ?? undefined,
     lastName: subscription.lastName ?? undefined,
     phone: subscription.phone,
+    subscriptionStatus: 'none',
   };
 
   await reportSubscriptionRejected(

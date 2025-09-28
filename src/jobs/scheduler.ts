@@ -15,6 +15,7 @@ import {
   reportSubscriptionWarning,
   type SubscriptionIdentity,
 } from '../bot/services/reports';
+import { updateUserSubscriptionStatus } from '../db/users';
 
 let task: ScheduledTask | null = null;
 let running = false;
@@ -87,6 +88,8 @@ const sendWarningMessage = async (
     firstName: subscription.firstName ?? undefined,
     lastName: subscription.lastName ?? undefined,
     shortId: subscription.shortId ?? undefined,
+    subscriptionStatus: 'active',
+    subscriptionExpiresAt: subscription.expiresAt,
   };
 
   await reportSubscriptionWarning(telegram, identity, subscription.expiresAt);
@@ -117,6 +120,8 @@ const sendExpirationMessage = async (
     firstName: subscription.firstName ?? undefined,
     lastName: subscription.lastName ?? undefined,
     shortId: subscription.shortId ?? undefined,
+    subscriptionStatus: 'expired',
+    subscriptionExpiresAt: subscription.expiresAt,
   };
 
   await reportSubscriptionExpired(telegram, identity, subscription.expiresAt);
@@ -234,6 +239,33 @@ const processExpiredSubscriptions = async (
   } catch (error) {
     logger.error({ err: error }, 'Failed to mark subscriptions as expired');
     return;
+  }
+
+  for (const subscription of expired) {
+    if (!subscription.telegramId) {
+      continue;
+    }
+
+    try {
+      await updateUserSubscriptionStatus({
+        telegramId: subscription.telegramId,
+        subscriptionStatus: 'expired',
+        subscriptionExpiresAt: subscription.expiresAt,
+        trialExpiresAt: null,
+        hasActiveOrder: false,
+        status: 'trial_expired',
+        updatedAt: now,
+      });
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          subscriptionId: subscription.id,
+          telegramId: subscription.telegramId,
+        },
+        'Failed to update user state after subscription expiration',
+      );
+    }
   }
 
   for (const subscription of expired) {

@@ -5,7 +5,7 @@ import { config, logger } from '../../config';
 import { getChannelBinding } from '../channels/bindings';
 import { CITY_LABEL } from '../../domain/cities';
 import type { OrderRecord, OrderKind } from '../../types';
-import type { ExecutorRole } from '../types';
+import type { ExecutorRole, UserSubscriptionStatus } from '../types';
 import { getExecutorRoleCopy } from '../copy';
 
 const REPORT_PREVIEW_LENGTH = 120;
@@ -29,6 +29,10 @@ interface UserIdentity {
 
 interface SubscriptionIdentity extends UserIdentity {
   shortId?: string;
+  subscriptionStatus?: UserSubscriptionStatus;
+  subscriptionExpiresAt?: Date | number | string;
+  trialExpiresAt?: Date | number | string;
+  hasActiveOrder?: boolean;
 }
 
 const formatDateTime = (value?: Date | number | string): string | undefined => {
@@ -88,6 +92,46 @@ const formatExecutorRole = (role?: ExecutorRole): string | undefined => {
 
   const copy = getExecutorRoleCopy(role);
   return `${copy.noun} (${role})`;
+};
+
+const formatSubscriptionStatus = (
+  status?: UserSubscriptionStatus,
+): string | undefined => {
+  if (!status) {
+    return undefined;
+  }
+
+  const labels: Record<UserSubscriptionStatus, string> = {
+    none: 'нет подписки',
+    trial: 'пробный период',
+    active: 'активна',
+    grace: 'льготный период',
+    expired: 'истекла',
+  };
+
+  return labels[status];
+};
+
+const appendSubscriptionDetails = (
+  lines: string[],
+  subscriber: SubscriptionIdentity,
+  fallbackExpiresAt?: Date | number | string,
+): void => {
+  const statusLabel = formatSubscriptionStatus(subscriber.subscriptionStatus);
+  if (statusLabel) {
+    lines.push(`Статус: ${statusLabel}`);
+  }
+
+  const expiresSource =
+    subscriber.subscriptionExpiresAt ?? subscriber.trialExpiresAt ?? fallbackExpiresAt;
+  const expiresLabel = formatDateTime(expiresSource);
+  if (expiresLabel) {
+    lines.push(`Доступ до: ${expiresLabel}`);
+  }
+
+  if (subscriber.hasActiveOrder !== undefined) {
+    lines.push(`Активный заказ: ${subscriber.hasActiveOrder ? 'да' : 'нет'}`);
+  }
 };
 
 const truncatePreview = (text: string): string => {
@@ -346,12 +390,7 @@ const buildSubscriptionDecisionReport = (
   if (decidedLabel) {
     lines.push(`Решение: ${decidedLabel}`);
   }
-  if (expiresAt) {
-    const expiresLabel = formatDateTime(expiresAt);
-    if (expiresLabel) {
-      lines.push(`Доступ до: ${expiresLabel}`);
-    }
-  }
+  appendSubscriptionDetails(lines, payer, expiresAt);
   if (reason) {
     lines.push(`Причина: ${reason}`);
   }
@@ -392,10 +431,7 @@ const buildSubscriptionLifecycleReport = (
 ): string => {
   const lines = [prefix];
   appendUserLine(lines, 'Исполнитель', subscriber);
-  const expiresLabel = formatDateTime(expiresAt);
-  if (expiresLabel) {
-    lines.push(`Доступ до: ${expiresLabel}`);
-  }
+  appendSubscriptionDetails(lines, subscriber, expiresAt);
   return lines.join('\n');
 };
 
