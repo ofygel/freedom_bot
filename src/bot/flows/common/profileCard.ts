@@ -12,6 +12,10 @@ export interface ProfileCardNavigationOptions {
   homeAction: string;
 }
 
+export interface ProfileCardActionOptions extends ProfileCardNavigationOptions {
+  onAnswerError?: (error: unknown) => void;
+}
+
 export const buildProfileCardText = (ctx: BotContext): string => {
   const authUser = ctx.auth?.user;
   const lines = ['👤 Профиль', ''];
@@ -107,6 +111,29 @@ export const renderProfileCard = async (
   }
 
   await ctx.reply(text, { reply_markup });
+};
+
+export const renderProfileCardFromAction = async (
+  ctx: BotContext,
+  options: ProfileCardActionOptions,
+): Promise<void> => {
+  if (ctx.chat?.type === 'private' && ctx.callbackQuery) {
+    try {
+      await ctx.answerCbQuery();
+    } catch (error) {
+      options.onAnswerError?.(error);
+    }
+  }
+
+  await renderProfileCard(ctx, options);
+};
+
+export const createProfileCardActionHandler = (
+  options: ProfileCardActionOptions,
+): ((ctx: BotContext) => Promise<void>) => {
+  return async (ctx: BotContext) => {
+    await renderProfileCardFromAction(ctx, options);
+  };
 };
 
 export const __testing__ = {

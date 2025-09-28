@@ -1,14 +1,15 @@
 import type { Telegraf } from 'telegraf';
 
 import type { BotContext } from '../../types';
-import { SAFE_MODE_CARD_ACTIONS, buildSafeModeCardText } from '../../ui/safeModeCard';
-import { buildProfileCardText } from './profileCard';
+import { SAFE_MODE_CARD_ACTIONS, buildSafeModeCardText, showSafeModeCard } from '../../ui/safeModeCard';
+import { buildProfileCardText, createProfileCardActionHandler } from './profileCard';
 import { askCity } from './citySelect';
 import { promptClientSupport } from '../client/support';
 
 const SAFE_MODE_PROFILE_ACTION = SAFE_MODE_CARD_ACTIONS.profile;
 const SAFE_MODE_CITY_ACTION = SAFE_MODE_CARD_ACTIONS.city;
 const SAFE_MODE_SUPPORT_ACTION = SAFE_MODE_CARD_ACTIONS.support;
+const SAFE_MODE_MENU_ACTION = SAFE_MODE_CARD_ACTIONS.menu;
 
 export const isSafeModeSession = (ctx: BotContext): boolean =>
   ctx.session.safeMode === true
@@ -16,25 +17,31 @@ export const isSafeModeSession = (ctx: BotContext): boolean =>
   || ctx.auth?.user.status === 'safe_mode';
 
 export const registerSafeModeActions = (bot: Telegraf<BotContext>): void => {
-  bot.action(SAFE_MODE_PROFILE_ACTION, async (ctx) => {
-    try {
-      await ctx.answerCbQuery();
-    } catch {
-      // Ignore answer errors
-    }
+  bot.action(
+    SAFE_MODE_PROFILE_ACTION,
+    createProfileCardActionHandler({
+      backAction: SAFE_MODE_MENU_ACTION,
+      homeAction: SAFE_MODE_MENU_ACTION,
+    }),
+  );
 
+  bot.action(SAFE_MODE_MENU_ACTION, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
-      if (ctx.chat) {
-        try {
-          await ctx.reply('Карточка доступна только в личном чате.');
-        } catch {
-          // Ignore
-        }
+      try {
+        await ctx.answerCbQuery('Безопасный режим доступен только в личном чате.');
+      } catch {
+        // Ignore
       }
       return;
     }
 
-    await ctx.reply(buildProfileCardText(ctx));
+    try {
+      await ctx.answerCbQuery();
+    } catch {
+      // Ignore
+    }
+
+    await showSafeModeCard(ctx);
   });
 
   bot.action(SAFE_MODE_CITY_ACTION, async (ctx) => {

@@ -25,7 +25,11 @@ import { bindInlineKeyboardToUser } from '../../services/callbackTokens';
 import { copy } from '../../copy';
 import { ROLE_PICK_CLIENT_ACTION } from '../executor/roleSelectionConstants';
 import { clearOnboardingState } from '../../services/onboarding';
-import { PROFILE_BUTTON_LABEL, renderProfileCard } from '../common/profileCard';
+import {
+  PROFILE_BUTTON_LABEL,
+  renderProfileCard,
+  renderProfileCardFromAction,
+} from '../common/profileCard';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
@@ -298,16 +302,16 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
 
     await logClientMenuClick(ctx, 'client_home_menu:profile');
 
-    try {
-      await ctx.answerCbQuery();
-    } catch (error) {
-      logger.debug({ err: error }, 'Failed to answer client menu profile callback');
-    }
-
-    await renderProfileCard(ctx, {
-      backAction: CLIENT_MENU_ACTION,
-      homeAction: CLIENT_MENU_ACTION,
-    });
+    await renderProfileCardFromAction(
+      ctx,
+      {
+        backAction: CLIENT_MENU_ACTION,
+        homeAction: CLIENT_MENU_ACTION,
+        onAnswerError: (error) => {
+          logger.debug({ err: error }, 'Failed to answer client menu profile callback');
+        },
+      },
+    );
   });
 
   bot.action(CLIENT_MENU_CITY_SELECT_ACTION, async (ctx) => {
