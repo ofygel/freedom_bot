@@ -91,15 +91,13 @@ const bindAction = (
   userId: string | null,
   keyboardNonce: string | null,
 ): string => {
-  if (!userId || !keyboardNonce) {
-    return action;
-  }
+  const shouldBind = Boolean(userId && keyboardNonce);
 
   return wrapCallbackData(action, {
     secret,
-    userId,
-    keyboardNonce,
-    bindToUser: true,
+    userId: userId ?? undefined,
+    keyboardNonce: keyboardNonce ?? undefined,
+    bindToUser: shouldBind,
     ttlSeconds: config.bot.callbackTtlSeconds,
   });
 };
