@@ -137,9 +137,12 @@ const buildMessageKeyboard = (
     ]);
   });
 
-  if (reasons.length === 0) {
-    rows.push([Markup.button.callback('❌ Отклонить', `${rejectAction}:${token}:0`)]);
-  }
+  const manualIndex = reasons.length;
+  const manualLabel =
+    reasons.length > 0 ? '❌ Отклонить с комментарием' : '❌ Отклонить';
+  rows.push([
+    Markup.button.callback(manualLabel, `${rejectAction}:${token}:${manualIndex.toString(10)}`),
+  ]);
 
   return Markup.inlineKeyboard(rows);
 };
@@ -706,6 +709,13 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     }
 
     const suggestion = entry.rejectionReasons?.[reasonIndex];
+    const trimmedSuggestion = suggestion?.trim();
+
+    if (trimmedSuggestion) {
+      await resolveDecision(ctx, token, 'rejected', trimmedSuggestion);
+      return;
+    }
+
     const promptLines = [
       'Укажите причину отклонения заявки в ответ на это сообщение.',
       suggestion ? `Предложенный вариант: ${suggestion}` : undefined,

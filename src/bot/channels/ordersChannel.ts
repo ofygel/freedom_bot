@@ -614,6 +614,7 @@ type OrderActionOutcome =
   | { outcome: 'dismissed'; order: OrderRecord }
   | { outcome: 'already_dismissed' }
   | { outcome: 'limit_exceeded' }
+  | { outcome: 'forbidden_kind'; order: OrderRecord }
   | { outcome: 'city_mismatch'; order: OrderRecord };
 
 interface OrderActionActor {
@@ -671,6 +672,10 @@ const processOrderAction = async (
 
         if (typeof actorId !== 'number') {
           throw new Error('Missing moderator identifier for order claim');
+        }
+
+        if (order.kind === 'taxi' && actor.role !== 'driver') {
+          return { outcome: 'forbidden_kind', order } as const;
         }
 
         if (actor.role === 'driver') {
@@ -884,6 +889,10 @@ const handleOrderDecision = async (
     case 'city_mismatch': {
       await ensureMessageReflectsState(ctx.telegram, state);
       await ctx.answerCbQuery('⚠️ Заказ не из вашего города.', { show_alert: true });
+      return;
+    }
+    case 'forbidden_kind': {
+      await ctx.answerCbQuery('🚫 Этот заказ доступен только водителям.', { show_alert: true });
       return;
     }
     case 'claimed': {
