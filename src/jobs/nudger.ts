@@ -38,6 +38,8 @@ const MIN_INACTIVITY_SECONDS = 90;
 const resolveInactivityThreshold = (): number =>
   Math.max(config.jobs.nudgerInactivitySeconds, MIN_INACTIVITY_SECONDS);
 
+const resolveCallbackTtl = (): number => config.bot.callbackTtlSeconds;
+
 const fetchPendingSessions = async (): Promise<PendingSessionRow[]> => {
   const { rows } = await pool.query<PendingSessionRow>(
     `
@@ -53,11 +55,17 @@ const fetchPendingSessions = async (): Promise<PendingSessionRow[]> => {
       WHERE s.scope = 'chat'
         AND s.last_step_at IS NOT NULL
         AND s.last_step_at <= now() - ($1::int * INTERVAL '1 second')
-        AND (s.nudge_sent_at IS NULL OR s.nudge_sent_at < s.last_step_at)
+        AND (
+          s.nudge_sent_at IS NULL
+          OR (
+            s.nudge_sent_at < s.last_step_at
+            AND s.nudge_sent_at <= now() - ($2::int * INTERVAL '1 second')
+          )
+        )
       ORDER BY s.last_step_at ASC
-      LIMIT $2
+      LIMIT $3
     `,
-    [resolveInactivityThreshold(), BATCH_LIMIT],
+    [resolveInactivityThreshold(), resolveCallbackTtl(), BATCH_LIMIT],
   );
 
   return rows;
@@ -264,6 +272,8 @@ export const startInactivityNudger = (bot: Telegraf<BotContext>): void => {
     },
     { timezone: config.timezone },
   );
+
+  task.start();
 
   logger.info(
     {
