@@ -198,7 +198,10 @@ const getCachedExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
 
 export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
   const authRole = ctx.auth.user.role;
-  if (authRole === 'executor' && isExecutorKind(ctx.auth.user.executorKind)) {
+  if (
+    (authRole === 'executor' || authRole === 'moderator')
+    && isExecutorKind(ctx.auth.user.executorKind)
+  ) {
     return true;
   }
 
@@ -212,7 +215,10 @@ export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
 
 const deriveAuthExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
   const authRole = ctx.auth.user.role;
-  if (authRole === 'executor' && isExecutorKind(ctx.auth.user.executorKind)) {
+  if (
+    (authRole === 'executor' || authRole === 'moderator')
+    && isExecutorKind(ctx.auth.user.executorKind)
+  ) {
     return ctx.auth.user.executorKind;
   }
 

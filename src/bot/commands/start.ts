@@ -10,6 +10,7 @@ import { startExecutorVerification } from '../flows/executor/verification';
 import { startExecutorSubscription } from '../flows/executor/subscription';
 import { buildInlineKeyboard } from '../keyboards/common';
 import { ui } from '../ui';
+import { clearOnboardingState, setOnboardingStep } from '../services/onboarding';
 import {
   ROLE_SELECTION_BACK_ACTION,
   ROLE_PICK_CLIENT_ACTION,
@@ -90,6 +91,7 @@ export const presentRolePick = async (
     text: buildRolePickText(options),
     keyboard: buildRolePickKeyboard(),
   });
+  setOnboardingStep(ctx, 'role');
 };
 
 export const presentExecutorKindSelection = async (
@@ -108,6 +110,7 @@ export const presentExecutorKindSelection = async (
     text: buildExecutorKindText(options ?? { withHint: true }),
     keyboard: buildExecutorKindKeyboard(),
   });
+  setOnboardingStep(ctx, 'executorKind');
 };
 
 const applyCommandsForRole = async (ctx: BotContext): Promise<void> => {
@@ -121,7 +124,7 @@ const applyCommandsForRole = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
-  if (role === 'executor') {
+  if (role === 'executor' || role === 'moderator') {
     await setChatCommands(ctx.telegram, ctx.chat.id, EXECUTOR_COMMANDS, { showMenuButton: true });
   }
 };
@@ -140,6 +143,7 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
   await applyCommandsForRole(ctx);
   const userRole = ctx.auth.user.role;
   if (userRole === 'client') {
+    clearOnboardingState(ctx);
     await hideClientMenu(ctx, 'Открываю главное меню…');
     await sendClientMenu(ctx, 'Чем займёмся дальше? Выберите действие из меню ниже.');
     return;
@@ -149,20 +153,24 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
   const role = executorState.role;
   const stage = executorState.roleSelectionStage;
   const awaitingRoleSelection = executorState.awaitingRoleSelection === true;
-  if (!role || awaitingRoleSelection || stage === 'role' || stage === 'executorKind') {
+  const needsRoleSelection =
+    !role || awaitingRoleSelection || stage === 'role' || stage === 'executorKind' || stage === 'city';
+  if (needsRoleSelection) {
     executorState.awaitingRoleSelection = true;
     executorState.role = undefined;
-    const prompt = stage === 'executorKind'
+    const prompt = stage === 'executorKind' || stage === 'city'
       ? 'Выберите специализацию исполнителя ниже.'
       : 'Меняем роль — выберите подходящий вариант ниже.';
     await hideClientMenu(ctx, prompt);
-    if (stage === 'executorKind') {
+    if (stage === 'executorKind' || stage === 'city') {
       await presentExecutorKindSelection(ctx);
     } else {
       await presentRolePick(ctx);
     }
     return;
   }
+
+  clearOnboardingState(ctx);
 
   const verification = executorState.verification[role];
   if (verification.status === 'idle' || verification.status === 'collecting') {
@@ -176,6 +184,7 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
+  clearOnboardingState(ctx);
   await showExecutorMenu(ctx);
 };
 
@@ -199,6 +208,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
     executorState.roleSelectionStage = 'executorKind';
     ctx.auth.user.executorKind = undefined;
     resetCitySelectionTracking(ctx);
+    setOnboardingStep(ctx, 'executorKind');
 
     try {
       await ctx.answerCbQuery('Теперь выберите специализацию.');
@@ -225,6 +235,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
     executorState.roleSelectionStage = 'role';
     ctx.auth.user.executorKind = undefined;
     resetCitySelectionTracking(ctx);
+    setOnboardingStep(ctx, 'role');
 
     try {
       await ctx.answerCbQuery('Подсказка отправлена.');
@@ -251,6 +262,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
     executorState.roleSelectionStage = 'role';
     ctx.auth.user.executorKind = undefined;
     resetCitySelectionTracking(ctx);
+    setOnboardingStep(ctx, 'role');
 
     try {
       await ctx.answerCbQuery('Вернёмся к выбору роли.');
@@ -296,6 +308,7 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
       executorState.roleSelectionStage = 'executorKind';
       ctx.auth.user.executorKind = undefined;
       resetCitySelectionTracking(ctx);
+      setOnboardingStep(ctx, 'executorKind');
 
       try {
         await ctx.answerCbQuery('Вернёмся к выбору специализации.');
@@ -308,10 +321,12 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
     }
 
     if (stage === 'executorKind') {
+      setOnboardingStep(ctx, 'role');
       await goToRoleSelection('Вернёмся к выбору роли.', { withHint: true });
       return;
     }
 
+    setOnboardingStep(ctx, 'role');
     await goToRoleSelection('Вы на шаге выбора роли.');
   });
 

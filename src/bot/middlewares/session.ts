@@ -26,6 +26,7 @@ import {
   type ExecutorSubscriptionState,
   type ExecutorUploadedPhoto,
   type ExecutorVerificationState,
+  type OnboardingState,
   type SessionState,
   type SessionUser,
   type SupportSessionState,
@@ -61,6 +62,8 @@ const createExecutorState = (): ExecutorFlowState => ({
   roleSelectionStage: 'role',
 });
 
+const createOnboardingState = () => ({ active: false }) satisfies OnboardingState;
+
 const createClientOrderDraft = (): ClientOrderDraftState => ({
   stage: 'idle',
 });
@@ -81,7 +84,7 @@ const createSupportState = (): SupportSessionState => ({
   status: 'idle',
 });
 
-const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'executor'];
+const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'executor', 'moderator'];
 const USER_STATUSES: readonly UserStatus[] = [
   'guest',
   'onboarding',
@@ -161,12 +164,10 @@ const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthSta
   };
 
   const candidateRole = (candidate as { role?: unknown }).role;
-  if (typeof candidateRole === 'string') {
+  if (typeof candidateRole === 'string' && USER_ROLES.includes(candidateRole as UserRole)) {
+    snapshot.role = candidateRole as UserRole;
     if (candidateRole === 'moderator') {
-      snapshot.role = 'executor';
       snapshot.isModerator = true;
-    } else if (USER_ROLES.includes(candidateRole as UserRole)) {
-      snapshot.role = candidateRole as UserRole;
     }
   }
 
@@ -200,6 +201,8 @@ const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthSta
   }
 
   if (snapshot.isModerator) {
+    snapshot.role = 'moderator';
+  } else if (snapshot.role === 'moderator') {
     snapshot.role = 'executor';
   }
 
@@ -399,6 +402,10 @@ const normaliseSessionState = (state: SessionState): SessionState => {
     working.support = createSupportState();
   }
 
+  if (!working.onboarding) {
+    working.onboarding = createOnboardingState();
+  }
+
   working.executor = rebuildExecutorState((working as { executor?: unknown }).executor);
   working.client = rebuildClientState((working as { client?: unknown }).client);
   working.authSnapshot = rebuildAuthSnapshot(
@@ -421,6 +428,7 @@ const createDefaultState = (): SessionState => ({
   client: createClientState(),
   ui: createUiState(),
   support: createSupportState(),
+  onboarding: createOnboardingState(),
 });
 
 const prepareFallbackSession = (

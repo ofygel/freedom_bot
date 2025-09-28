@@ -49,7 +49,7 @@ const resolveExecutorRole = (ctx: BotContext, fallback: ExecutorRole): ExecutorR
 
 export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next) => {
   const role = ctx.auth?.user.role;
-  if (role !== 'executor') {
+  if (role !== 'executor' && role !== 'moderator') {
     await next();
     return;
   }
@@ -129,10 +129,11 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
     const shouldSendReminder = now - lastReminderAt >= VERIFICATION_REMINDER_INTERVAL_MS;
     const promptStep = ctx.session.ui?.steps?.[VERIFICATION_PROMPT_STEP_ID];
     const hasPromptStep = Boolean(promptStep && promptStep.chatId === ctx.chat?.id);
+    const shouldRefreshPrompt = shouldSendReminder || !hasPromptStep;
 
     try {
       const promptResult = await showExecutorVerificationPrompt(ctx, executorRole);
-      if (promptResult && (shouldSendReminder || !hasPromptStep || promptResult.sent)) {
+      if (promptResult && (shouldRefreshPrompt || promptResult.sent)) {
         executorState.lastReminderAt = now;
       }
     } catch (error) {
