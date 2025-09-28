@@ -492,6 +492,57 @@ export const markOrderAsCancelled = async (orderId: number): Promise<OrderRecord
   return mapOrderRow(row);
 };
 
+export interface ListOpenOrdersOptions {
+  city: AppCity;
+  limit?: number;
+}
+
+export const listOpenOrdersByCity = async ({
+  city,
+  limit,
+}: ListOpenOrdersOptions): Promise<OrderRecord[]> => {
+  const params: unknown[] = [city];
+  let limitClause = '';
+
+  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) {
+    params.push(Math.trunc(limit));
+    limitClause = `LIMIT $${params.length}::int`;
+  }
+
+  const { rows } = await pool.query<OrderRow>(
+    `
+      SELECT *
+      FROM orders
+      WHERE status = 'open'
+        AND city = $1
+      ORDER BY created_at DESC, id DESC
+      ${limitClause}
+    `,
+    params,
+  );
+
+  return rows.map(mapOrderRow);
+};
+
+export const findActiveOrderForExecutor = async (
+  executorId: number,
+): Promise<OrderRecord | null> => {
+  const { rows } = await pool.query<OrderRow>(
+    `
+      SELECT *
+      FROM orders
+      WHERE claimed_by = $1
+        AND status = 'claimed'
+      ORDER BY claimed_at DESC NULLS LAST, id DESC
+      LIMIT 1
+    `,
+    [executorId],
+  );
+
+  const [row] = rows;
+  return row ? mapOrderRow(row) : null;
+};
+
 export interface ListClientOrdersOptions {
   statuses?: OrderStatus[];
   limit?: number;

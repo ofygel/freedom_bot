@@ -9,19 +9,15 @@ import {
   EXECUTOR_MENU_ACTION,
   EXECUTOR_MENU_TEXT_LABELS,
   EXECUTOR_ORDERS_ACTION,
-  ensureExecutorState,
   requireExecutorRole,
-  showExecutorMenu,
 } from './menu';
 import { copy, getExecutorRoleCopy } from '../../copy';
+import { registerExecutorJobs, processOrdersRequest as processJobsRequest } from './jobs';
 
 const ORDERS_LINK_STEP_ID = 'executor:orders:link';
 
 export const EXECUTOR_SUBSCRIPTION_REQUIRED_MESSAGE =
   'Подписка на канал заказов не активна. Оформите подписку через меню, чтобы получить доступ.';
-
-const EXECUTOR_ORDERS_INVITE_FAILURE_PROMPT =
-  'Не удалось получить ссылку на канал заказов. Попробуйте позже или обратитесь в поддержку через меню.';
 
 const formatDateTime = (value: Date): string =>
   new Intl.DateTimeFormat('ru-RU', {
@@ -171,62 +167,19 @@ export const sendInviteLink = async (
 };
 
 export const processOrdersRequest = async (ctx: BotContext): Promise<void> => {
-  const state = ensureExecutorState(ctx);
-  if (!state.role) {
-    return;
-  }
-  if (!ctx.auth.executor.hasActiveSubscription) {
-    state.subscription.status = 'idle';
-    state.subscription.selectedPeriodId = undefined;
-    state.subscription.pendingPaymentId = undefined;
-    await ui.step(ctx, {
-      id: ORDERS_LINK_STEP_ID,
-      text: EXECUTOR_SUBSCRIPTION_REQUIRED_MESSAGE,
-      homeAction: EXECUTOR_MENU_ACTION,
-    });
-    await showExecutorMenu(ctx, { skipAccessCheck: true });
-    return;
-  }
-
-  const resolution = await resolveInviteLink(ctx, state);
-  if (!resolution.link) {
-    const isResolutionFailure =
-      resolution.source === 'none' &&
-      resolution.expiresAt instanceof Date &&
-      resolution.expiresAt.getTime() === 0;
-
-    const text = isResolutionFailure
-      ? `${copy.serviceUnavailable}\n\n${EXECUTOR_ORDERS_INVITE_FAILURE_PROMPT}`
-      : EXECUTOR_ORDERS_INVITE_FAILURE_PROMPT;
-
-    await ui.step(ctx, {
-      id: ORDERS_LINK_STEP_ID,
-      text,
-      homeAction: EXECUTOR_MENU_ACTION,
-    });
-    return;
-  }
-
-  state.subscription.lastInviteLink = resolution.link;
-  state.subscription.lastIssuedAt = Date.now();
-  state.subscription.status = 'idle';
-  state.subscription.selectedPeriodId = undefined;
-  state.subscription.pendingPaymentId = undefined;
-  state.subscription.moderationChatId = undefined;
-  state.subscription.moderationMessageId = undefined;
-
-  await sendInviteLink(ctx, state, resolution.link, resolution.expiresAt);
-  await showExecutorMenu(ctx, { skipAccessCheck: true });
+  await processJobsRequest(ctx);
 };
 
 export const registerExecutorOrders = (bot: Telegraf<BotContext>): void => {
+  registerExecutorJobs(bot);
+
   bot.action(EXECUTOR_ORDERS_ACTION, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
       await ctx.answerCbQuery('Доступно только в личных сообщениях.');
       return;
     }
 
-    await ctx.answerCbQuery('Готовим ссылку…');
+    await ctx.answerCbQuery('Открываю ленту заказов…');
     await processOrdersRequest(ctx);
   });
 

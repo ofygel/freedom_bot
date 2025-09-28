@@ -3,7 +3,7 @@ import type { User as TelegramUser } from 'telegraf/typings/core/types/typegram'
 
 import { config, logger } from '../../config';
 import { getChannelBinding } from '../channels/bindings';
-import { CITY_LABEL } from '../../domain/cities';
+import { CITY_LABEL, type AppCity } from '../../domain/cities';
 import type { OrderRecord, OrderKind } from '../../types';
 import type { ExecutorRole, UserSubscriptionStatus } from '../types';
 import { getExecutorRoleCopy } from '../copy';
@@ -509,6 +509,37 @@ const buildOrderActionReport = (
   return lines.join('\n');
 };
 
+const buildJobFeedReport = (
+  executor: UserIdentity,
+  cityLabel: string,
+  orderCount: number,
+): string => {
+  const lines = ['👀 JOB_VIEWED: лента заказов'];
+  appendUserLine(lines, 'Исполнитель', executor);
+  lines.push(`Город: ${cityLabel}`);
+  lines.push(orderCount > 0 ? `Доступно заказов: ${orderCount}` : 'Свободных заказов нет');
+  return lines.join('\n');
+};
+
+const buildJobActionReport = (
+  heading: string,
+  order: OrderRecord,
+  executor: UserIdentity,
+  extra?: string[],
+): string => {
+  const lines = [heading, buildOrderHeading(order)];
+  appendUserLine(lines, 'Исполнитель', executor);
+  const cityLabel = CITY_LABEL[order.city] ?? order.city;
+  lines.push(`Город: ${cityLabel}`);
+  if (order.price) {
+    lines.push(`Стоимость: ${formatAmount(order.price.amount, order.price.currency)}`);
+  }
+  if (extra && extra.length > 0) {
+    lines.push(...extra);
+  }
+  return lines.join('\n');
+};
+
 export const reportOrderPublished = async (
   telegram: Telegram,
   order: OrderRecord,
@@ -543,6 +574,68 @@ export const reportOrderCompleted = async (
   executor?: UserIdentity,
 ): Promise<ReportSendResult> =>
   sendStatsReport(telegram, buildOrderActionReport('🏁 Заказ завершён', order, executor));
+
+export const reportJobFeedViewed = async (
+  telegram: Telegram,
+  executor: UserIdentity,
+  city: AppCity,
+  orderCount: number,
+): Promise<ReportSendResult> =>
+  sendStatsReport(telegram, buildJobFeedReport(executor, CITY_LABEL[city] ?? city, orderCount));
+
+export const reportJobTaken = async (
+  telegram: Telegram,
+  order: OrderRecord,
+  executor: UserIdentity,
+): Promise<ReportSendResult> =>
+  sendStatsReport(
+    telegram,
+    buildJobActionReport('🤝 JOB_TAKEN: заказ взят исполнителем', order, executor, [
+      'Источник: лента заказов',
+    ]),
+  );
+
+export const reportJobReleased = async (
+  telegram: Telegram,
+  order: OrderRecord,
+  executor: UserIdentity,
+  republished?: boolean,
+): Promise<ReportSendResult> => {
+  const extra: string[] = ['Источник: лента заказов'];
+  if (republished === true) {
+    extra.push('Статус: заказ возвращён в ленту/канал');
+  } else if (republished === false) {
+    extra.push('Статус: требуется ручная обработка');
+  }
+  return sendStatsReport(
+    telegram,
+    buildJobActionReport('↩️ JOB_RELEASED: исполнитель отказался от заказа', order, executor, extra),
+  );
+};
+
+export const reportJobCompleted = async (
+  telegram: Telegram,
+  order: OrderRecord,
+  executor: UserIdentity,
+): Promise<ReportSendResult> =>
+  sendStatsReport(
+    telegram,
+    buildJobActionReport('🏁 JOB_COMPLETED: заказ завершён исполнителем', order, executor, [
+      'Источник: лента заказов',
+    ]),
+  );
+
+export const reportJobViewed = async (
+  telegram: Telegram,
+  order: OrderRecord,
+  executor: UserIdentity,
+): Promise<ReportSendResult> =>
+  sendStatsReport(
+    telegram,
+    buildJobActionReport('👁️ JOB_VIEWED: просмотрена карточка заказа', order, executor, [
+      'Источник: лента заказов',
+    ]),
+  );
 
 export type { UserIdentity, SubscriptionIdentity };
 export { toUserIdentity };
