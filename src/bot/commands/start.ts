@@ -165,11 +165,13 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
     const prompt = stage === 'executorKind' || stage === 'city'
       ? 'Выберите специализацию исполнителя ниже.'
       : 'Меняем роль — выберите подходящий вариант ниже.';
+    const showRoleHint = stage === 'role';
+    const showExecutorKindHint = stage === 'executorKind' || stage === 'city';
     await hideClientMenu(ctx, prompt);
     if (stage === 'executorKind' || stage === 'city') {
-      await presentExecutorKindSelection(ctx);
+      await presentExecutorKindSelection(ctx, { withHint: showExecutorKindHint });
     } else {
-      await presentRolePick(ctx);
+      await presentRolePick(ctx, { withHint: showRoleHint });
     }
     return;
   }
