@@ -1,7 +1,7 @@
 import { Markup, Telegraf } from 'telegraf';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
-import { config } from '../../../config';
+import { config, logger } from '../../../config';
 import {
   EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
@@ -25,6 +25,7 @@ import {
 import { CITY_LABEL } from '../../../domain/cities';
 import { CITY_ACTION_PATTERN, ensureCitySelected } from '../common/citySelect';
 import { showMenu } from '../client/menu';
+import { PROFILE_BUTTON_LABEL, renderProfileCard } from '../common/profileCard';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
@@ -33,6 +34,7 @@ export const EXECUTOR_SUPPORT_ACTION = 'support:contact';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
 const EXECUTOR_MENU_STEP_ID = 'executor:menu:card:v2';
 export const EXECUTOR_MENU_CITY_ACTION = 'executorMenu';
+const EXECUTOR_PROFILE_ACTION = 'executor:menu:profile';
 
 export const EXECUTOR_MENU_TEXT_LABELS = {
   documents: '📸 Документы',
@@ -355,6 +357,7 @@ const buildMenuKeyboard = (
   if (access.isVerified && access.hasActiveSubscription) {
     return Markup.inlineKeyboard([
       [Markup.button.callback('Заказы', EXECUTOR_ORDERS_ACTION)],
+      [Markup.button.callback(PROFILE_BUTTON_LABEL, EXECUTOR_PROFILE_ACTION)],
       [Markup.button.callback('Связаться с поддержкой', EXECUTOR_SUPPORT_ACTION)],
     ]).reply_markup;
   }
@@ -362,12 +365,14 @@ const buildMenuKeyboard = (
   if (!access.isVerified) {
     return Markup.inlineKeyboard([
       [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
+      [Markup.button.callback(PROFILE_BUTTON_LABEL, EXECUTOR_PROFILE_ACTION)],
       [Markup.button.callback('🔄 Обновить меню', EXECUTOR_MENU_ACTION)],
     ]).reply_markup;
   }
 
   return Markup.inlineKeyboard([
     [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
+    [Markup.button.callback(PROFILE_BUTTON_LABEL, EXECUTOR_PROFILE_ACTION)],
     [Markup.button.callback('🔄 Обновить меню', EXECUTOR_MENU_ACTION)],
   ]).reply_markup;
 };
@@ -782,6 +787,30 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
     await showExecutorMenu(ctx);
   });
 
+  bot.action(EXECUTOR_PROFILE_ACTION, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      await ctx.answerCbQuery('Карточка доступна только в личных сообщениях.');
+      return;
+    }
+
+    if (!userLooksLikeExecutor(ctx)) {
+      await ctx.answerCbQuery();
+      await showMenu(ctx);
+      return;
+    }
+
+    try {
+      await ctx.answerCbQuery();
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to answer executor profile callback');
+    }
+
+    await renderProfileCard(ctx, {
+      backAction: EXECUTOR_MENU_ACTION,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
+  });
+
   bot.command('menu', async (ctx) => {
     if (ctx.chat?.type !== 'private') {
       return;
@@ -802,6 +831,29 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
 
     ensureExecutorState(ctx);
     await showExecutorMenu(ctx);
+  });
+
+  bot.command('profile', async (ctx, next) => {
+    if (ctx.chat?.type !== 'private') {
+      if (typeof next === 'function') {
+        await next();
+      }
+      return;
+    }
+
+    if (!userLooksLikeExecutor(ctx)) {
+      if (typeof next === 'function') {
+        await next();
+      } else {
+        await showMenu(ctx);
+      }
+      return;
+    }
+
+    await renderProfileCard(ctx, {
+      backAction: EXECUTOR_MENU_ACTION,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
   });
 
   bot.hears(EXECUTOR_MENU_TEXT_LABELS.refresh, async (ctx) => {
