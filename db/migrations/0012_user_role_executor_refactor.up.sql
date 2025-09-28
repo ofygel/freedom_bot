@@ -100,9 +100,28 @@ UPDATE users
 SET verify_status = 'active'
 WHERE verify_status = 'none' AND role = 'executor' AND executor_kind IS NOT NULL;
 
-UPDATE users
-SET trial_started_at = COALESCE(trial_started_at, verified_at, trial_expires_at),
-    trial_expires_at = COALESCE(trial_expires_at, trial_ends_at)
-WHERE trial_started_at IS NULL OR trial_expires_at IS NULL;
+DO $$
+DECLARE
+  has_trial_ends_at BOOLEAN;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = current_schema()
+      AND table_name = 'users'
+      AND column_name = 'trial_ends_at'
+  ) INTO has_trial_ends_at;
+
+  IF has_trial_ends_at THEN
+    EXECUTE '
+      UPDATE users
+      SET trial_started_at = COALESCE(trial_started_at, verified_at, trial_expires_at),
+          trial_expires_at = COALESCE(trial_expires_at, trial_ends_at)
+      WHERE trial_started_at IS NULL OR trial_expires_at IS NULL
+    ';
+
+    EXECUTE 'ALTER TABLE users DROP COLUMN IF EXISTS trial_ends_at';
+  END IF;
+END $$;
 
 COMMIT;
