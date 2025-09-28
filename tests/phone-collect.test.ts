@@ -3,12 +3,14 @@ import './helpers/setup-env';
 import assert from 'node:assert/strict';
 import { afterEach, describe, it, mock } from 'node:test';
 
-import { askPhone } from '../src/bot/flows/common/phoneCollect';
+import { askPhone, savePhone } from '../src/bot/flows/common/phoneCollect';
 import { auth } from '../src/bot/middlewares/auth';
 import { stateGate } from '../src/bot/middlewares/stateGate';
 import type { BotContext, SessionState } from '../src/bot/types';
 import { pool } from '../src/db';
 import * as usersDb from '../src/db/users';
+import * as clientMenu from '../src/ui/clientMenu';
+import * as reports from '../src/bot/services/reports';
 
 const originalQuery = pool.query.bind(pool);
 
@@ -50,6 +52,72 @@ afterEach(() => {
 });
 
 describe('phone collection flow', () => {
+  it('promotes guest status to active_client when saving a shared phone', async () => {
+    const telegramId = 777001;
+    let executedQuery: string | undefined;
+    const queryMock = mock.method(pool, 'query', async (...args: Parameters<typeof pool.query>) => {
+      executedQuery = args[0] as string;
+      return { rows: [], rowCount: 1 } as any;
+    });
+
+    const sendClientMenuMock = mock.method(clientMenu, 'sendClientMenu', async () => undefined);
+    const reportUserRegistrationMock = mock.method(
+      reports,
+      'reportUserRegistration',
+      async () => ({ status: 'ok' } as any),
+    );
+
+    const ctx = {
+      from: { id: telegramId, username: 'guestuser', first_name: 'Guest', last_name: 'User' },
+      chat: { id: telegramId, type: 'private' as const },
+      message: { contact: { phone_number: '8 (777) 000-11-22', user_id: telegramId } },
+      session: createSessionState(),
+      auth: {
+        user: {
+          telegramId,
+          username: 'guestuser',
+          firstName: 'Guest',
+          lastName: 'User',
+          phone: undefined,
+          phoneVerified: false,
+          role: 'guest' as const,
+          status: 'guest' as const,
+          isVerified: false,
+          isBlocked: false,
+        },
+        executor: {
+          verifiedRoles: { courier: false, driver: false },
+          hasActiveSubscription: false,
+          isVerified: false,
+        },
+        isModerator: false,
+      },
+      state: {},
+      reply: async () => ({ message_id: 1, chat: { id: telegramId } }),
+      telegram: {} as BotContext['telegram'],
+    } as unknown as BotContext;
+
+    await savePhone(ctx, async () => undefined);
+
+    assert.equal(queryMock.mock.callCount(), 1, 'should persist phone once');
+    assert.ok(executedQuery, 'should execute SQL update');
+    assert.match(
+      executedQuery ?? '',
+      /status\s*=\s*CASE[\s\S]*WHEN status IN \('awaiting_phone', 'guest'\) THEN 'active_client'/,
+      'SQL should promote guest statuses to active_client',
+    );
+    assert.match(
+      executedQuery ?? '',
+      /WHEN status IS NULL THEN 'active_client'/,
+      'SQL should promote null statuses to active_client',
+    );
+    assert.equal(ctx.auth?.user?.status, 'active_client');
+
+    queryMock.mock.restore();
+    sendClientMenuMock.mock.restore();
+    reportUserRegistrationMock.mock.restore();
+  });
+
   it('marks users as blocked when Telegram returns 403 and restores access afterwards', async () => {
     const telegramId = 501;
     const blockedError = Object.assign(new Error('Forbidden'), {

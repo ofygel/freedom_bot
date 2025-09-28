@@ -120,7 +120,8 @@ export const savePhone: MiddlewareFn<BotContext> = async (ctx, next) => {
           status = CASE
             WHEN status IN ('suspended', 'banned') THEN status
             WHEN status IN ('awaiting_phone', 'guest') THEN 'active_client'
-            ELSE COALESCE(status, 'active_client')
+            WHEN status IS NULL THEN 'active_client'
+            ELSE status
           END,
           updated_at = now()
         WHERE tg_id = $2
