@@ -201,8 +201,14 @@ const deliverNudge = async (bot: Telegraf<BotContext>, row: PendingSessionRow): 
     return;
   }
 
-  logger.debug(
-    { job: 'nudger', scope: sessionKey.scope, scopeId: sessionKey.scopeId },
+  logger.info(
+    {
+      job: 'nudger',
+      scope: sessionKey.scope,
+      scopeId: sessionKey.scopeId,
+      flowState: row.flow_state,
+      role: row.role,
+    },
     'inactivity_nudge_sent',
   );
 };
@@ -234,6 +240,11 @@ const runNudgerTick = async (bot: Telegraf<BotContext>): Promise<void> => {
 
 export const startInactivityNudger = (bot: Telegraf<BotContext>): void => {
   if (task) {
+    return;
+  }
+
+  if (!config.features.nudgerEnabled) {
+    logger.info({ job: 'nudger' }, 'inactivity_nudger_feature_disabled');
     return;
   }
 

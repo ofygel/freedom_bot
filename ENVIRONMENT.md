@@ -66,6 +66,9 @@ are missing or blank.
 - `FEATURE_TRIAL_ENABLED` – Controls whether executors can activate the free trial
   subscription period from the bot. Enabled by default; set to `false` to disable
   the trial offer entirely.
+- `FEATURE_NUDGER_ENABLED` – Globally toggles inactivity nudges sent by the bot.
+  Enabled by default; set to `false` to stop all reminder messages without touching
+  the job schedule.
 
 ## Background jobs
 
