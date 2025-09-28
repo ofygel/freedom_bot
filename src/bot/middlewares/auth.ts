@@ -76,13 +76,12 @@ const normaliseString = (value: Nullable<string>): string | undefined => {
 
 const normaliseRole = (value: Nullable<string>): UserRole => {
   switch (value) {
-    case 'guest':
-      return 'guest';
-    case 'executor':
-    case 'moderator':
-      return value;
     case 'client':
       return 'client';
+    case 'executor':
+    case 'moderator':
+      return 'executor';
+    case 'guest':
     default:
       return 'guest';
   }
@@ -173,10 +172,15 @@ const buildExecutorState = (row: AuthQueryRow): AuthExecutorState => {
   } satisfies AuthExecutorState;
 };
 
-const deriveSnapshotStatus = (role: UserRole): UserStatus => {
+const deriveSnapshotStatus = (
+  role: UserRole,
+  options: { isModerator?: boolean } = {},
+): UserStatus => {
+  if (options.isModerator) {
+    return 'active_executor';
+  }
+
   switch (role) {
-    case 'moderator':
-      return 'active_executor';
     case 'executor':
       return 'active_executor';
     case 'client':
@@ -219,7 +223,8 @@ const buildAuthStateFromSnapshot = (
   const shouldRestoreRole = options.restoreRole ?? true;
   if (shouldRestoreRole) {
     base.user.role = snapshot.role;
-    base.user.status = snapshot.status ?? deriveSnapshotStatus(snapshot.role);
+    base.user.status = snapshot.status
+      ?? deriveSnapshotStatus(snapshot.role, { isModerator: snapshot.isModerator });
     base.user.executorKind = snapshot.executorKind ?? base.user.executorKind;
   }
   base.user.phoneVerified = Boolean(snapshot.phoneVerified || base.user.phoneVerified);
@@ -231,12 +236,19 @@ const buildAuthStateFromSnapshot = (
   base.user.trialExpiresAt = snapshot.trialExpiresAt ?? base.user.trialExpiresAt;
   base.user.citySelected = snapshot.city ?? base.user.citySelected;
   base.executor = cloneExecutorState(snapshot.executor);
-  base.isModerator = shouldRestoreRole && snapshot.role === 'moderator';
+  base.isModerator = shouldRestoreRole && snapshot.isModerator === true;
+  if (base.isModerator) {
+    base.user.role = 'executor';
+  }
 
   return base;
 };
 
-const deriveUserStatus = (row: AuthQueryRow, status: UserStatus): UserStatus => {
+const deriveUserStatus = (
+  row: AuthQueryRow,
+  status: UserStatus,
+  isModerator = false,
+): UserStatus => {
   if (status === 'trial_expired' || status === 'suspended' || status === 'banned') {
     return status;
   }
@@ -264,6 +276,10 @@ const deriveUserStatus = (row: AuthQueryRow, status: UserStatus): UserStatus => 
     role === 'executor' ? Boolean(row.has_active_subscription) : false;
 
   if (hasExecutorAccess) {
+    return 'active_executor';
+  }
+
+  if (isModerator) {
     return 'active_executor';
   }
 
@@ -357,10 +373,12 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
 const mapAuthRow = (row: AuthQueryRow): AuthState => {
   const telegramId = parseNumericId(row.tg_id);
   const executor = buildExecutorState(row);
+  const rawRole = row.role ?? undefined;
+  const isModerator = rawRole === 'moderator';
   let role = normaliseRole(row.role);
   let executorKind = normaliseExecutorKind(row.executor_kind);
   const verifyStatus = normaliseVerifyStatus(row.verify_status);
-  const status = deriveUserStatus(row, normaliseStatus(row.status));
+  const status = deriveUserStatus(row, normaliseStatus(row.status), isModerator);
   const lastMenuRole = normaliseMenuRole(row.last_menu_role);
 
   if (role === 'client') {
@@ -374,12 +392,16 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
     if (awaitingActivation || roleNeverConfirmed) {
       role = 'guest';
     }
-  } else if (role === 'executor' && !executorKind) {
+  } else if (role === 'executor' && !executorKind && !isModerator) {
     role = 'guest';
   }
 
-  if (role !== 'executor') {
+  if (!isModerator && role !== 'executor') {
     executorKind = undefined;
+  }
+
+  if (isModerator) {
+    role = 'executor';
   }
 
   const verifiedAt = parseTimestamp(row.verified_at);
@@ -411,7 +433,7 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
       keyboardNonce: normaliseString(row.keyboard_nonce),
     },
     executor,
-    isModerator: role === 'moderator',
+    isModerator,
   } satisfies AuthState;
 };
 
@@ -503,6 +525,7 @@ const applyAuthState = (
     verifyStatus: authState.user.verifyStatus,
     userIsVerified: authState.user.isVerified,
     executor: cloneExecutorState(authState.executor),
+    isModerator: authState.isModerator,
     trialStartedAt: authState.user.trialStartedAt,
     trialExpiresAt: authState.user.trialExpiresAt,
     city: authState.user.citySelected,
@@ -592,14 +615,17 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       const cachedSnapshot = ctx.session.authSnapshot;
 
       if (cachedSnapshot) {
+        const snapshotIsModerator = cachedSnapshot.isModerator === true;
         const snapshot: AuthStateSnapshot = {
           role: cachedSnapshot.role,
           executorKind: cachedSnapshot.executorKind,
-          status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
+          status: cachedSnapshot.status
+            ?? deriveSnapshotStatus(cachedSnapshot.role, { isModerator: snapshotIsModerator }),
           phoneVerified: cachedSnapshot.phoneVerified,
           verifyStatus: cachedSnapshot.verifyStatus,
           userIsVerified: cachedSnapshot.userIsVerified,
           executor: cloneExecutorState(cachedSnapshot.executor),
+          isModerator: snapshotIsModerator,
           trialStartedAt: cachedSnapshot.trialStartedAt,
           trialExpiresAt: cachedSnapshot.trialExpiresAt,
           city: cachedSnapshot.city,

@@ -93,9 +93,9 @@ const buildNudgeKeyboard = (
   }
 
   let fallbackAction: string | null = null;
-  if (role === 'executor') {
+  if (role === 'executor' || role === 'moderator') {
     fallbackAction = EXECUTOR_MENU_ACTION;
-  } else if (role === 'client' || role === 'guest' || role === 'moderator') {
+  } else if (role === 'client' || role === 'guest') {
     fallbackAction = CLIENT_MENU_ACTION;
   }
 

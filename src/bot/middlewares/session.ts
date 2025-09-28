@@ -79,7 +79,7 @@ const createSupportState = (): SupportSessionState => ({
   status: 'idle',
 });
 
-const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'executor', 'moderator'];
+const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'executor'];
 const USER_STATUSES: readonly UserStatus[] = [
   'guest',
   'onboarding',
@@ -124,6 +124,7 @@ const createAuthSnapshot = (): AuthStateSnapshot => ({
     hasActiveSubscription: false,
     isVerified: false,
   },
+  isModerator: false,
   trialStartedAt: undefined,
   trialExpiresAt: undefined,
   city: undefined,
@@ -145,8 +146,14 @@ const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthSta
     };
   };
 
-  if (typeof candidate.role === 'string' && USER_ROLES.includes(candidate.role as UserRole)) {
-    snapshot.role = candidate.role as UserRole;
+  const candidateRole = (candidate as { role?: unknown }).role;
+  if (typeof candidateRole === 'string') {
+    if (candidateRole === 'moderator') {
+      snapshot.role = 'executor';
+      snapshot.isModerator = true;
+    } else if (USER_ROLES.includes(candidateRole as UserRole)) {
+      snapshot.role = candidateRole as UserRole;
+    }
   }
 
   if (
@@ -165,6 +172,14 @@ const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthSta
     && VERIFY_STATUSES.includes(candidate.verifyStatus as UserVerifyStatus)
   ) {
     snapshot.verifyStatus = candidate.verifyStatus as UserVerifyStatus;
+  }
+
+  if (typeof candidate.isModerator === 'boolean') {
+    snapshot.isModerator = candidate.isModerator;
+  }
+
+  if (snapshot.isModerator) {
+    snapshot.role = 'executor';
   }
 
   if (candidate.executor && typeof candidate.executor === 'object') {
