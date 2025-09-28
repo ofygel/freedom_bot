@@ -5,7 +5,8 @@ import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram'
 import { config } from '../../config';
 import type { BotContext } from '../types';
 
-const VERSION = '1';
+const CURRENT_VERSION = '2';
+const LEGACY_VERSION = '1';
 const SEP_MAIN = '#';
 const SEP_FIELDS = '|';
 const SEP_KV = '=';
@@ -26,11 +27,32 @@ const safeBase36 = (value: string | number): string => {
 const createHmac = (data: string, secret: string): string =>
   crypto.createHmac('sha256', secret).update(data).digest('base64url').slice(0, 10);
 
+const nowInSeconds = (): number => Math.floor(Date.now() / 1000);
+
+const encodeExpiry = (epochSeconds: number): string =>
+  Math.max(0, Math.floor(epochSeconds)).toString(36);
+
+const decodeExpiry = (value: string | undefined): number | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const decoded = Number.parseInt(value, 36);
+    return Number.isNaN(decoded) ? undefined : decoded;
+  } catch {
+    return undefined;
+  }
+};
+
 export interface WrappedCallbackData {
+  version: string;
   raw: string;
   user?: string;
   nonce?: string;
   sig: string;
+  expiresAt?: number;
+  expiresRaw?: string;
 }
 
 export interface WrapCallbackOptions {
@@ -38,10 +60,12 @@ export interface WrapCallbackOptions {
   userId?: string | number;
   keyboardNonce?: string;
   bindToUser?: boolean;
+  ttlSeconds?: number;
+  issuedAt?: number;
 }
 
 export const wrapCallbackData = (raw: string, options: WrapCallbackOptions): string => {
-  const parts: string[] = [VERSION];
+  const parts: string[] = [CURRENT_VERSION];
   let encodedUser = '';
   let encodedNonce = '';
 
@@ -57,7 +81,15 @@ export const wrapCallbackData = (raw: string, options: WrapCallbackOptions): str
     }
   }
 
-  const signatureBase = [raw, encodedUser, encodedNonce].join('|');
+  const ttlSeconds = Math.max(1, Math.floor(options.ttlSeconds ?? config.bot.callbackTtlSeconds));
+  const issuedAtRaw = options.issuedAt ?? Date.now();
+  const issuedAtSeconds =
+    issuedAtRaw > 1_000_000_000_000 ? Math.floor(issuedAtRaw / 1000) : Math.floor(issuedAtRaw);
+  const expiresAtSeconds = issuedAtSeconds + ttlSeconds;
+  const encodedExpiry = encodeExpiry(expiresAtSeconds);
+  parts.push(`e${SEP_KV}${encodedExpiry}`);
+
+  const signatureBase = [raw, encodedUser, encodedNonce, encodedExpiry].join('|');
   const signature = createHmac(signatureBase, options.secret);
   parts.push(`s${SEP_KV}${signature}`);
 
@@ -78,13 +110,15 @@ export const tryDecodeCallbackData = (data: string): DecodeResult => {
   const encoded = data.slice(separatorIndex + 1);
   const fields = encoded.split(SEP_FIELDS);
 
-  if (fields[0] !== VERSION) {
+  const version = fields[0];
+  if (version !== CURRENT_VERSION && version !== LEGACY_VERSION) {
     return { ok: false };
   }
 
   let user = '';
   let nonce = '';
   let signature = '';
+  let expiryRaw = '';
 
   for (let index = 1; index < fields.length; index += 1) {
     const [key, value] = fields[index].split(SEP_KV);
@@ -92,6 +126,8 @@ export const tryDecodeCallbackData = (data: string): DecodeResult => {
       user = value ?? '';
     } else if (key === 'n') {
       nonce = value ?? '';
+    } else if (key === 'e') {
+      expiryRaw = value ?? '';
     } else if (key === 's') {
       signature = value ?? '';
     }
@@ -104,23 +140,46 @@ export const tryDecodeCallbackData = (data: string): DecodeResult => {
   return {
     ok: true,
     wrapped: {
+      version,
       raw,
-      user,
-      nonce,
+      user: user || undefined,
+      nonce: nonce || undefined,
       sig: signature,
+      expiresRaw: expiryRaw || undefined,
+      expiresAt: version === CURRENT_VERSION ? decodeExpiry(expiryRaw) : undefined,
     },
   };
 };
 
+const buildSignaturePayload = (wrapped: WrappedCallbackData): string => {
+  const base = [wrapped.raw, wrapped.user ?? '', wrapped.nonce ?? ''];
+  if (wrapped.version === LEGACY_VERSION) {
+    return base.join('|');
+  }
+
+  return [...base, wrapped.expiresRaw ?? ''].join('|');
+};
+
+const isExpired = (wrapped: WrappedCallbackData, referenceSeconds: number): boolean =>
+  typeof wrapped.expiresAt === 'number' && wrapped.expiresAt < referenceSeconds;
+
 export const verifyCallbackData = (wrapped: WrappedCallbackData, secret: string): boolean => {
-  const payload = [wrapped.raw, wrapped.user ?? '', wrapped.nonce ?? ''].join('|');
+  const payload = buildSignaturePayload(wrapped);
   const expected = createHmac(payload, secret);
 
   try {
-    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(wrapped.sig));
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(wrapped.sig))) {
+      return false;
+    }
   } catch {
     return false;
   }
+
+  if (wrapped.version !== LEGACY_VERSION && isExpired(wrapped, nowInSeconds())) {
+    return false;
+  }
+
+  return true;
 };
 
 export const verifyCallbackForUser = (
@@ -189,6 +248,7 @@ export const bindInlineKeyboardToUser = (
           userId: user.telegramId,
           keyboardNonce: user.keyboardNonce,
           bindToUser: true,
+          ttlSeconds: config.bot.callbackTtlSeconds,
         }),
       };
     }),

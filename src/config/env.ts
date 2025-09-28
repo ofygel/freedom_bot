@@ -275,6 +275,7 @@ export interface AppConfig {
   bot: {
     token: string;
     callbackSignSecret?: string;
+    callbackTtlSeconds: number;
   };
   features: {
     trialEnabled: boolean;
@@ -345,6 +346,7 @@ export const loadConfig = (): AppConfig => {
     bot: {
       token: process.env.BOT_TOKEN as string,
       callbackSignSecret: getOptionalString('CALLBACK_SIGN_SECRET'),
+      callbackTtlSeconds: parsePositiveInt('CALLBACK_TTL_SECONDS', 600),
     },
     features: {
       trialEnabled: parseBoolean(process.env.FEATURE_TRIAL_ENABLED, true),
@@ -388,7 +390,7 @@ export const loadConfig = (): AppConfig => {
     tariff: parseGeneralTariff(),
     subscriptions: {
       warnHoursBefore: parseWarnHours(process.env.SUB_WARN_HOURS_BEFORE),
-      trialDays: parsePositiveNumber('SUB_TRIAL_DAYS', 7),
+      trialDays: parsePositiveNumber('SUB_TRIAL_DAYS', 2),
       prices: parseSubscriptionPrices(),
       payment: {
         kaspi: {
