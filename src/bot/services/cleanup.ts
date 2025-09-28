@@ -2,7 +2,7 @@ import { logger } from '../../config';
 import type { BotContext } from '../types';
 
 import { safeEditReplyMarkup } from '../../utils/tg';
-import { showSafeModeCard } from '../flows/common/safeMode';
+import { showSafeModeCard } from '../ui/safeModeCard';
 
 const DEFAULT_SAFE_MODE_PROMPT =
   'Мы восстанавливаем данные. Пока доступны действия: [Профиль], [Сменить город], [Помощь].';

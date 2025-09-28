@@ -9,7 +9,8 @@ import {
   removeKeyboard,
 } from '../ui/menus';
 import type { BotContext } from '../types';
-import { isSafeModeSession, showSafeModeCard } from '../flows/common/safeMode';
+import { isSafeModeSession } from '../flows/common/safeMode';
+import { showSafeModeCard } from '../ui/safeModeCard';
 
 const hasKnownButtonText = (text: string): boolean =>
   CLIENT_WHITELIST.has(text) || EXECUTOR_WHITELIST.has(text);

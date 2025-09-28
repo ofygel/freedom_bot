@@ -3,7 +3,8 @@ import { Markup } from 'telegraf';
 import { CLIENT_MENU } from '../../ui/clientMenu';
 import type { BotContext } from '../types';
 import { EXECUTOR_MENU_TEXT_LABELS } from '../flows/executor/menu';
-import { isSafeModeSession, showSafeModeCard } from '../flows/common/safeMode';
+import { isSafeModeSession } from '../flows/common/safeMode';
+import { showSafeModeCard } from './safeModeCard';
 
 export const CLIENT_WHITELIST: Set<string> = new Set(Object.values(CLIENT_MENU));
 export const EXECUTOR_WHITELIST: Set<string> = new Set(
