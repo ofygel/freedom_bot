@@ -18,7 +18,8 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS executor_kind executor_kind,
   ADD COLUMN IF NOT EXISTS verify_status user_verify_status NOT NULL DEFAULT 'none',
   ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS trial_expires_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS trial_expires_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;
 
 UPDATE users
 SET executor_kind = CASE role::text
