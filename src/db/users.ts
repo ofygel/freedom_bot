@@ -10,7 +10,8 @@ export interface EnsureClientRoleParams {
 
 export interface UpdateUserRoleParams {
   telegramId: number;
-  role: 'client' | 'courier' | 'driver';
+  role: 'guest' | 'client' | 'executor';
+  executorKind?: 'courier' | 'driver' | null;
   status?: 'active_client' | 'active_executor';
   menuRole?: 'client' | 'courier';
 }
@@ -60,6 +61,10 @@ export const ensureClientRole = async ({
           WHEN users.status IN ('suspended', 'banned') THEN users.status
           ELSE 'active_client'
         END,
+        executor_kind = CASE
+          WHEN users.role = 'moderator' THEN users.executor_kind
+          ELSE NULL
+        END,
         last_menu_role = 'client',
         updated_at = now()
     `,
@@ -106,11 +111,13 @@ export const updateUserPhone = async ({
 export const updateUserRole = async ({
   telegramId,
   role,
+  executorKind,
   status,
   menuRole,
 }: UpdateUserRoleParams): Promise<void> => {
   const effectiveStatus = status ?? (role === 'client' ? 'active_client' : 'active_executor');
   const effectiveMenuRole = menuRole ?? (role === 'client' ? 'client' : 'courier');
+  const resolvedExecutorKind = role === 'executor' ? executorKind ?? null : null;
 
   await pool.query(
     `
@@ -120,6 +127,11 @@ export const updateUserRole = async ({
           WHEN users.role = 'moderator' THEN users.role
           ELSE $2
         END,
+        executor_kind = CASE
+          WHEN users.role = 'moderator' THEN users.executor_kind
+          WHEN $2 = 'executor' THEN $5::executor_kind
+          ELSE NULL
+        END,
         status = CASE
           WHEN status IN ('suspended', 'banned') THEN status
           ELSE $3
@@ -128,7 +140,7 @@ export const updateUserRole = async ({
         updated_at = now()
       WHERE tg_id = $1
     `,
-    [telegramId, role, effectiveStatus, effectiveMenuRole],
+    [telegramId, role, effectiveStatus, effectiveMenuRole, resolvedExecutorKind],
   );
 };
 

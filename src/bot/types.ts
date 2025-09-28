@@ -9,7 +9,9 @@ export type ExecutorRole = 'courier' | 'driver';
 
 export const EXECUTOR_ROLES: readonly ExecutorRole[] = ['courier', 'driver'];
 
-export type UserRole = 'guest' | 'client' | 'courier' | 'driver' | 'moderator';
+export type UserRole = 'guest' | 'client' | 'executor' | 'moderator';
+
+export type UserVerifyStatus = 'none' | 'pending' | 'active' | 'rejected' | 'expired';
 
 export interface SessionUser {
   id: number;
@@ -39,12 +41,15 @@ export interface AuthUser {
   phone?: string;
   phoneVerified: boolean;
   role: UserRole;
+  executorKind?: ExecutorRole;
   status: UserStatus;
+  verifyStatus: UserVerifyStatus;
   isVerified: boolean;
   isBlocked: boolean;
   citySelected?: AppCity;
   verifiedAt?: Date;
-  trialEndsAt?: Date;
+  trialStartedAt?: Date;
+  trialExpiresAt?: Date;
   lastMenuRole?: UserMenuRole;
   keyboardNonce?: string;
 }
@@ -63,10 +68,14 @@ export interface AuthState {
 
 export interface AuthStateSnapshot {
   role: UserRole;
+  executorKind?: ExecutorRole;
   status: UserStatus;
   phoneVerified: boolean;
+  verifyStatus: UserVerifyStatus;
   userIsVerified: boolean;
   executor: AuthExecutorState;
+  trialStartedAt?: Date;
+  trialExpiresAt?: Date;
   city?: AppCity;
   stale: boolean;
 }

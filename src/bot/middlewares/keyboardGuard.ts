@@ -20,8 +20,7 @@ const isExecutorUser = (ctx: BotContext): boolean => {
     return false;
   }
   return (
-    role === 'courier' ||
-    role === 'driver' ||
+    role === 'executor' ||
     status === 'active_executor'
   );
 };

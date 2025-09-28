@@ -23,13 +23,15 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
   const state = ensureExecutorState(ctx);
   state.role = role;
   state.awaitingRoleSelection = false;
-  ctx.auth.user.role = role;
+  ctx.auth.user.role = 'executor';
+  ctx.auth.user.executorKind = role;
   ctx.auth.user.status = 'active_executor';
 
   try {
     await updateUserRole({
       telegramId: ctx.auth.user.telegramId,
-      role,
+      role: 'executor',
+      executorKind: role,
       status: 'active_executor',
       menuRole: 'courier',
     });

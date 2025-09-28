@@ -175,12 +175,12 @@ const normaliseSubscriptionState = (
   lastReminderAt: normaliseReminderTimestamp(value?.lastReminderAt),
 });
 
-const isExecutorRole = (role: AuthUser['role'] | ExecutorRole | undefined): role is ExecutorRole =>
-  role === 'courier' || role === 'driver';
+const isExecutorKind = (value: unknown): value is ExecutorRole =>
+  typeof value === 'string' && EXECUTOR_ROLES.includes(value as ExecutorRole);
 
 const getSessionExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
   const sessionRole = ctx.session.executor?.role;
-  if (isExecutorRole(sessionRole)) {
+  if (isExecutorKind(sessionRole)) {
     return sessionRole;
   }
 
@@ -188,9 +188,9 @@ const getSessionExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
 };
 
 const getCachedExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
-  const snapshotRole = ctx.session.authSnapshot?.role;
-  if (isExecutorRole(snapshotRole)) {
-    return snapshotRole;
+  const snapshotKind = ctx.session.authSnapshot?.executorKind;
+  if (isExecutorKind(snapshotKind)) {
+    return snapshotKind;
   }
 
   return getSessionExecutorRole(ctx);
@@ -198,13 +198,13 @@ const getCachedExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
 
 export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
   const authRole = ctx.auth.user.role;
-  if (isExecutorRole(authRole)) {
+  if (authRole === 'executor' && isExecutorKind(ctx.auth.user.executorKind)) {
     return true;
   }
 
   if (ctx.session.isAuthenticated === false && authRole === 'guest') {
     const sessionRole = getSessionExecutorRole(ctx);
-    return isExecutorRole(sessionRole);
+    return isExecutorKind(sessionRole);
   }
 
   return false;
@@ -212,13 +212,13 @@ export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
 
 const deriveAuthExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
   const authRole = ctx.auth.user.role;
-  if (isExecutorRole(authRole)) {
-    return authRole;
+  if (authRole === 'executor' && isExecutorKind(ctx.auth.user.executorKind)) {
+    return ctx.auth.user.executorKind;
   }
 
   if (ctx.session.isAuthenticated === false && authRole === 'guest') {
     const cachedRole = getCachedExecutorRole(ctx);
-    if (isExecutorRole(cachedRole)) {
+    if (isExecutorKind(cachedRole)) {
       return cachedRole;
     }
   }
@@ -549,12 +549,12 @@ const buildMenuText = (
   const copy = getExecutorRoleCopy(role);
 
   const statusLines: string[] = [];
-  if (user.trialEndsAt && Number.isFinite(user.trialEndsAt.getTime())) {
-    const msLeft = user.trialEndsAt.getTime() - Date.now();
+  if (user.trialExpiresAt && Number.isFinite(user.trialExpiresAt.getTime())) {
+    const msLeft = user.trialExpiresAt.getTime() - Date.now();
     if (msLeft > 0) {
       const daysLeft = Math.max(1, Math.ceil(msLeft / 86_400_000));
       statusLines.push(
-        `🧪 Пробный до ${user.trialEndsAt.toLocaleDateString('ru-RU')} (осталось ${daysLeft} дн.)`,
+        `🧪 Пробный до ${user.trialExpiresAt.toLocaleDateString('ru-RU')} (осталось ${daysLeft} дн.)`,
       );
     }
   }

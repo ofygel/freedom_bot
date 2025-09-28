@@ -14,7 +14,7 @@ type ReminderReason = 'awaitingReceipt' | 'trialEnding';
 
 interface ReminderDescriptor {
   reasons: Set<ReminderReason>;
-  trialEndsAt?: Date;
+  trialExpiresAt?: Date;
 }
 
 interface ReminderCandidate extends ReminderDescriptor {
@@ -99,19 +99,19 @@ const gatherReminderDescriptors = async (
   const trialDeadline = new Date(now.getTime() + TRIAL_WINDOW_MS);
   const trialRows = await client.query<{
     scope_id: string | number | null;
-    trial_ends_at: Date | string | null;
+    trial_expires_at: Date | string | null;
   }>(
     `
-      SELECT s.scope_id, u.trial_ends_at
+      SELECT s.scope_id, u.trial_expires_at
       FROM sessions s
       JOIN users u ON u.tg_id = s.scope_id
       WHERE s.scope = 'chat'
         AND u.role = ANY($3::user_role[])
-        AND u.trial_ends_at IS NOT NULL
-        AND u.trial_ends_at > $1
-        AND u.trial_ends_at <= $2
+        AND u.trial_expires_at IS NOT NULL
+        AND u.trial_expires_at > $1
+        AND u.trial_expires_at <= $2
     `,
-    [now, trialDeadline, ['courier', 'driver']],
+    [now, trialDeadline, ['executor']],
   );
 
   for (const row of trialRows.rows) {
@@ -120,14 +120,14 @@ const gatherReminderDescriptors = async (
       continue;
     }
 
-    const trialEndsAt = parseTimestamp(row.trial_ends_at);
-    if (!trialEndsAt) {
+    const trialExpiresAt = parseTimestamp(row.trial_expires_at);
+    if (!trialExpiresAt) {
       continue;
     }
 
     const descriptor = descriptors.get(scopeId) ?? { reasons: new Set<ReminderReason>() };
     descriptor.reasons.add('trialEnding');
-    descriptor.trialEndsAt = trialEndsAt;
+    descriptor.trialExpiresAt = trialExpiresAt;
     descriptors.set(scopeId, descriptor);
   }
 
@@ -156,7 +156,7 @@ const loadReminderCandidates = async (
         key,
         session,
         reasons: new Set(descriptor.reasons),
-        trialEndsAt: descriptor.trialEndsAt,
+        trialExpiresAt: descriptor.trialExpiresAt,
       });
     } catch (error) {
       logger.error({ err: error, scopeId }, 'Failed to load session for payment reminder');
@@ -184,8 +184,8 @@ const determineEffectiveReasons = (
   }
 
   if (candidate.reasons.has('trialEnding')) {
-    const trialEndsAt = candidate.trialEndsAt;
-    if (trialEndsAt && trialEndsAt.getTime() > now.getTime()) {
+    const trialExpiresAt = candidate.trialExpiresAt;
+    if (trialExpiresAt && trialExpiresAt.getTime() > now.getTime()) {
       reasons.add('trialEnding');
     }
   }
@@ -202,7 +202,7 @@ const formatDateTime = (date: Date): string =>
 
 const buildReminderMessage = (
   reasons: Set<ReminderReason>,
-  trialEndsAt?: Date,
+  trialExpiresAt?: Date,
 ): string => {
   const lines: string[] = [];
 
@@ -213,13 +213,13 @@ const buildReminderMessage = (
     );
   }
 
-  if (reasons.has('trialEnding') && trialEndsAt) {
+  if (reasons.has('trialEnding') && trialExpiresAt) {
     if (lines.length > 0) {
       lines.push('');
     }
     lines.push(
       '🕑 Пробный период скоро закончится.',
-      `Доступ будет отключён ${formatDateTime(trialEndsAt)}. Оформите подписку заранее, чтобы не потерять доступ.`,
+      `Доступ будет отключён ${formatDateTime(trialExpiresAt)}. Оформите подписку заранее, чтобы не потерять доступ.`,
     );
   }
 
@@ -276,7 +276,7 @@ const sendReminder = async (
 
   ensureExecutorState(ctx);
 
-  const message = buildReminderMessage(reasons, candidate.trialEndsAt);
+  const message = buildReminderMessage(reasons, candidate.trialExpiresAt);
   if (message) {
     await ui.step(ctx, {
       id: REMINDER_STEP_ID,
@@ -292,7 +292,7 @@ const sendReminder = async (
 
   await saveSessionState(pool, candidate.key, ctx.session);
   logger.info(
-    { chatId, reasons: Array.from(reasons), trialEndsAt: candidate.trialEndsAt?.toISOString() },
+    { chatId, reasons: Array.from(reasons), trialExpiresAt: candidate.trialExpiresAt?.toISOString() },
     'Sent executor payment reminder',
   );
 };

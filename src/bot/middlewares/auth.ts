@@ -14,6 +14,7 @@ import {
   type UserRole,
   type UserMenuRole,
   type UserStatus,
+  type UserVerifyStatus,
 } from '../types';
 
 type Nullable<T> = T | null | undefined;
@@ -36,15 +37,17 @@ interface AuthQueryRow {
   phone: string | null;
   phone_verified: boolean | null;
   role: string | null;
+  executor_kind?: string | null;
   status: string | null;
-  is_verified: boolean | null;
+  verify_status: string | null;
   is_blocked: boolean | null;
   courier_verified: boolean | null;
   driver_verified: boolean | null;
   has_active_subscription: boolean | null;
   city_selected?: string | null;
   verified_at?: string | Date | null;
-  trial_ends_at?: string | Date | null;
+  trial_started_at?: string | Date | null;
+  trial_expires_at?: string | Date | null;
   last_menu_role?: string | null;
   keyboard_nonce?: string | null;
 }
@@ -75,14 +78,36 @@ const normaliseRole = (value: Nullable<string>): UserRole => {
   switch (value) {
     case 'guest':
       return 'guest';
-    case 'courier':
-    case 'driver':
+    case 'executor':
     case 'moderator':
       return value;
     case 'client':
       return 'client';
     default:
       return 'guest';
+  }
+};
+
+const normaliseExecutorKind = (value: Nullable<string>): ExecutorRole | undefined => {
+  switch (value) {
+    case 'courier':
+    case 'driver':
+      return value;
+    default:
+      return undefined;
+  }
+};
+
+const normaliseVerifyStatus = (value: Nullable<string>): UserVerifyStatus => {
+  switch (value) {
+    case 'pending':
+    case 'active':
+    case 'rejected':
+    case 'expired':
+      return value;
+    case 'none':
+    default:
+      return 'none';
   }
 };
 
@@ -137,7 +162,9 @@ const buildVerifiedMap = (row: AuthQueryRow): Record<ExecutorRole, boolean> => (
 
 const buildExecutorState = (row: AuthQueryRow): AuthExecutorState => {
   const verifiedRoles = buildVerifiedMap(row);
-  const isVerified = Boolean(row.is_verified) || EXECUTOR_ROLES.some((role) => verifiedRoles[role]);
+  const verifyStatus = normaliseVerifyStatus(row.verify_status);
+  const isVerified = verifyStatus === 'active'
+    || EXECUTOR_ROLES.some((role) => verifiedRoles[role]);
 
   return {
     verifiedRoles,
@@ -148,10 +175,9 @@ const buildExecutorState = (row: AuthQueryRow): AuthExecutorState => {
 
 const deriveSnapshotStatus = (role: UserRole): UserStatus => {
   switch (role) {
-    case 'courier':
-    case 'driver':
-      return 'active_executor';
     case 'moderator':
+      return 'active_executor';
+    case 'executor':
       return 'active_executor';
     case 'client':
       return 'active_client';
@@ -194,10 +220,15 @@ const buildAuthStateFromSnapshot = (
   if (shouldRestoreRole) {
     base.user.role = snapshot.role;
     base.user.status = snapshot.status ?? deriveSnapshotStatus(snapshot.role);
+    base.user.executorKind = snapshot.executorKind ?? base.user.executorKind;
   }
   base.user.phoneVerified = Boolean(snapshot.phoneVerified || base.user.phoneVerified);
+  base.user.verifyStatus = snapshot.verifyStatus ?? base.user.verifyStatus;
   const userVerifiedFromSnapshot = snapshot.userIsVerified || snapshot.executor.isVerified;
-  base.user.isVerified = Boolean(userVerifiedFromSnapshot || base.user.isVerified);
+  const snapshotVerified = snapshot.verifyStatus === 'active';
+  base.user.isVerified = Boolean(snapshotVerified || userVerifiedFromSnapshot || base.user.isVerified);
+  base.user.trialStartedAt = snapshot.trialStartedAt ?? base.user.trialStartedAt;
+  base.user.trialExpiresAt = snapshot.trialExpiresAt ?? base.user.trialExpiresAt;
   base.user.citySelected = snapshot.city ?? base.user.citySelected;
   base.executor = cloneExecutorState(snapshot.executor);
   base.isModerator = shouldRestoreRole && snapshot.role === 'moderator';
@@ -230,7 +261,7 @@ const deriveUserStatus = (row: AuthQueryRow, status: UserStatus): UserStatus => 
   }
 
   const hasExecutorAccess =
-    role === 'courier' || role === 'driver' ? Boolean(row.has_active_subscription) : false;
+    role === 'executor' ? Boolean(row.has_active_subscription) : false;
 
   if (hasExecutorAccess) {
     return 'active_executor';
@@ -258,11 +289,13 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
           phone,
           phone_verified,
           role,
+          executor_kind,
           status,
-          is_verified,
+          verify_status,
           is_blocked${includeCitySelected ? ',\n          city_selected' : ''},
           verified_at,
-          trial_ends_at,
+          trial_started_at,
+          trial_expires_at,
           last_menu_role,
           keyboard_nonce
       )
@@ -274,11 +307,13 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
         u.phone,
         u.phone_verified,
         u.role,
+        u.executor_kind,
         u.status,
-        u.is_verified,
+        u.verify_status,
         u.is_blocked${includeCitySelected ? ',\n        u.city_selected' : ''},
         u.verified_at,
-        u.trial_ends_at,
+        u.trial_started_at,
+        u.trial_expires_at,
         u.last_menu_role,
         u.keyboard_nonce,
         COALESCE(cv.is_verified, false) AS courier_verified,
@@ -323,6 +358,8 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
   const telegramId = parseNumericId(row.tg_id);
   const executor = buildExecutorState(row);
   let role = normaliseRole(row.role);
+  let executorKind = normaliseExecutorKind(row.executor_kind);
+  const verifyStatus = normaliseVerifyStatus(row.verify_status);
   const status = deriveUserStatus(row, normaliseStatus(row.status));
   const lastMenuRole = normaliseMenuRole(row.last_menu_role);
 
@@ -337,7 +374,18 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
     if (awaitingActivation || roleNeverConfirmed) {
       role = 'guest';
     }
+  } else if (role === 'executor' && !executorKind) {
+    role = 'guest';
   }
+
+  if (role !== 'executor') {
+    executorKind = undefined;
+  }
+
+  const verifiedAt = parseTimestamp(row.verified_at);
+  const trialStartedAt = parseTimestamp(row.trial_started_at);
+  const trialExpiresAt = parseTimestamp(row.trial_expires_at);
+  const isVerified = verifyStatus === 'active' || executor.isVerified;
 
   return {
     user: {
@@ -348,14 +396,17 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
       phone: normaliseString(row.phone),
       phoneVerified: Boolean(row.phone_verified),
       role,
+      executorKind,
       status,
-      isVerified: Boolean(row.is_verified),
+      verifyStatus,
+      isVerified,
       isBlocked: Boolean(row.is_blocked),
       citySelected: isAppCity(row.city_selected)
         ? row.city_selected
         : undefined,
-      verifiedAt: parseTimestamp(row.verified_at),
-      trialEndsAt: parseTimestamp(row.trial_ends_at),
+      verifiedAt,
+      trialStartedAt,
+      trialExpiresAt,
       lastMenuRole,
       keyboardNonce: normaliseString(row.keyboard_nonce),
     },
@@ -402,11 +453,18 @@ const createGuestAuthState = (from: NonNullable<BotContext['from']>): AuthState 
     username: from.username ?? undefined,
     firstName: from.first_name ?? undefined,
     lastName: from.last_name ?? undefined,
+    phone: undefined,
     phoneVerified: false,
     role: 'guest',
+    executorKind: undefined,
     status: 'guest',
+    verifyStatus: 'none',
     isVerified: false,
     isBlocked: false,
+    trialStartedAt: undefined,
+    trialExpiresAt: undefined,
+    lastMenuRole: undefined,
+    keyboardNonce: undefined,
   },
   executor: {
     verifiedRoles: { courier: false, driver: false },
@@ -439,10 +497,14 @@ const applyAuthState = (
 
   ctx.session.authSnapshot = {
     role: authState.user.role,
+    executorKind: authState.user.executorKind,
     status: authState.user.status,
     phoneVerified: authState.user.phoneVerified,
+    verifyStatus: authState.user.verifyStatus,
     userIsVerified: authState.user.isVerified,
     executor: cloneExecutorState(authState.executor),
+    trialStartedAt: authState.user.trialStartedAt,
+    trialExpiresAt: authState.user.trialExpiresAt,
     city: authState.user.citySelected,
     stale: options?.isStale ?? false,
   } satisfies AuthStateSnapshot;
@@ -532,10 +594,14 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       if (cachedSnapshot) {
         const snapshot: AuthStateSnapshot = {
           role: cachedSnapshot.role,
+          executorKind: cachedSnapshot.executorKind,
           status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
           phoneVerified: cachedSnapshot.phoneVerified,
+          verifyStatus: cachedSnapshot.verifyStatus,
           userIsVerified: cachedSnapshot.userIsVerified,
           executor: cloneExecutorState(cachedSnapshot.executor),
+          trialStartedAt: cachedSnapshot.trialStartedAt,
+          trialExpiresAt: cachedSnapshot.trialExpiresAt,
           city: cachedSnapshot.city,
           stale: true,
         } satisfies AuthStateSnapshot;
