@@ -44,7 +44,9 @@ import {
   ensurePhone,
   savePhone,
   PHONE_HELP_BUTTON_LABEL,
+  PHONE_STATUS_BUTTON_LABEL,
   respondToPhoneHelp,
+  respondToPhoneStatus,
 } from './bot/flows/common/phoneCollect';
 import { metricsCollector } from './bot/middlewares/metrics';
 import { ensureVerifiedExecutor } from './bot/middlewares/verificationGate';
@@ -97,6 +99,7 @@ registerJoinRequests(app);
 registerMembershipSync(app);
 
 app.hears(PHONE_HELP_BUTTON_LABEL, respondToPhoneHelp);
+app.hears(PHONE_STATUS_BUTTON_LABEL, respondToPhoneStatus);
 
 app.on('message', unknownHandler);
 
