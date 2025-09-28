@@ -19,7 +19,11 @@ import {
 } from '../../channels/ordersChannel';
 import { CITY_LABEL, type AppCity } from '../../../domain/cities';
 import { buildOrderLocationsKeyboard } from '../../keyboards/orders';
-import { buildInlineKeyboard, mergeInlineKeyboards } from '../../keyboards/common';
+import {
+  buildInlineKeyboard,
+  mergeInlineKeyboards,
+} from '../../keyboards/common';
+import type { KeyboardButton } from '../../keyboards/common';
 import { copy } from '../../copy';
 import { ui } from '../../ui';
 import { sendClientMenuToChat } from '../../../ui/clientMenu';
@@ -189,14 +193,55 @@ const showJobConfirmation = async (
   });
 };
 
-const buildProgressKeyboard = (order: OrderRecord): InlineKeyboardMarkup => {
-  const actions = buildInlineKeyboard([
+const CONTACT_BUTTON_LABEL = '📞 Связаться';
+
+const sanitizePhoneNumber = (phone?: string): string | undefined => {
+  const trimmed = phone?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const cleaned = trimmed.replace(/[^0-9+]/g, '');
+  if (!cleaned) {
+    return undefined;
+  }
+
+  const hasLeadingPlus = cleaned.startsWith('+');
+  const digits = (hasLeadingPlus ? cleaned.slice(1) : cleaned).split('+').join('');
+  if (!digits) {
+    return undefined;
+  }
+
+  const normalized = hasLeadingPlus ? `+${digits}` : digits;
+  return normalized.startsWith('+') ? normalized : `+${normalized}`;
+};
+
+const buildOrderContactUrl = (order: OrderRecord): string | undefined => {
+  const phone =
+    sanitizePhoneNumber(order.clientPhone) ??
+    sanitizePhoneNumber(order.recipientPhone);
+
+  if (!phone) {
+    return undefined;
+  }
+
+  return `tel:${phone}`;
+};
+
+export const buildProgressKeyboard = (order: OrderRecord): InlineKeyboardMarkup => {
+  const actionRows: KeyboardButton[][] = [
     [
       { label: '🏁 Завершить', action: `${JOB_COMPLETE_ACTION_PREFIX}:${order.id}` },
       { label: '↩️ Отказаться', action: `${JOB_RELEASE_ACTION_PREFIX}:${order.id}` },
     ],
-  ]);
+  ];
 
+  const contactUrl = buildOrderContactUrl(order);
+  if (contactUrl) {
+    actionRows.unshift([{ label: CONTACT_BUTTON_LABEL, url: contactUrl }]);
+  }
+
+  const actions = buildInlineKeyboard(actionRows);
   const locations = buildOrderLocationsKeyboard(order.city, order.pickup, order.dropoff);
   return mergeInlineKeyboards(locations, actions) ?? actions;
 };
