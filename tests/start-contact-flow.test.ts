@@ -12,6 +12,7 @@ let askCityModule: typeof import('../src/bot/flows/common/citySelect');
 let usersDb: typeof import('../src/db/users');
 let dbClient: typeof import('../src/db/client');
 let reportsModule: typeof import('../src/bot/services/reports');
+let clientMenuModule: typeof import('../src/ui/clientMenu');
 
 before(async () => {
   registerStartCommand = (await import('../src/bot/commands/start')).registerStartCommand;
@@ -21,6 +22,7 @@ before(async () => {
   usersDb = await import('../src/db/users');
   dbClient = await import('../src/db/client');
   reportsModule = await import('../src/bot/services/reports');
+  clientMenuModule = await import('../src/ui/clientMenu');
 });
 
 const createSessionState = () => ({
@@ -117,16 +119,19 @@ let ensureClientRoleMock: ReturnType<typeof mock.method> | undefined;
 let askCityMock: ReturnType<typeof mock.method> | undefined;
 let poolQueryMock: ReturnType<typeof mock.method> | undefined;
 let reportRegistrationMock: ReturnType<typeof mock.method> | undefined;
+let sendClientMenuMock: ReturnType<typeof mock.method> | undefined;
 
 afterEach(() => {
   ensureClientRoleMock?.mock.restore();
   askCityMock?.mock.restore();
   poolQueryMock?.mock.restore();
   reportRegistrationMock?.mock.restore();
+  sendClientMenuMock?.mock.restore();
   ensureClientRoleMock = undefined;
   askCityMock = undefined;
   poolQueryMock = undefined;
   reportRegistrationMock = undefined;
+  sendClientMenuMock = undefined;
 });
 
 describe('start contact flow', () => {
@@ -256,5 +261,55 @@ describe('start contact flow', () => {
       /WHEN status IN \('awaiting_phone', 'guest'\) THEN 'active_client'/,
     );
     assert.deepEqual(call.arguments[1], ['+1234567890', 1002]);
+  });
+
+  it('shows client menu to active clients on /start', async () => {
+    const { bot, getStartHandler } = createMockBot();
+
+    registerStartCommand(bot);
+
+    const startHandler = getStartHandler();
+    assert.ok(startHandler, 'start handler should be registered');
+
+    const session = createSessionState();
+    session.user = { ...session.user, phoneVerified: true };
+    session.authSnapshot = {
+      ...session.authSnapshot,
+      phoneVerified: true,
+    };
+
+    const auth = createAuthState();
+    auth.user.phoneVerified = true;
+
+    const replies: Array<{ text: string; extra?: unknown }> = [];
+
+    const ctx = {
+      chat: { id: 2001, type: 'private' as const },
+      from: { id: 2001, is_bot: false, first_name: 'Client' },
+      session,
+      auth,
+      state: {},
+      reply: async (text: string, extra?: unknown) => {
+        replies.push({ text, extra });
+        return { message_id: replies.length, chat: { id: 2001 }, text };
+      },
+      telegram: {
+        setMyCommands: async () => undefined,
+        setChatMenuButton: async () => undefined,
+      },
+    } as unknown as BotContext;
+
+    sendClientMenuMock = mock.method(clientMenuModule, 'sendClientMenu', async () => undefined);
+
+    await startHandler(ctx);
+
+    assert.equal(replies.length, 1);
+    assert.match(replies[0].text, /Возвращаю стандартную клавиатуру/i);
+
+    assert.equal(sendClientMenuMock.mock.callCount(), 1, 'client menu should be shown');
+    const call = sendClientMenuMock.mock.calls[0];
+    assert.ok(call);
+    assert.equal(call.arguments[0], ctx);
+    assert.match(String(call.arguments[1]), /Выберите действие/i);
   });
 });
