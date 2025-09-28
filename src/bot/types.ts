@@ -3,7 +3,7 @@ import type { Context } from 'telegraf';
 import type { OrderLocation, OrderPriceDetails } from '../types';
 import type { AppCity } from '../domain/cities';
 
-export const EXECUTOR_VERIFICATION_PHOTO_COUNT = 2;
+export const EXECUTOR_VERIFICATION_PHOTO_COUNT = 3;
 
 export type ExecutorKind = 'courier' | 'driver';
 
