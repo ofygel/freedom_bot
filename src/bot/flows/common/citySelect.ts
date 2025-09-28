@@ -10,6 +10,7 @@ import { ui } from '../../ui';
 import { copy } from '../../copy';
 import { ROLE_SELECTION_BACK_ACTION, EXECUTOR_ROLE_PENDING_CITY_ACTION } from '../executor/roleSelectionConstants';
 import { clearOnboardingState } from '../../services/onboarding';
+import { reportCitySet, toUserIdentity } from '../../services/reports';
 
 export const CITY_CONFIRM_STEP_ID = 'common:city:confirm';
 
@@ -202,6 +203,29 @@ export const registerCityAction = (bot: Telegraf<BotContext>): void => {
     await ctx.answerCbQuery(`Город: ${CITY_LABEL[city]}`);
 
     const confirmationText = `Город установлен: ${CITY_LABEL[city]}`;
+
+    const authUser = ctx.auth?.user;
+    if (authUser) {
+      const identity = {
+        ...toUserIdentity(ctx.from),
+        telegramId: authUser.telegramId,
+        username: ctx.from?.username ?? authUser.username ?? undefined,
+        firstName: ctx.from?.first_name ?? authUser.firstName ?? undefined,
+        lastName: ctx.from?.last_name ?? authUser.lastName ?? undefined,
+        phone: authUser.phone ?? ctx.session.phoneNumber ?? undefined,
+      };
+
+      try {
+        await reportCitySet(ctx.telegram, {
+          user: identity,
+          city,
+          role: authUser.role,
+          executorRole: authUser.executorKind,
+        });
+      } catch (error) {
+        logger.error({ err: error, telegramId: authUser.telegramId }, 'Failed to report city selection');
+      }
+    }
 
     let stepResult: Awaited<ReturnType<typeof ui.step>>;
     try {
