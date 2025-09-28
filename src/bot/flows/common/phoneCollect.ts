@@ -5,6 +5,7 @@ import { pool } from '../../../db';
 import { setUserBlockedStatus } from '../../../db/users';
 import { reportUserRegistration, toUserIdentity } from '../../services/reports';
 import type { BotContext } from '../../types';
+import { sendClientMenu } from '../../../ui/clientMenu';
 
 const normalisePhone = (phone: string): string => {
   const trimmed = phone.trim();
@@ -142,9 +143,15 @@ export const savePhone: MiddlewareFn<BotContext> = async (ctx, next) => {
     if (ctx.auth.user.status === 'awaiting_phone' || ctx.auth.user.status === 'guest') {
       ctx.auth.user.status = 'active_client';
     }
+    if (ctx.auth.user.role === 'guest') {
+      ctx.auth.user.role = 'client';
+    }
   }
 
-  await ctx.reply('Спасибо, номер сохранён ✅', Markup.removeKeyboard());
+  await sendClientMenu(
+    ctx,
+    'Номер сохранён. Ниже основное меню заказа такси или доставки.',
+  );
 
   if (!wasVerified) {
     const identity = ctx.auth?.user
