@@ -91,6 +91,9 @@ const buildVerificationPrompt = (role: ExecutorRole): string => {
     ...requirementLines,
     '',
     `ℹ️ ${VERIFICATION_ALBUM_HINT}`,
+    '',
+    'Не уверены, что отправлять? Нажмите «Что подходит?» — покажем примеры.',
+    'Запутались? Воспользуйтесь «Назад/Где я?» или «Помощь».',
   ].join('\n');
 };
 
@@ -102,7 +105,6 @@ const VERIFICATION_PROMPT_STEP_ID = 'executor:verification:prompt';
 const VERIFICATION_ALREADY_ON_REVIEW_STEP_ID = 'executor:verification:on-review';
 const VERIFICATION_START_REMINDER_STEP_ID = 'executor:verification:start-reminder';
 const VERIFICATION_PROGRESS_STEP_ID = 'executor:verification:progress';
-const VERIFICATION_PHOTO_REMINDER_STEP_ID = 'executor:verification:photo-reminder';
 const VERIFICATION_ALREADY_APPROVED_STEP_ID = 'executor:verification:approved';
 export const EXECUTOR_ROLE_SWITCH_ACTION = 'executor:verification:switch-role';
 
@@ -134,6 +136,9 @@ const buildVerificationGuidanceText = (role: ExecutorRole): string => {
     '⚠️ Фото должны быть чёткими, без бликов и закрытых данных.',
     '',
     `ℹ️ ${VERIFICATION_ALBUM_HINT}`,
+    '',
+    'Если запутались, нажмите «Назад/Где я?» — вернёмся к выбору.',
+    'Нужна поддержка? Нажмите «Помощь».',
   ].join('\n');
 };
 
@@ -152,6 +157,12 @@ export const showExecutorVerificationPrompt = async (
     cleanup: true,
     homeAction: EXECUTOR_MENU_ACTION,
   });
+
+  const state = ensureExecutorState(ctx);
+  const verificationState = state.verification[role];
+  if (verificationState) {
+    verificationState.lastReminderAt = Date.now();
+  }
 };
 
 const buildVerificationApprovedText = (
@@ -629,11 +640,7 @@ const handleTextDuringCollection = async (ctx: BotContext, next: () => Promise<v
     return;
   }
 
-  await ui.step(ctx, {
-    id: VERIFICATION_PHOTO_REMINDER_STEP_ID,
-    text: 'Отправьте, пожалуйста, фотографию документа.',
-    cleanup: true,
-  });
+  await showExecutorVerificationPrompt(ctx, role);
 };
 
 
