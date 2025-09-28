@@ -98,6 +98,7 @@ const createClientSessionState = () => ({
   },
   ui: { steps: {}, homeActions: [] as string[] },
   support: { status: 'idle' as const },
+  authSnapshot: { stale: false },
 });
 
 const createClientContext = () => {

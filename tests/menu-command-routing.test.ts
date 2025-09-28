@@ -64,6 +64,7 @@ const createSessionState = (): SessionState => ({
   },
   ui: { steps: {}, homeActions: [] },
   support: { status: 'idle' },
+  authSnapshot: { stale: false },
 });
 
 const createAuthState = (role: BotContext['auth']['user']['role']): BotContext['auth'] => ({
@@ -197,6 +198,44 @@ describe("/menu command routing", () => {
 
       assert.equal(showExecutorMenuMock.mock.callCount(), 0);
       assert.equal(showClientMenuMock.mock.callCount(), 1);
+    } finally {
+      showExecutorMenuMock.mock.restore();
+      showClientMenuMock.mock.restore();
+    }
+  });
+
+  it('shows the executor menu when auth falls back to guest but the session retains executor role', async () => {
+    const showExecutorMenuMock = mock.method(
+      executorMenuModule,
+      'showExecutorMenu',
+      async () => undefined,
+    );
+    const showClientMenuMock = mock.method(clientMenuModule, 'showMenu', async () => undefined);
+
+    const { bot, getCommand } = createMockBot();
+    registerExecutorMenu(bot);
+
+    const handler = getCommand('menu');
+    assert.ok(handler, 'menu command should be registered');
+
+    try {
+      const ctx = createContext('courier');
+      ctx.auth.user.role = 'guest';
+      ctx.session.isAuthenticated = false;
+      ctx.session.executor.role = 'courier';
+      ctx.session.authSnapshot = {
+        stale: false,
+        executor: {
+          verifiedRoles: { courier: false, driver: false },
+          hasActiveSubscription: false,
+          isVerified: false,
+        },
+      };
+
+      await handler(ctx);
+
+      assert.equal(showExecutorMenuMock.mock.callCount(), 1);
+      assert.equal(showClientMenuMock.mock.callCount(), 0);
     } finally {
       showExecutorMenuMock.mock.restore();
       showClientMenuMock.mock.restore();

@@ -147,6 +147,7 @@ const createSessionState = (): BotContext['session'] => ({
   support: {
     status: 'idle',
   },
+  authSnapshot: { stale: false },
 });
 
 type SupportModule = typeof import('../src/bot/services/support');

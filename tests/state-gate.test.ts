@@ -25,6 +25,7 @@ const createSessionState = (): SessionState => ({
   },
   ui: { steps: {}, homeActions: [] },
   support: { status: 'idle' },
+  authSnapshot: { stale: false },
 });
 
 const createAuthState = (status: BotContext['auth']['user']['status']) => ({

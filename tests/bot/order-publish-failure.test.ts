@@ -82,6 +82,7 @@ const createBaseContext = () => {
     },
     ui: { steps: {}, homeActions: [] },
     support: { status: 'idle' },
+    authSnapshot: { stale: false },
   };
 
   const ctx = {

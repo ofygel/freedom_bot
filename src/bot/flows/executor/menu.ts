@@ -77,6 +77,7 @@ const createRoleVerificationState = (): ExecutorVerificationRoleState => ({
   uploadedPhotos: [],
   submittedAt: undefined,
   moderation: undefined,
+  lastReminderAt: undefined,
 });
 
 const createSubscriptionState = (): ExecutorSubscriptionState => ({
@@ -97,6 +98,7 @@ const normaliseRoleVerificationState = (
   uploadedPhotos: cloneUploadedPhotos(value?.uploadedPhotos),
   submittedAt: value?.submittedAt,
   moderation: cloneModerationState(value?.moderation),
+  lastReminderAt: typeof value?.lastReminderAt === 'number' ? value.lastReminderAt : undefined,
 });
 
 const createDefaultVerificationState = () => {
@@ -173,10 +175,31 @@ const normaliseSubscriptionState = (
   lastReminderAt: normaliseReminderTimestamp(value?.lastReminderAt),
 });
 
+export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
+  const authRole = ctx.auth.user.role;
+  if (authRole === 'courier' || authRole === 'driver') {
+    return true;
+  }
+
+  if (ctx.session.isAuthenticated === false && authRole === 'guest') {
+    const sessionRole = ctx.session.executor?.role;
+    return sessionRole === 'courier' || sessionRole === 'driver';
+  }
+
+  return false;
+};
+
 const deriveAuthExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
   const authRole = ctx.auth.user.role;
   if (authRole === 'courier' || authRole === 'driver') {
     return authRole;
+  }
+
+  if (ctx.session.isAuthenticated === false && authRole === 'guest') {
+    const sessionRole = ctx.session.executor?.role;
+    if (sessionRole === 'courier' || sessionRole === 'driver') {
+      return sessionRole;
+    }
   }
 
   return undefined;
@@ -616,11 +639,10 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     const pendingCityAction = ctx.session.ui?.pendingCityAction;
-    const userRole = ctx.auth.user.role;
-    const hasExecutorRole = userRole === 'courier' || userRole === 'driver';
+    const looksLikeExecutor = userLooksLikeExecutor(ctx);
 
     const shouldShowExecutorMenu =
-      pendingCityAction === EXECUTOR_MENU_CITY_ACTION || (!pendingCityAction && hasExecutorRole);
+      pendingCityAction === EXECUTOR_MENU_CITY_ACTION || (!pendingCityAction && looksLikeExecutor);
 
     if (!shouldShowExecutorMenu) {
       return;
@@ -636,6 +658,11 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
+    if (!userLooksLikeExecutor(ctx)) {
+      await ctx.answerCbQuery('Доступно только для исполнителей.');
+      return;
+    }
+
     await ctx.answerCbQuery();
     ensureExecutorState(ctx);
     await showExecutorMenu(ctx);
@@ -646,10 +673,7 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    const role = ctx.auth.user.role;
-    const isExecutor = role === 'courier' || role === 'driver';
-
-    if (!isExecutor) {
+    if (!userLooksLikeExecutor(ctx)) {
       await showMenu(ctx);
       return;
     }
@@ -660,6 +684,11 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
 
   bot.hears(EXECUTOR_MENU_TEXT_LABELS.refresh, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
+      return;
+    }
+
+    if (!userLooksLikeExecutor(ctx)) {
+      await showMenu(ctx);
       return;
     }
 

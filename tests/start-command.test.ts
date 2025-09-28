@@ -147,6 +147,7 @@ const createContext = (role: BotContext['auth']['user']['role']): BotContext => 
       client: { taxi: { stage: 'idle' }, delivery: { stage: 'idle' } },
       ui: { steps: {}, homeActions: [] },
       support: { status: 'idle' },
+      authSnapshot: { stale: false },
     },
     reply: async (text: string) => {
       replyCalls.push({ text });

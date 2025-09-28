@@ -296,6 +296,10 @@ export interface AppConfig {
       queryTimeoutMs: number;
     };
   };
+  session: {
+    ttlSeconds: number;
+    redis: { url: string; keyPrefix: string } | null;
+  };
   city: {
     default?: string;
   };
@@ -329,62 +333,76 @@ export interface AppConfig {
   pricing: PricingConfig;
 }
 
-export const loadConfig = (): AppConfig => ({
-  nodeEnv: process.env.NODE_ENV ?? 'development',
-  logLevel: resolveLogLevel(process.env.PINO_LEVEL ?? process.env.LOG_LEVEL),
-  logTransport: resolveLogTransport(process.env.PINO_TRANSPORT),
-  logRateLimit: 50,
-  bot: {
-    token: process.env.BOT_TOKEN as string,
-    callbackSignSecret: getOptionalString('CALLBACK_SIGN_SECRET'),
-  },
-  features: {
-    trialEnabled: parseBoolean(process.env.FEATURE_TRIAL_ENABLED, true),
-    executorReplyKeyboard: parseBoolean(process.env.FEATURE_EXECUTOR_REPLY_KEYBOARD),
-    reportsEnabled: parseBoolean(process.env.FEATURE_REPORTS_ENABLED),
-  },
-  webhook: {
-    domain: getRequiredString('WEBHOOK_DOMAIN'),
-    secret: getRequiredString('WEBHOOK_SECRET'),
-  },
-  database: {
-    url: process.env.DATABASE_URL as string,
-    ssl: parseBoolean(process.env.DATABASE_SSL),
-    pool: {
-      max: parsePositiveInt('DATABASE_POOL_MAX', 10),
-      idleTimeoutMs: parsePositiveInt('DATABASE_POOL_IDLE_TIMEOUT_MS', 30000),
-      connectionTimeoutMs: parsePositiveInt('DATABASE_POOL_CONNECTION_TIMEOUT_MS', 5000),
-      statementTimeoutMs: parsePositiveInt('DATABASE_STATEMENT_TIMEOUT_MS', 15000),
-      queryTimeoutMs: parsePositiveInt('DATABASE_QUERY_TIMEOUT_MS', 20000),
+export const loadConfig = (): AppConfig => {
+  const redisUrl = getOptionalString('REDIS_URL');
+  const sessionCachePrefix = getOptionalString('SESSION_CACHE_PREFIX') ?? 'session:';
+
+  return {
+    nodeEnv: process.env.NODE_ENV ?? 'development',
+    logLevel: resolveLogLevel(process.env.PINO_LEVEL ?? process.env.LOG_LEVEL),
+    logTransport: resolveLogTransport(process.env.PINO_TRANSPORT),
+    logRateLimit: 50,
+    bot: {
+      token: process.env.BOT_TOKEN as string,
+      callbackSignSecret: getOptionalString('CALLBACK_SIGN_SECRET'),
     },
-  },
-  city: {
-    default: getOptionalString('CITY_DEFAULT'),
-  },
-  timezone: getOptionalString('TIMEZONE') ?? 'Asia/Almaty',
-  jobs: {
-    nudger: getCronExpression('JOBS_NUDGER_CRON', '*/1 * * * *'),
-    subscription: getCronExpression('JOBS_SUBSCRIPTION_CRON', '*/10 * * * *'),
-    metrics: getCronExpression('JOBS_METRICS_CRON', '*/60 * * * * *'),
-    paymentReminder: getCronExpression('JOBS_PAYMENT_REMINDER_CRON', '*/10 * * * *'),
-  },
-  tariff: parseGeneralTariff(),
-  subscriptions: {
-    warnHoursBefore: parseWarnHours(process.env.SUB_WARN_HOURS_BEFORE),
-    trialDays: parsePositiveNumber('SUB_TRIAL_DAYS', 7),
-    prices: parseSubscriptionPrices(),
-    payment: {
-      kaspi: {
-        card: getRequiredString('KASPI_CARD'),
-        name: getRequiredString('KASPI_NAME'),
-        phone: getRequiredString('KASPI_PHONE'),
+    features: {
+      trialEnabled: parseBoolean(process.env.FEATURE_TRIAL_ENABLED, true),
+      executorReplyKeyboard: parseBoolean(process.env.FEATURE_EXECUTOR_REPLY_KEYBOARD),
+      reportsEnabled: parseBoolean(process.env.FEATURE_REPORTS_ENABLED),
+    },
+    webhook: {
+      domain: getRequiredString('WEBHOOK_DOMAIN'),
+      secret: getRequiredString('WEBHOOK_SECRET'),
+    },
+    database: {
+      url: process.env.DATABASE_URL as string,
+      ssl: parseBoolean(process.env.DATABASE_SSL),
+      pool: {
+        max: parsePositiveInt('DATABASE_POOL_MAX', 10),
+        idleTimeoutMs: parsePositiveInt('DATABASE_POOL_IDLE_TIMEOUT_MS', 30000),
+        connectionTimeoutMs: parsePositiveInt('DATABASE_POOL_CONNECTION_TIMEOUT_MS', 5000),
+        statementTimeoutMs: parsePositiveInt('DATABASE_STATEMENT_TIMEOUT_MS', 15000),
+        queryTimeoutMs: parsePositiveInt('DATABASE_QUERY_TIMEOUT_MS', 20000),
       },
-      driversChannelId: parseOptionalChatId('DRIVERS_CHANNEL_ID'),
-      driversChannelInvite: getOptionalString('DRIVERS_CHANNEL_INVITE'),
     },
-  },
-  pricing: loadPricingConfig(),
-});
+    session: {
+      ttlSeconds: parsePositiveInt('SESSION_TTL_SECONDS', 86400),
+      redis: redisUrl
+        ? {
+            url: redisUrl,
+            keyPrefix: sessionCachePrefix,
+          }
+        : null,
+    },
+    city: {
+      default: getOptionalString('CITY_DEFAULT'),
+    },
+    timezone: getOptionalString('TIMEZONE') ?? 'Asia/Almaty',
+    jobs: {
+      nudger: getCronExpression('JOBS_NUDGER_CRON', '*/1 * * * *'),
+      subscription: getCronExpression('JOBS_SUBSCRIPTION_CRON', '*/10 * * * *'),
+      metrics: getCronExpression('JOBS_METRICS_CRON', '*/60 * * * * *'),
+      paymentReminder: getCronExpression('JOBS_PAYMENT_REMINDER_CRON', '*/10 * * * *'),
+    },
+    tariff: parseGeneralTariff(),
+    subscriptions: {
+      warnHoursBefore: parseWarnHours(process.env.SUB_WARN_HOURS_BEFORE),
+      trialDays: parsePositiveNumber('SUB_TRIAL_DAYS', 7),
+      prices: parseSubscriptionPrices(),
+      payment: {
+        kaspi: {
+          card: getRequiredString('KASPI_CARD'),
+          name: getRequiredString('KASPI_NAME'),
+          phone: getRequiredString('KASPI_PHONE'),
+        },
+        driversChannelId: parseOptionalChatId('DRIVERS_CHANNEL_ID'),
+        driversChannelInvite: getOptionalString('DRIVERS_CHANNEL_INVITE'),
+      },
+    },
+    pricing: loadPricingConfig(),
+  };
+};
 
 export const config: AppConfig = loadConfig();
 
@@ -393,6 +411,10 @@ Object.freeze(config.features);
 Object.freeze(config.webhook);
 Object.freeze(config.database.pool);
 Object.freeze(config.database);
+if (config.session.redis) {
+  Object.freeze(config.session.redis);
+}
+Object.freeze(config.session);
 Object.freeze(config.city);
 Object.freeze(config.jobs);
 if (config.tariff) {

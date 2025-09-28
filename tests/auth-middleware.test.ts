@@ -42,6 +42,7 @@ const createSessionState = (): BotContext['session'] => ({
   support: {
     status: 'idle',
   },
+  authSnapshot: { stale: false },
 });
 
 const registerChannelPostHandler = () => {

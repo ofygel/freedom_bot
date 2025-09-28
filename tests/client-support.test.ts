@@ -35,6 +35,7 @@ const createSessionState = () => ({
   },
   ui: { steps: {}, homeActions: [] },
   support: { status: 'idle' as const },
+  authSnapshot: { stale: false },
 });
 
 const createContext = () => {

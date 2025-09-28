@@ -42,6 +42,7 @@ const createSessionState = (): SessionState => ({
   },
   ui: { steps: {}, homeActions: [], pendingCityAction: undefined },
   support: { status: 'idle' },
+  authSnapshot: { stale: false },
 });
 
 const createAuthState = (telegramId = 700): NonNullable<BotContext['auth']> => ({
@@ -73,7 +74,10 @@ const createContext = () => {
     auth,
   } as unknown as BotContext;
 
-  return { ctx, session, auth };
+  const replyMock = mock.fn(async () => undefined);
+  (ctx as unknown as { reply: typeof replyMock }).reply = replyMock;
+
+  return { ctx, session, auth, replyMock };
 };
 
 describe('ensureVerifiedExecutor middleware', () => {
@@ -124,8 +128,8 @@ describe('ensureVerifiedExecutor middleware', () => {
     assert.equal(session.executor.verification.courier.status, 'collecting');
   });
 
-  it('re-prompts when collecting and receives a non-photo message', async () => {
-    const { ctx } = createContext();
+  it('reminds about pending photos when collecting and receives a non-photo message', async () => {
+    const { ctx, session, replyMock } = createContext();
 
     const roleState = ctx.session.executor.verification.courier;
     roleState.status = 'collecting';
@@ -138,7 +142,9 @@ describe('ensureVerifiedExecutor middleware', () => {
     });
 
     assert.equal(nextCalled, false, 'non-photo message should not bypass the gate');
-    assert.equal(startVerificationMock.mock.callCount(), 1);
+    assert.equal(startVerificationMock.mock.callCount(), 0);
+    assert.equal(replyMock.mock.callCount(), 1);
+    assert.equal(typeof session.executor.verification.courier.lastReminderAt, 'number');
   });
 
   it('allows /start command while collecting to reach downstream handlers', async () => {

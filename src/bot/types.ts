@@ -55,6 +55,37 @@ export interface AuthExecutorState {
   isVerified: boolean;
 }
 
+export interface AuthStateSnapshotUser {
+  telegramId: number;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  phoneVerified: boolean;
+  role: UserRole;
+  status: UserStatus;
+  isVerified: boolean;
+  isBlocked: boolean;
+  citySelected?: AppCity;
+  verifiedAt?: number;
+  trialEndsAt?: number;
+  lastMenuRole?: UserMenuRole;
+  keyboardNonce?: string;
+}
+
+export interface AuthStateSnapshotExecutor {
+  verifiedRoles: Record<ExecutorRole, boolean>;
+  hasActiveSubscription: boolean;
+  isVerified: boolean;
+}
+
+export interface AuthStateSnapshot {
+  user?: AuthStateSnapshotUser;
+  executor?: AuthStateSnapshotExecutor;
+  isModerator?: boolean;
+  stale: boolean;
+}
+
 export interface AuthState {
   user: AuthUser;
   executor: AuthExecutorState;
@@ -82,6 +113,7 @@ export interface ExecutorVerificationRoleState {
   uploadedPhotos: ExecutorUploadedPhoto[];
   submittedAt?: number;
   moderation?: ExecutorVerificationModerationState;
+  lastReminderAt?: number;
 }
 
 export type ExecutorSubscriptionStatus =
@@ -173,6 +205,7 @@ export interface SessionState {
   client: ClientFlowState;
   ui: UiSessionState;
   support: SupportSessionState;
+  authSnapshot: AuthStateSnapshot;
 }
 
 export type BotContext = Context & {
