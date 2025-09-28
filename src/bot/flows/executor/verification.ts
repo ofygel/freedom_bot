@@ -84,14 +84,12 @@ const buildVerificationPrompt = (role: ExecutorRole): string => {
   const requiredPhotos = requirements.length || EXECUTOR_VERIFICATION_PHOTO_COUNT;
   const requirementLines = requirements.map((item, index) => `${index + 1}. ${item}`);
 
-  const requirementsParagraph = ['Нужно:', ...requirementLines].join('\n');
-
   return [
-    '🛡️ Проверка документов.',
+    '🛡️ Проверка документов',
     '',
     `Чтобы получить доступ к заказам ${copy.genitive}, пришлите ${requiredPhotos} фото в этот чат.`,
     '',
-    requirementsParagraph,
+    ['Нужно:', ...requirementLines].join('\n'),
     '',
     `ℹ️ ${VERIFICATION_ALBUM_HINT} Не уверены, что отправлять? Нажмите «Что подходит?» — покажем примеры. ` +
       'Запутались? Воспользуйтесь «Назад/Где я?» или «Помощь».',
