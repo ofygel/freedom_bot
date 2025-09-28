@@ -71,6 +71,7 @@ const bindAction = (
     userId,
     keyboardNonce,
     bindToUser: true,
+    ttlSeconds: config.bot.callbackTtlSeconds,
   });
 };
 

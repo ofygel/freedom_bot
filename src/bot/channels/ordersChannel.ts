@@ -528,13 +528,21 @@ const buildActionKeyboard = (order: OrderRecord): InlineKeyboardMarkup => {
     [
       {
         label: '✅ Беру заказ',
-        action: wrapCallbackData(acceptRaw, { secret: callbackSecret, bindToUser: false }),
+        action: wrapCallbackData(acceptRaw, {
+          secret: callbackSecret,
+          bindToUser: false,
+          ttlSeconds: config.bot.callbackTtlSeconds,
+        }),
       },
     ],
     [
       {
         label: '❌ Недоступен',
-        action: wrapCallbackData(declineRaw, { secret: callbackSecret, bindToUser: false }),
+        action: wrapCallbackData(declineRaw, {
+          secret: callbackSecret,
+          bindToUser: false,
+          ttlSeconds: config.bot.callbackTtlSeconds,
+        }),
       },
     ],
   ]);
