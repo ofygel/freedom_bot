@@ -48,7 +48,7 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
   }
 
   const { genitive } = getExecutorRoleCopy(role);
-  await ctx.answerCbQuery(`Вы выбрали роль ${genitive}.`);
+  await ctx.answerCbQuery(`Вы выбрали роль ${genitive}. Теперь определим город.`);
 
   let deleted = false;
   try {

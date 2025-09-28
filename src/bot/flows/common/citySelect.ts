@@ -94,9 +94,14 @@ export const askCity = async (
     ctx.session.executor.roleSelectionStage = 'city';
   }
 
+  const showBackTip = homeAction === ROLE_SELECTION_BACK_ACTION && Boolean(homeLabel);
+  const stepText = showBackTip && homeLabel
+    ? `${title}\n\nЕсли хотите вернуться, нажмите «${homeLabel}».`
+    : title;
+
   await ui.step(ctx, {
     id: CITY_CONFIRM_STEP_ID,
-    text: title,
+    text: stepText,
     keyboard,
     homeAction,
     homeLabel,
