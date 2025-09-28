@@ -14,6 +14,7 @@ let EXECUTOR_ORDERS_ACTION: typeof import('../src/bot/flows/executor/menu')['EXE
 let EXECUTOR_SUPPORT_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_SUPPORT_ACTION'];
 let EXECUTOR_MENU_ACTION: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_ACTION'];
 let EXECUTOR_MENU_TEXT_LABELS: typeof import('../src/bot/flows/executor/menu')['EXECUTOR_MENU_TEXT_LABELS'];
+let CITY_CONFIRM_STEP_ID: typeof import('../src/bot/flows/common/citySelect')['CITY_CONFIRM_STEP_ID'];
 let startExecutorSubscription: typeof import('../src/bot/flows/executor/subscription')['startExecutorSubscription'];
 let uiHelper: typeof import('../src/bot/ui')['ui'];
 
@@ -40,6 +41,7 @@ before(async () => {
     EXECUTOR_MENU_ACTION,
     EXECUTOR_MENU_TEXT_LABELS,
   } = await import('../src/bot/flows/executor/menu'));
+  ({ CITY_CONFIRM_STEP_ID } = await import('../src/bot/flows/common/citySelect'));
   ({ startExecutorSubscription } = await import('../src/bot/flows/executor/subscription'));
   ({ ui: uiHelper } = await import('../src/bot/ui'));
 });
@@ -171,21 +173,12 @@ describe('executor access control', () => {
     ctx.session.city = undefined;
     ctx.auth.user.citySelected = undefined;
 
-    const replies: string[] = [];
-    (ctx as { reply: BotContext['reply'] }).reply = (async (text: string) => {
-      replies.push(text);
-      return {
-        message_id: replies.length,
-        chat: { id: ctx.chat!.id },
-        text,
-      };
-    }) as BotContext['reply'];
-
     await showExecutorMenu(ctx);
 
     assert.equal(ctx.session.ui.pendingCityAction, 'executorMenu');
-    assert.deepEqual(replies, ['Выберите город, чтобы получить доступ к заказам.']);
-    assert.equal(recordedSteps.length, 0);
+    const cityPrompt = recordedSteps.find((step) => step.id === CITY_CONFIRM_STEP_ID);
+    assert.ok(cityPrompt, 'city selection prompt should be shown');
+    assert.equal(cityPrompt.text, 'Выберите город, чтобы получить доступ к заказам.');
 
     ctx.auth.user.citySelected = DEFAULT_CITY;
     ctx.session.city = DEFAULT_CITY;

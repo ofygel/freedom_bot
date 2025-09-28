@@ -6,7 +6,6 @@ import { CitySelectionError, setUserCitySelected } from '../../../services/users
 import { logger } from '../../../config';
 import type { BotContext } from '../../types';
 import { resetClientOrderDraft } from '../../services/orders';
-import { bindInlineKeyboardToUser } from '../../services/callbackTokens';
 import { ui } from '../../ui';
 import { copy } from '../../copy';
 
@@ -70,20 +69,12 @@ export const askCity = async (
   }
 
   const keyboard = buildCityKeyboard();
-  const replyMarkup = bindInlineKeyboardToUser(ctx, keyboard) ?? keyboard;
-  try {
-    await ctx.reply(title, { reply_markup: replyMarkup });
-  } catch (error) {
-    if (!ctx.chat?.id) {
-      throw error;
-    }
-
-    try {
-      await ctx.telegram.sendMessage(ctx.chat.id, title, { reply_markup: replyMarkup });
-    } catch {
-      throw error;
-    }
-  }
+  await ui.step(ctx, {
+    id: CITY_CONFIRM_STEP_ID,
+    text: title,
+    keyboard,
+    homeAction: resolveHomeAction(ctx),
+  });
 };
 
 export const ensureCitySelected = async (
@@ -149,20 +140,33 @@ export const registerCityAction = (bot: Telegraf<BotContext>): void => {
 
     await ctx.answerCbQuery(`Город: ${CITY_LABEL[city]}`);
 
+    const confirmationText = `Город установлен: ${CITY_LABEL[city]}`;
+
+    let stepResult: Awaited<ReturnType<typeof ui.step>>;
     try {
-      await ctx.editMessageText(`Город установлен: ${CITY_LABEL[city]}`);
-    } catch {
-      try {
-        await ctx.reply(`Город установлен: ${CITY_LABEL[city]}`);
-      } catch {
-        // Ignore message errors, selection is already stored.
-      }
+      stepResult = await ui.step(ctx, {
+        id: CITY_CONFIRM_STEP_ID,
+        text: confirmationText,
+        homeAction: resolveHomeAction(ctx),
+      });
+    } catch (error) {
+      logger.debug(
+        { err: error, chatId: ctx.chat?.id },
+        'Failed to update city selection step, falling back to direct edit',
+      );
     }
 
-    await ui.trackStep(ctx, {
-      id: CITY_CONFIRM_STEP_ID,
-      homeAction: resolveHomeAction(ctx),
-    });
+    if (!stepResult || stepResult.sent) {
+      try {
+        await ctx.editMessageText(confirmationText);
+      } catch {
+        try {
+          await ctx.reply(confirmationText);
+        } catch {
+          // Ignore message errors, selection is already stored.
+        }
+      }
+    }
 
     if (typeof next === 'function') {
       await next();

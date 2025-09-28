@@ -6,6 +6,7 @@ import type { PoolClient } from 'pg';
 import type { Telegraf } from 'telegraf';
 
 import type { BotContext, SessionState } from '../../src/bot/types';
+import type { UiStepOptions } from '../../src/bot/ui';
 import { pool } from '../../src/db';
 import * as sessionStorage from '../../src/db/sessions';
 import * as usersService from '../../src/services/users';
@@ -138,7 +139,7 @@ const createMockContext = (): BotContext => {
 
 let connectMock: ReturnType<typeof mock.method> | undefined;
 let setUserCitySelectedMock: ReturnType<typeof mock.method> | undefined;
-let trackStepMock: ReturnType<typeof mock.method> | undefined;
+let stepMock: ReturnType<typeof mock.method> | undefined;
 
 beforeEach(() => {
   connectMock = mock.method(pool, 'connect', async () => ({
@@ -147,7 +148,15 @@ beforeEach(() => {
   }) as unknown as PoolClient);
 
   setUserCitySelectedMock = mock.method(usersService, 'setUserCitySelected', async () => undefined);
-  trackStepMock = mock.method(uiModule, 'trackStep', async () => undefined);
+  let messageId = 0;
+  stepMock = mock.method(uiModule, 'step', async (ctx: BotContext, options: UiStepOptions) => {
+    messageId += 1;
+    if (typeof ctx.reply === 'function') {
+      await ctx.reply(options.text, { reply_markup: options.keyboard });
+    }
+
+    return { messageId, sent: true };
+  });
 });
 
 afterEach(() => {
@@ -157,8 +166,8 @@ afterEach(() => {
   setUserCitySelectedMock?.mock.restore();
   setUserCitySelectedMock = undefined;
 
-  trackStepMock?.mock.restore();
-  trackStepMock = undefined;
+  stepMock?.mock.restore();
+  stepMock = undefined;
 });
 
 describe('session migration for city callbacks', () => {
