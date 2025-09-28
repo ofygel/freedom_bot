@@ -8,7 +8,7 @@ import { config, logger } from '../../config';
 import { getChannelBinding } from '../channels/bindings';
 import { CITY_LABEL, type AppCity } from '../../domain/cities';
 import type { OrderRecord, OrderKind } from '../../types';
-import type { ExecutorRole, UserSubscriptionStatus } from '../types';
+import type { ExecutorRole, UserRole, UserSubscriptionStatus } from '../types';
 import { getExecutorRoleCopy } from '../copy';
 
 const REPORT_PREVIEW_LENGTH = 120;
@@ -181,6 +181,30 @@ const appendUserLine = (lines: string[], label: string, user?: UserIdentity): vo
   }
 };
 
+const formatRoleLabel = (role: UserRole, executorRole?: ExecutorRole): string => {
+  const roleLabels: Record<UserRole, string> = {
+    guest: 'гость',
+    client: 'клиент',
+    executor: 'исполнитель',
+    moderator: 'модератор',
+  };
+
+  if (role === 'executor' && executorRole) {
+    const copy = getExecutorRoleCopy(executorRole);
+    return `${roleLabels.executor} (${copy.noun})`;
+  }
+
+  return roleLabels[role] ?? role;
+};
+
+const formatCityLabel = (city?: AppCity): string | undefined => {
+  if (!city) {
+    return undefined;
+  }
+
+  return CITY_LABEL[city] ?? city;
+};
+
 const formatChatIdentity = (chat?: TelegramChat | null): string | undefined => {
   if (!chat) {
     return undefined;
@@ -296,6 +320,145 @@ export const reportUserRegistration = async (
   phone?: string,
   source?: string,
 ): Promise<ReportSendResult> => sendStatsReport(telegram, buildRegistrationReport(user, phone, source));
+
+const buildPhoneVerifiedReport = ({
+  user,
+  phone,
+  verifiedAt,
+  source,
+}: {
+  user?: UserIdentity;
+  phone?: string;
+  verifiedAt?: Date | number | string;
+  source?: string;
+}): string => {
+  const lines = ['📞 PHONE_VERIFIED: номер подтверждён'];
+  appendUserLine(lines, 'Пользователь', user);
+  appendPhoneLine(lines, phone);
+  const verifiedLabel = formatDateTime(verifiedAt);
+  if (verifiedLabel) {
+    lines.push(`Подтверждён: ${verifiedLabel}`);
+  }
+  if (source) {
+    lines.push(`Источник: ${source}`);
+  }
+  return lines.join('\n');
+};
+
+export const reportPhoneVerified = async (
+  telegram: Telegram,
+  context: {
+    user?: UserIdentity;
+    phone?: string;
+    verifiedAt?: Date | number | string;
+    source?: string;
+  },
+): Promise<ReportSendResult> => sendStatsReport(telegram, buildPhoneVerifiedReport(context));
+
+const buildRoleSetReport = ({
+  user,
+  role,
+  previousRole,
+  executorRole,
+  previousExecutorRole,
+  city,
+  source,
+}: {
+  user?: UserIdentity;
+  role: UserRole;
+  previousRole?: UserRole;
+  executorRole?: ExecutorRole;
+  previousExecutorRole?: ExecutorRole;
+  city?: AppCity;
+  source?: string;
+}): string => {
+  const lines = ['🪪 ROLE_SET: обновление роли пользователя'];
+  appendUserLine(lines, 'Пользователь', user);
+
+  const roleLabel = formatRoleLabel(role, executorRole);
+  lines.push(`Новая роль: ${roleLabel}`);
+
+  if (previousRole && previousRole !== role) {
+    lines.push(`Предыдущая роль: ${formatRoleLabel(previousRole, previousExecutorRole)}`);
+  }
+
+  const cityLabel = formatCityLabel(city);
+  if (cityLabel) {
+    lines.push(`Город: ${cityLabel}`);
+  }
+
+  if (source) {
+    lines.push(`Источник: ${source}`);
+  }
+
+  return lines.join('\n');
+};
+
+export const reportRoleSet = async (
+  telegram: Telegram,
+  context: {
+    user?: UserIdentity;
+    role: UserRole;
+    previousRole?: UserRole;
+    executorRole?: ExecutorRole;
+    previousExecutorRole?: ExecutorRole;
+    city?: AppCity;
+    source?: string;
+  },
+): Promise<ReportSendResult> => sendStatsReport(telegram, buildRoleSetReport(context));
+
+const buildCitySetReport = ({
+  user,
+  city,
+  previousCity,
+  role,
+  executorRole,
+  source,
+}: {
+  user?: UserIdentity;
+  city: AppCity;
+  previousCity?: AppCity;
+  role?: UserRole;
+  executorRole?: ExecutorRole;
+  source?: string;
+}): string => {
+  const lines = ['🌆 CITY_SET: выбран город'];
+  appendUserLine(lines, 'Пользователь', user);
+
+  const cityLabel = formatCityLabel(city);
+  if (cityLabel) {
+    lines.push(`Текущий город: ${cityLabel}`);
+  }
+
+  if (previousCity && previousCity !== city) {
+    const previousLabel = formatCityLabel(previousCity);
+    if (previousLabel) {
+      lines.push(`Предыдущий город: ${previousLabel}`);
+    }
+  }
+
+  if (role) {
+    lines.push(`Роль: ${formatRoleLabel(role, role === 'executor' ? executorRole : undefined)}`);
+  }
+
+  if (source) {
+    lines.push(`Источник: ${source}`);
+  }
+
+  return lines.join('\n');
+};
+
+export const reportCitySet = async (
+  telegram: Telegram,
+  context: {
+    user?: UserIdentity;
+    city: AppCity;
+    previousCity?: AppCity;
+    role?: UserRole;
+    executorRole?: ExecutorRole;
+    source?: string;
+  },
+): Promise<ReportSendResult> => sendStatsReport(telegram, buildCitySetReport(context));
 
 const buildVerificationSubmittedReport = (
   applicant: UserIdentity,

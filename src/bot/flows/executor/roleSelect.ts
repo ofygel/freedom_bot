@@ -17,8 +17,9 @@ import {
   EXECUTOR_KIND_DRIVER_ACTION,
 } from './roleSelectionConstants';
 import { clearOnboardingState } from '../../services/onboarding';
+import { reportRoleSet, toUserIdentity } from '../../services/reports';
 
-const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise<void> => {
+export const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise<void> => {
   if (ctx.chat?.type !== 'private') {
     await ctx.answerCbQuery('Пожалуйста, продолжите в личных сообщениях с ботом.');
     return;
@@ -28,6 +29,8 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
   state.role = role;
   state.awaitingRoleSelection = true;
   state.roleSelectionStage = 'city';
+  const previousRole = ctx.auth.user.role;
+  const previousExecutorRole = ctx.auth.user.executorKind;
   ctx.auth.user.role = 'executor';
   ctx.auth.user.executorKind = role;
   ctx.auth.user.status = 'active_executor';
@@ -45,6 +48,30 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
       { err: error, telegramId: ctx.auth.user.telegramId },
       'Failed to persist executor role selection',
     );
+  }
+
+  const identity = ctx.auth?.user
+    ? {
+        telegramId: ctx.auth.user.telegramId,
+        username: ctx.auth.user.username,
+        firstName: ctx.auth.user.firstName,
+        lastName: ctx.auth.user.lastName,
+        phone: ctx.auth.user.phone ?? ctx.session.phoneNumber,
+      }
+    : toUserIdentity(ctx.from);
+
+  try {
+    await reportRoleSet(ctx.telegram, {
+      user: identity,
+      role: 'executor',
+      previousRole,
+      executorRole: role,
+      previousExecutorRole,
+      city: ctx.auth.user.citySelected,
+      source: 'executor_role_select',
+    });
+  } catch (error) {
+    logger.error({ err: error, telegramId: ctx.auth.user.telegramId }, 'Failed to report executor role set');
   }
 
   const { genitive } = getExecutorRoleCopy(role);

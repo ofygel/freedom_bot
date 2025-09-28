@@ -10,6 +10,7 @@ import { ui } from '../../ui';
 import { copy } from '../../copy';
 import { ROLE_SELECTION_BACK_ACTION, EXECUTOR_ROLE_PENDING_CITY_ACTION } from '../executor/roleSelectionConstants';
 import { clearOnboardingState } from '../../services/onboarding';
+import { reportCitySet, toUserIdentity } from '../../services/reports';
 
 export const CITY_CONFIRM_STEP_ID = 'common:city:confirm';
 
@@ -76,6 +77,38 @@ const applyCitySelection = (ctx: BotContext, city: AppCity): void => {
   if (previousCity && previousCity !== city && ctx.session?.client) {
     resetClientOrderDraft(ctx.session.client.taxi);
     resetClientOrderDraft(ctx.session.client.delivery);
+  }
+};
+
+export const sendCitySelectionReport = async (
+  ctx: BotContext,
+  city: AppCity,
+  previousCity?: AppCity,
+): Promise<void> => {
+  const authUser = ctx.auth?.user;
+  const identity = authUser
+    ? {
+        telegramId: authUser.telegramId,
+        username: authUser.username,
+        firstName: authUser.firstName,
+        lastName: authUser.lastName,
+        phone: authUser.phone ?? ctx.session.phoneNumber,
+      }
+    : toUserIdentity(ctx.from);
+
+  const source = ctx.session.ui?.pendingCityAction ?? 'city_select';
+
+  try {
+    await reportCitySet(ctx.telegram, {
+      user: identity,
+      city,
+      previousCity,
+      role: authUser?.role,
+      executorRole: authUser?.executorKind,
+      source: typeof source === 'string' ? source : undefined,
+    });
+  } catch (error) {
+    logger.error({ err: error, telegramId: authUser?.telegramId, city }, 'Failed to report city selection');
   }
 };
 
@@ -160,6 +193,8 @@ export const registerCityAction = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
+    const previousCity = ctx.auth?.user?.citySelected;
+
     if (hasActiveOrder(ctx)) {
       await ctx.answerCbQuery('Сменить город можно после завершения активного заказа.', {
         show_alert: true,
@@ -198,6 +233,8 @@ export const registerCityAction = (bot: Telegraf<BotContext>): void => {
       throw error;
     }
     applyCitySelection(ctx, city);
+
+    await sendCitySelectionReport(ctx, city, previousCity);
 
     await ctx.answerCbQuery(`Город: ${CITY_LABEL[city]}`);
 

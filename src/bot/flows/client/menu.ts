@@ -26,6 +26,7 @@ import { copy } from '../../copy';
 import { ROLE_PICK_CLIENT_ACTION } from '../executor/roleSelectionConstants';
 import { clearOnboardingState } from '../../services/onboarding';
 import { PROFILE_BUTTON_LABEL, renderProfileCard } from '../common/profileCard';
+import { reportRoleSet, toUserIdentity } from '../../services/reports';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
@@ -85,8 +86,10 @@ const removeRoleSelectionMessage = async (ctx: BotContext): Promise<void> => {
   }
 };
 
-const applyClientRole = async (ctx: BotContext): Promise<void> => {
+export const applyClientRole = async (ctx: BotContext): Promise<void> => {
   const authUser = ctx.auth.user;
+  const previousRole = authUser.role;
+  const previousExecutorRole = authUser.executorKind;
 
   const username = ctx.from?.username ?? authUser.username;
   const firstName = ctx.from?.first_name ?? authUser.firstName;
@@ -146,6 +149,29 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   }
 
   clearOnboardingState(ctx);
+
+  const identity = authUser
+    ? {
+        telegramId: authUser.telegramId,
+        username: authUser.username,
+        firstName: authUser.firstName,
+        lastName: authUser.lastName,
+        phone: authUser.phone,
+      }
+    : toUserIdentity(ctx.from);
+
+  try {
+    await reportRoleSet(ctx.telegram, {
+      user: identity,
+      role: 'client',
+      previousRole,
+      previousExecutorRole,
+      city: authUser.citySelected,
+      source: 'client_menu',
+    });
+  } catch (error) {
+    logger.error({ err: error, telegramId: authUser.telegramId }, 'Failed to report client role set');
+  }
 };
 
 export const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
