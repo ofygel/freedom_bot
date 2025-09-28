@@ -4,7 +4,7 @@ import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram'
 import type { BotContext } from '../types';
 import { setChatCommands } from '../services/commands';
 import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from './sets';
-import { hideClientMenu } from '../../ui/clientMenu';
+import { hideClientMenu, sendClientMenu } from '../../ui/clientMenu';
 import { bindInlineKeyboardToUser } from '../services/callbackTokens';
 import { askPhone } from '../flows/common/phoneCollect';
 import { ensureExecutorState } from '../flows/executor/menu';
@@ -85,6 +85,16 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
 
   await applyCommandsForRole(ctx);
   await hideClientMenu(ctx, 'Возвращаю стандартную клавиатуру…');
+
+  const userStatus = ctx.auth.user.status;
+  const userRole = ctx.auth.user.role;
+  const clientReadyStatuses: Array<typeof userStatus> = ['active_client', 'guest', 'awaiting_phone'];
+  const isClientRole = userRole === 'client' || userRole === 'guest';
+
+  if (isClientRole && clientReadyStatuses.includes(userStatus)) {
+    await sendClientMenu(ctx, 'Чем займёмся дальше? Выберите действие из меню ниже.');
+    return;
+  }
 
   const executorState = ensureExecutorState(ctx);
   const role = executorState.role;
