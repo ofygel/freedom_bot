@@ -3,7 +3,8 @@ import type { MiddlewareFn } from 'telegraf';
 import { executorKeyboard, onboardingKeyboard, removeKeyboard } from '../ui/menus';
 import type { BotContext } from '../types';
 import { logger } from '../../config';
-import { isSafeModeSession, showSafeModeCard } from '../flows/common/safeMode';
+import { isSafeModeSession } from '../flows/common/safeMode';
+import { showSafeModeCard } from '../ui/safeModeCard';
 
 const GUEST_ALLOWLIST = new Set<string>([
   '/start',

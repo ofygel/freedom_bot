@@ -1,44 +1,13 @@
 import type { Telegraf } from 'telegraf';
 
 import type { BotContext } from '../../types';
-import { ui } from '../../ui';
-import { buildInlineKeyboard } from '../../keyboards/common';
+import { SAFE_MODE_CARD_ACTIONS, buildSafeModeCardText } from '../../ui/safeModeCard';
 import { askCity } from './citySelect';
 import { promptClientSupport } from '../client/support';
 
-export const SAFE_MODE_CARD_STEP_ID = 'common:safe-mode:card';
-
-const SAFE_MODE_PROFILE_ACTION = 'safe-mode:profile';
-const SAFE_MODE_CITY_ACTION = 'safe-mode:city';
-const SAFE_MODE_SUPPORT_ACTION = 'safe-mode:support';
-
-const SAFE_MODE_ACTIONS = {
-  profile: SAFE_MODE_PROFILE_ACTION,
-  city: SAFE_MODE_CITY_ACTION,
-  support: SAFE_MODE_SUPPORT_ACTION,
-} as const;
-
-const buildSafeModeKeyboard = () =>
-  buildInlineKeyboard([
-    [
-      { label: '👤 Профиль', action: SAFE_MODE_PROFILE_ACTION },
-      { label: '🏙️ Сменить город', action: SAFE_MODE_CITY_ACTION },
-    ],
-    [{ label: '🆘 Помощь', action: SAFE_MODE_SUPPORT_ACTION }],
-  ]);
-
-const buildSafeModeCardText = (prompt?: string): string => {
-  const lines = [
-    '⚠️ Freedom Bot работает в безопасном режиме — часть функций недоступна.',
-    prompt ?? 'Пока доступны только базовые действия: [Профиль], [Сменить город], [Помощь].',
-    '',
-    '• 👤 Профиль — посмотрите актуальные данные аккаунта.',
-    '• 🏙️ Сменить город — уточните рабочий город.',
-    '• 🆘 Помощь — свяжитесь с поддержкой.',
-  ];
-
-  return lines.join('\n');
-};
+const SAFE_MODE_PROFILE_ACTION = SAFE_MODE_CARD_ACTIONS.profile;
+const SAFE_MODE_CITY_ACTION = SAFE_MODE_CARD_ACTIONS.city;
+const SAFE_MODE_SUPPORT_ACTION = SAFE_MODE_CARD_ACTIONS.support;
 
 const buildProfileSummary = (ctx: BotContext): string => {
   const authUser = ctx.auth?.user;
@@ -68,23 +37,6 @@ export const isSafeModeSession = (ctx: BotContext): boolean =>
   ctx.session.safeMode === true
   || ctx.session.isDegraded === true
   || ctx.auth?.user.status === 'safe_mode';
-
-export const showSafeModeCard = async (
-  ctx: BotContext,
-  options: { prompt?: string } = {},
-): Promise<void> => {
-  const chatId = ctx.chat?.id;
-  if (!chatId) {
-    return;
-  }
-
-  await ui.step(ctx, {
-    id: SAFE_MODE_CARD_STEP_ID,
-    text: buildSafeModeCardText(options.prompt),
-    keyboard: buildSafeModeKeyboard(),
-    cleanup: false,
-  });
-};
 
 export const registerSafeModeActions = (bot: Telegraf<BotContext>): void => {
   bot.action(SAFE_MODE_PROFILE_ACTION, async (ctx) => {
@@ -150,5 +102,5 @@ export const registerSafeModeActions = (bot: Telegraf<BotContext>): void => {
 export const __testing__ = {
   buildSafeModeCardText,
   buildProfileSummary,
-  SAFE_MODE_ACTIONS,
+  SAFE_MODE_ACTIONS: SAFE_MODE_CARD_ACTIONS,
 };
