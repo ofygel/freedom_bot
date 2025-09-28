@@ -60,16 +60,18 @@ const resetCitySelectionTracking = (ctx: BotContext): void => {
 };
 
 const buildRolePickText = (options?: { withHint?: boolean }): string => {
+  const withHint = options?.withHint ?? false;
   const lines = [ROLE_PICK_TITLE, '', ROLE_PICK_DESCRIPTION];
-  if (options?.withHint) {
+  if (withHint) {
     lines.push('', ROLE_PICK_HINT);
   }
   return lines.join('\n');
 };
 
 const buildExecutorKindText = (options?: { withHint?: boolean }): string => {
+  const withHint = options?.withHint ?? true;
   const lines = [EXECUTOR_KIND_TITLE, '', EXECUTOR_KIND_DESCRIPTION];
-  if (options?.withHint) {
+  if (withHint) {
     lines.push('', EXECUTOR_KIND_HINT);
   }
   return lines.join('\n');
@@ -79,6 +81,7 @@ export const presentRolePick = async (
   ctx: BotContext,
   options?: { withHint?: boolean },
 ): Promise<void> => {
+  const withHint = options?.withHint ?? false;
   const executorState = ensureExecutorState(ctx);
   executorState.awaitingRoleSelection = true;
   executorState.role = undefined;
@@ -88,7 +91,7 @@ export const presentRolePick = async (
 
   await ui.step(ctx, {
     id: ROLE_PICK_STEP_ID,
-    text: buildRolePickText(options),
+    text: buildRolePickText({ withHint }),
     keyboard: buildRolePickKeyboard(),
   });
   setOnboardingStep(ctx, 'role');
@@ -98,6 +101,7 @@ export const presentExecutorKindSelection = async (
   ctx: BotContext,
   options?: { withHint?: boolean },
 ): Promise<void> => {
+  const withHint = options?.withHint ?? true;
   const executorState = ensureExecutorState(ctx);
   executorState.awaitingRoleSelection = true;
   executorState.role = undefined;
@@ -107,7 +111,7 @@ export const presentExecutorKindSelection = async (
 
   await ui.step(ctx, {
     id: EXECUTOR_KIND_STEP_ID,
-    text: buildExecutorKindText(options ?? { withHint: true }),
+    text: buildExecutorKindText({ withHint }),
     keyboard: buildExecutorKindKeyboard(),
   });
   setOnboardingStep(ctx, 'executorKind');
