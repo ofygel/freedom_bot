@@ -10,6 +10,7 @@ import type { PoolClient } from '../db/client';
 import { pool } from '../db/client';
 import { loadSessionState, saveSessionState, type SessionKey } from '../db/sessions';
 import { updateUserSubscriptionStatus } from '../db/users';
+import { HOUR } from '../utils/time';
 
 type ReminderReason = 'awaitingReceipt' | 'trialEnding';
 
@@ -23,8 +24,8 @@ interface ReminderCandidate extends ReminderDescriptor {
   session: SessionState;
 }
 
-const REMINDER_INTERVAL_MS = 2 * 60 * 60 * 1000;
-const TRIAL_WINDOW_MS = 2 * 60 * 60 * 1000;
+const REMINDER_INTERVAL_MS = 2 * HOUR;
+const TRIAL_WINDOW_MS = 6 * HOUR;
 const REMINDER_STEP_ID = 'executor:subscription:reminder';
 
 const parseScopeId = (value: string | number | null | undefined): string | null => {
