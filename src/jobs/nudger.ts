@@ -33,6 +33,10 @@ interface FlowPayloadShape {
 
 const secret = config.bot.callbackSignSecret ?? config.bot.token;
 const BATCH_LIMIT = 100;
+const MIN_INACTIVITY_SECONDS = 90;
+
+const resolveInactivityThreshold = (): number =>
+  Math.max(config.jobs.nudgerInactivitySeconds, MIN_INACTIVITY_SECONDS);
 
 const fetchPendingSessions = async (): Promise<PendingSessionRow[]> => {
   const { rows } = await pool.query<PendingSessionRow>(
@@ -53,7 +57,7 @@ const fetchPendingSessions = async (): Promise<PendingSessionRow[]> => {
       ORDER BY s.last_step_at ASC
       LIMIT $2
     `,
-    [config.jobs.nudgerInactivitySeconds, BATCH_LIMIT],
+    [resolveInactivityThreshold(), BATCH_LIMIT],
   );
 
   return rows;
@@ -239,17 +243,19 @@ const runNudgerTick = async (bot: Telegraf<BotContext>): Promise<void> => {
 };
 
 export const startInactivityNudger = (bot: Telegraf<BotContext>): void => {
-  if (task) {
-    return;
-  }
-
   if (!config.features.nudgerEnabled) {
+    stopInactivityNudger();
     logger.info({ job: 'nudger' }, 'inactivity_nudger_feature_disabled');
     return;
   }
 
   if (!config.jobs.nudgerEnabled) {
+    stopInactivityNudger();
     logger.info({ job: 'nudger' }, 'inactivity_nudger_disabled');
+    return;
+  }
+
+  if (task) {
     return;
   }
 
@@ -265,7 +271,7 @@ export const startInactivityNudger = (bot: Telegraf<BotContext>): void => {
     {
       job: 'nudger',
       cron: config.jobs.nudger,
-      inactivitySeconds: config.jobs.nudgerInactivitySeconds,
+      inactivitySeconds: resolveInactivityThreshold(),
     },
     'inactivity_nudger_started',
   );
