@@ -197,7 +197,7 @@ const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
       firstName: ctx.auth.user.firstName ?? undefined,
       lastName: ctx.auth.user.lastName ?? undefined,
       phone: ctx.auth.user.phone ?? ctx.session.phoneNumber ?? undefined,
-      role,
+      executorKind: role,
       chatId: binding.chatId,
       trialDays: config.subscriptions.trialDays,
       currency: config.subscriptions.prices.currency,

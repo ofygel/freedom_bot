@@ -338,7 +338,7 @@ const activateVerificationTrial = async (
       firstName: application.applicant.firstName ?? undefined,
       lastName: application.applicant.lastName ?? undefined,
       phone: application.applicant.phone ?? undefined,
-      role: application.role,
+      executorKind: application.role,
       chatId: binding.chatId,
       trialDays: DEFAULT_VERIFICATION_TRIAL_DAYS,
       currency: config.subscriptions.prices.currency,

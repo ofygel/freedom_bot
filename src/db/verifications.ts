@@ -76,18 +76,23 @@ const upsertVerificationApplicant = async (
         last_name,
         phone,
         role,
+        executor_kind,
         status,
         last_menu_role,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+      VALUES ($1, $2, $3, $4, $5, 'executor', $6::executor_kind, $7, $8, now())
       ON CONFLICT (tg_id) DO UPDATE
       SET
         username = COALESCE(EXCLUDED.username, users.username),
         first_name = COALESCE(EXCLUDED.first_name, users.first_name),
         last_name = COALESCE(EXCLUDED.last_name, users.last_name),
         phone = COALESCE(EXCLUDED.phone, users.phone),
-        role = CASE WHEN users.role = 'moderator' THEN users.role ELSE EXCLUDED.role END,
+        role = CASE WHEN users.role = 'moderator' THEN users.role ELSE 'executor' END,
+        executor_kind = CASE
+          WHEN users.role = 'moderator' THEN users.executor_kind
+          ELSE EXCLUDED.executor_kind
+        END,
         status = CASE
           WHEN users.status IN ('suspended', 'banned') THEN users.status
           ELSE COALESCE(EXCLUDED.status, users.status)
@@ -248,11 +253,16 @@ const applyVerificationDecision = async (
     await client.query(
       `
         UPDATE users
-        SET is_verified = $2,
+        SET verify_status = $2,
+            verified_at = CASE WHEN $2 = 'active' THEN now() ELSE verified_at END,
+            trial_started_at = CASE
+              WHEN $2 = 'active' AND trial_started_at IS NULL THEN now()
+              ELSE trial_started_at
+            END,
             updated_at = now()
         WHERE tg_id = $1
       `,
-      [telegramId, status === 'active'],
+      [telegramId, status],
     );
   });
 };
@@ -267,6 +277,18 @@ export const persistVerificationSubmission = async (
       payload.role,
     );
     await upsertVerificationRecord(client, telegramId, payload);
+    await client.query(
+      `
+        UPDATE users
+        SET verify_status = CASE
+              WHEN verify_status = 'active' THEN verify_status
+              ELSE 'pending'
+            END,
+            updated_at = now()
+        WHERE tg_id = $1
+      `,
+      [telegramId],
+    );
   });
 };
 
@@ -292,7 +314,7 @@ export const isExecutorVerified = async (
 ): Promise<boolean> => {
   const { rows } = await pool.query<VerificationExistsRow>(
     `
-      SELECT COALESCE(u.is_verified, false)
+      SELECT (u.verify_status = 'active')
         OR EXISTS (
           SELECT 1
           FROM verifications v

@@ -32,6 +32,7 @@ import {
   type UiSessionState,
   type UserRole,
   type UserStatus,
+  type UserVerifyStatus,
 } from '../types';
 
 const createVerificationState = (): ExecutorVerificationState => {
@@ -76,7 +77,7 @@ const createSupportState = (): SupportSessionState => ({
   status: 'idle',
 });
 
-const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'courier', 'driver', 'moderator'];
+const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'executor', 'moderator'];
 const USER_STATUSES: readonly UserStatus[] = [
   'guest',
   'onboarding',
@@ -88,16 +89,41 @@ const USER_STATUSES: readonly UserStatus[] = [
   'banned',
 ];
 
+const VERIFY_STATUSES: readonly UserVerifyStatus[] = [
+  'none',
+  'pending',
+  'active',
+  'rejected',
+  'expired',
+];
+
+const normaliseSnapshotDate = (value: unknown): Date | undefined => {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : new Date(value);
+  }
+
+  if (typeof value === 'string') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+
+  return undefined;
+};
+
 const createAuthSnapshot = (): AuthStateSnapshot => ({
   role: 'guest',
+  executorKind: undefined,
   status: 'guest',
   phoneVerified: false,
+  verifyStatus: 'none',
   userIsVerified: false,
   executor: {
     verifiedRoles: { courier: false, driver: false },
     hasActiveSubscription: false,
     isVerified: false,
   },
+  trialStartedAt: undefined,
+  trialExpiresAt: undefined,
   city: undefined,
   stale: false,
 });
@@ -121,8 +147,22 @@ const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthSta
     snapshot.role = candidate.role as UserRole;
   }
 
+  if (
+    typeof candidate.executorKind === 'string'
+    && EXECUTOR_ROLES.includes(candidate.executorKind as ExecutorRole)
+  ) {
+    snapshot.executorKind = candidate.executorKind as ExecutorRole;
+  }
+
   if (typeof candidate.status === 'string' && USER_STATUSES.includes(candidate.status as UserStatus)) {
     snapshot.status = candidate.status as UserStatus;
+  }
+
+  if (
+    typeof candidate.verifyStatus === 'string'
+    && VERIFY_STATUSES.includes(candidate.verifyStatus as UserVerifyStatus)
+  ) {
+    snapshot.verifyStatus = candidate.verifyStatus as UserVerifyStatus;
   }
 
   if (candidate.executor && typeof candidate.executor === 'object') {
@@ -163,8 +203,28 @@ const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthSta
     snapshot.city = candidate.city;
   }
 
+  if ('trialStartedAt' in candidate) {
+    const value = (candidate as { trialStartedAt?: unknown }).trialStartedAt;
+    const parsed = normaliseSnapshotDate(value);
+    if (parsed) {
+      snapshot.trialStartedAt = parsed;
+    }
+  }
+
+  if ('trialExpiresAt' in candidate) {
+    const value = (candidate as { trialExpiresAt?: unknown }).trialExpiresAt;
+    const parsed = normaliseSnapshotDate(value);
+    if (parsed) {
+      snapshot.trialExpiresAt = parsed;
+    }
+  }
+
   if (typeof candidate.stale === 'boolean') {
     snapshot.stale = candidate.stale;
+  }
+
+  if (!snapshot.userIsVerified && snapshot.verifyStatus === 'active') {
+    snapshot.userIsVerified = true;
   }
 
   return snapshot;

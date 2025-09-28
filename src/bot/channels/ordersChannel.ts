@@ -630,6 +630,7 @@ type OrderActionOutcome =
 interface OrderActionActor {
   id?: number;
   role?: UserRole;
+  executorKind?: ExecutorRole;
   city?: AppCity;
   verifiedRoles?: Partial<Record<ExecutorRole, boolean>>;
 }
@@ -689,8 +690,10 @@ const processOrderAction = async (
         const courierVerified = Boolean(verifiedRoles.courier);
         const driverVerified = Boolean(verifiedRoles.driver);
 
+        const executorKind = actor.executorKind;
+
         if (order.kind === 'taxi') {
-          if (actor.role !== 'driver') {
+          if (executorKind !== 'driver') {
             return { outcome: 'forbidden_kind', order } as const;
           }
 
@@ -701,7 +704,7 @@ const processOrderAction = async (
           return { outcome: 'courier_unverified', order } as const;
         }
 
-        if (actor.role === 'driver') {
+        if (executorKind === 'driver') {
           const { rows: userRows } = await client.query<{ tg_id: number }>(
             `SELECT tg_id FROM users WHERE tg_id = $1 FOR UPDATE`,
             [actorId],
@@ -877,6 +880,7 @@ const handleOrderDecision = async (
     result = await processOrderAction(orderId, decision, {
       id: actorId,
       role: actorRole,
+      executorKind: ctx.auth?.user.executorKind,
       city: actorCity,
       verifiedRoles: ctx.auth?.executor.verifiedRoles,
     });

@@ -15,7 +15,7 @@ interface TelegramUserDetails {
   firstName?: string;
   lastName?: string;
   phone?: string;
-  role: ExecutorRole;
+  executorKind: ExecutorRole;
 }
 
 interface SubscriptionRow {
@@ -225,18 +225,23 @@ const upsertTelegramUser = async (
         last_name,
         phone,
         role,
+        executor_kind,
         status,
         last_menu_role,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+      VALUES ($1, $2, $3, $4, $5, 'executor', $6::executor_kind, $7, $8, now())
       ON CONFLICT (tg_id) DO UPDATE
       SET
         username = COALESCE(EXCLUDED.username, users.username),
         first_name = COALESCE(EXCLUDED.first_name, users.first_name),
         last_name = COALESCE(EXCLUDED.last_name, users.last_name),
         phone = COALESCE(EXCLUDED.phone, users.phone),
-        role = CASE WHEN users.role = 'moderator' THEN users.role ELSE EXCLUDED.role END,
+        role = CASE WHEN users.role = 'moderator' THEN users.role ELSE 'executor' END,
+        executor_kind = CASE
+          WHEN users.role = 'moderator' THEN users.executor_kind
+          ELSE EXCLUDED.executor_kind
+        END,
         status = CASE
           WHEN users.status IN ('suspended', 'banned') THEN users.status
           ELSE COALESCE(EXCLUDED.status, users.status)
@@ -250,7 +255,7 @@ const upsertTelegramUser = async (
       params.firstName ?? null,
       params.lastName ?? null,
       params.phone ?? null,
-      params.role,
+      params.executorKind,
       'active_executor',
       'courier',
     ],

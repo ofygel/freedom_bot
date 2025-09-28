@@ -13,7 +13,7 @@ import {
   isExecutorMenuTextCommand,
 } from '../flows/executor/menu';
 import { startExecutorVerification } from '../flows/executor/verification';
-import type { BotContext, ExecutorRole } from '../types';
+import { EXECUTOR_ROLES, type BotContext, type ExecutorRole } from '../types';
 
 const COLLECTING_SAFE_COMMANDS = new Set(['/start', '/menu', '/help']);
 const COLLECTING_SAFE_CALLBACK_PREFIXES = ['role:'];
@@ -27,9 +27,12 @@ const COLLECTING_SAFE_CALLBACKS = new Set([
 ]);
 const VERIFICATION_REMINDER_INTERVAL_MS = 60_000;
 
+const isExecutorKind = (value: unknown): value is ExecutorRole =>
+  typeof value === 'string' && EXECUTOR_ROLES.includes(value as ExecutorRole);
+
 const resolveExecutorRole = (ctx: BotContext, fallback: ExecutorRole): ExecutorRole => {
   const sessionRole = ctx.session.executor?.role;
-  if (sessionRole === 'courier' || sessionRole === 'driver') {
+  if (isExecutorKind(sessionRole)) {
     return sessionRole;
   }
 
@@ -38,7 +41,13 @@ const resolveExecutorRole = (ctx: BotContext, fallback: ExecutorRole): ExecutorR
 
 export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next) => {
   const role = ctx.auth?.user.role;
-  if (role !== 'courier' && role !== 'driver') {
+  if (role !== 'executor') {
+    await next();
+    return;
+  }
+
+  const executorKind = ctx.auth?.user.executorKind;
+  if (!isExecutorKind(executorKind)) {
     await next();
     return;
   }
@@ -49,7 +58,7 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
     return;
   }
 
-  const executorRole = resolveExecutorRole(ctx, role);
+  const executorRole = resolveExecutorRole(ctx, executorKind);
 
   try {
     const verified = await isExecutorVerified(telegramId, executorRole);
