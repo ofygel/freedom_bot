@@ -7,13 +7,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node --transpile-only src/index.ts",
-    "check": "tsc --noEmit",
-    "test": "node --require ts-node/register --test --test-concurrency=1 $(find tests -name '*.test.ts')",
-    "backup": "bash db/backup.sh",
     "db:migrate": "dbmate --migrations-dir=db/migrations --wait",
-    "ctr:report": "node dist/scripts/ctrReport.js",
-    "lint": "eslint 'src/**/*.ts'"
+    "ctr:report": "node dist/scripts/ctrReport.js"
   },
   "dependencies": {
     "@sentry/node": "^7.120.0",
