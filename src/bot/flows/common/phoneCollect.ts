@@ -1,4 +1,5 @@
 import { Markup, type MiddlewareFn } from 'telegraf';
+import type { ReplyKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { logger } from '../../../config';
 import { pool } from '../../../db';
@@ -39,14 +40,17 @@ const rememberEphemeralMessage = (ctx: BotContext, messageId?: number): void => 
   ctx.session.ephemeralMessages.push(messageId);
 };
 
-export const buildPhoneCollectKeyboard = () =>
-  Markup.keyboard([
+export const buildPhoneCollectKeyboard = (): ReplyKeyboardMarkup => {
+  const keyboard = Markup.keyboard([
     [Markup.button.contactRequest('📲 Поделиться контактом')],
     [Markup.button.text(PHONE_HELP_BUTTON_LABEL)],
     [Markup.button.text(PHONE_STATUS_BUTTON_LABEL)],
   ])
     .oneTime(true)
     .resize();
+
+  return keyboard.reply_markup;
+};
 
 interface PhoneStepOverrides {
   title?: string;
@@ -280,7 +284,9 @@ export const respondToPhoneHelp: MiddlewareFn<BotContext> = async (ctx, next) =>
     return;
   }
 
-  const message = await ctx.reply(buildPhoneHelpText(), buildPhoneCollectKeyboard());
+  const message = await ctx.reply(buildPhoneHelpText(), {
+    reply_markup: buildPhoneCollectKeyboard(),
+  });
   ctx.session.awaitingPhone = true;
   rememberEphemeralMessage(ctx, message?.message_id);
 };
