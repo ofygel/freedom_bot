@@ -24,7 +24,7 @@ import {
   resetVerificationState,
   showExecutorMenu,
 } from './menu';
-import { presentRoleSelection } from '../../commands/start';
+import { presentRolePick } from '../../commands/start';
 import { publishVerificationApplication, type VerificationApplication } from '../../moderation/verifyQueue';
 import { getExecutorRoleCopy } from '../../copy';
 import { ui } from '../../ui';
@@ -695,7 +695,7 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
 
     state.awaitingRoleSelection = true;
     state.role = undefined;
-    await presentRoleSelection(ctx);
+    await presentRolePick(ctx);
   });
 
   bot.hears(EXECUTOR_MENU_TEXT_LABELS.documents, async (ctx) => {

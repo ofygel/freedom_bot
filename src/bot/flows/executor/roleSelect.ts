@@ -13,10 +13,9 @@ import { getExecutorRoleCopy } from '../../copy';
 import {
   ROLE_SELECTION_BACK_ACTION,
   EXECUTOR_ROLE_PENDING_CITY_ACTION,
+  EXECUTOR_KIND_COURIER_ACTION,
+  EXECUTOR_KIND_DRIVER_ACTION,
 } from './roleSelectionConstants';
-
-const ROLE_COURIER_ACTION = 'role:courier';
-const ROLE_DRIVER_ACTION = 'role:driver';
 
 const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise<void> => {
   if (ctx.chat?.type !== 'private') {
@@ -87,11 +86,11 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
 };
 
 export const registerExecutorRoleSelect = (bot: Telegraf<BotContext>): void => {
-  bot.action(ROLE_COURIER_ACTION, async (ctx) => {
+  bot.action(EXECUTOR_KIND_COURIER_ACTION, async (ctx) => {
     await handleRoleSelection(ctx, 'courier');
   });
 
-  bot.action(ROLE_DRIVER_ACTION, async (ctx) => {
+  bot.action(EXECUTOR_KIND_DRIVER_ACTION, async (ctx) => {
     await handleRoleSelection(ctx, 'driver');
   });
 };

@@ -39,7 +39,12 @@ import { keyboardGuard } from './bot/middlewares/keyboardGuard';
 import { stateGate } from './bot/middlewares/stateGate';
 import { unknownHandler } from './bot/middlewares/unknown';
 import { callbackDecoder } from './bot/middlewares/callbackDecoder';
-import { ensurePhone, savePhone } from './bot/flows/common/phoneCollect';
+import {
+  ensurePhone,
+  savePhone,
+  PHONE_HELP_BUTTON_LABEL,
+  respondToPhoneHelp,
+} from './bot/flows/common/phoneCollect';
 import { metricsCollector } from './bot/middlewares/metrics';
 import { ensureVerifiedExecutor } from './bot/middlewares/verificationGate';
 import type { BotContext } from './bot/types';
@@ -88,6 +93,8 @@ registerSupportModerationBridge(app);
 registerOrdersChannel(app);
 registerJoinRequests(app);
 registerMembershipSync(app);
+
+app.hears(PHONE_HELP_BUTTON_LABEL, respondToPhoneHelp);
 
 app.on('message', unknownHandler);
 

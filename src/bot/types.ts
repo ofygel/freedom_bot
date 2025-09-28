@@ -129,7 +129,7 @@ export interface ExecutorFlowState {
   verification: ExecutorVerificationState;
   subscription: ExecutorSubscriptionState;
   awaitingRoleSelection?: boolean;
-  roleSelectionStage?: 'role' | 'specialization' | 'city';
+  roleSelectionStage?: 'role' | 'executorKind' | 'city';
 }
 
 export type ClientOrderStage =

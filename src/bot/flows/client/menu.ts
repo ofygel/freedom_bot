@@ -13,7 +13,7 @@ import { CITY_LABEL } from '../../../domain/cities';
 import { CLIENT_COMMANDS } from '../../commands/sets';
 import { setChatCommands } from '../../services/commands';
 import type { BotContext } from '../../types';
-import { presentRoleSelection } from '../../commands/start';
+import { presentRolePick } from '../../commands/start';
 import { ensureExecutorState } from '../executor/menu';
 import { promptClientSupport } from './support';
 import { askCity, getCityFromContext, CITY_ACTION_PATTERN } from '../common/citySelect';
@@ -317,7 +317,7 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     const executorState = ensureExecutorState(ctx);
     executorState.awaitingRoleSelection = true;
     executorState.role = undefined;
-    await presentRoleSelection(ctx);
+    await presentRolePick(ctx);
   });
 
   bot.action(CITY_ACTION_PATTERN, async (ctx, next) => {
@@ -362,7 +362,7 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     const executorState = ensureExecutorState(ctx);
     executorState.awaitingRoleSelection = true;
     executorState.role = undefined;
-    await presentRoleSelection(ctx);
+    await presentRolePick(ctx);
   });
 
   bot.hears(CLIENT_MENU.refresh, async (ctx) => {
@@ -406,6 +406,6 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     await hideClientMenu(ctx, 'Меняем роль — выберите подходящий вариант ниже.');
-    await presentRoleSelection(ctx);
+    await presentRolePick(ctx);
   });
 };
