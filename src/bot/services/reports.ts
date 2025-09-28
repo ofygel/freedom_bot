@@ -1,5 +1,8 @@
 import type { Telegram } from 'telegraf';
-import type { User as TelegramUser } from 'telegraf/typings/core/types/typegram';
+import type {
+  Chat as TelegramChat,
+  User as TelegramUser,
+} from 'telegraf/typings/core/types/typegram';
 
 import { config, logger } from '../../config';
 import { getChannelBinding } from '../channels/bindings';
@@ -176,6 +179,31 @@ const appendUserLine = (lines: string[], label: string, user?: UserIdentity): vo
   if (formatted) {
     lines.push(`${label}: ${formatted}`);
   }
+};
+
+const formatChatIdentity = (chat?: TelegramChat | null): string | undefined => {
+  if (!chat) {
+    return undefined;
+  }
+
+  const nameParts: string[] = [];
+  if ('title' in chat && chat.title) {
+    nameParts.push(chat.title);
+  }
+  if ('username' in chat && chat.username) {
+    nameParts.push(`@${chat.username}`);
+  }
+
+  const principal = nameParts.join(' ').trim();
+  const details: string[] = [];
+  if (principal.length > 0) {
+    details.push(principal);
+  }
+
+  details.push(`ID ${chat.id}`);
+  details.push(`тип: ${chat.type}`);
+
+  return details.join(', ');
 };
 
 type ReportReadiness =
@@ -635,6 +663,66 @@ export const reportJobViewed = async (
     buildJobActionReport('👁️ JOB_VIEWED: просмотрена карточка заказа', order, executor, [
       'Источник: лента заказов',
     ]),
+  );
+
+interface SafeModeReportContext {
+  chat?: TelegramChat | null;
+  user?: UserIdentity;
+  reason?: string;
+}
+
+const buildSafeModeEnterReport = ({ chat, user, reason }: SafeModeReportContext): string => {
+  const lines = ['🚨 SAFE_MODE_ENTER: активирован безопасный режим'];
+  const chatLabel = formatChatIdentity(chat);
+  if (chatLabel) {
+    lines.push(`Чат: ${chatLabel}`);
+  }
+  appendUserLine(lines, 'Пользователь', user);
+  const reasonLabel = typeof reason === 'string' ? reason.trim() : undefined;
+  if (reasonLabel) {
+    lines.push(`Причина: ${reasonLabel}`);
+  }
+  return lines.join('\n');
+};
+
+export const reportSafeModeEnter = async (
+  telegram: Telegram,
+  context: { chat?: TelegramChat | null; user?: TelegramUser | null; reason?: string },
+): Promise<ReportSendResult> =>
+  sendStatsReport(
+    telegram,
+    buildSafeModeEnterReport({
+      chat: context.chat,
+      user: toUserIdentity(context.user),
+      reason: context.reason,
+    }),
+  );
+
+const buildDatabaseFallbackReport = ({ chat, user, reason }: SafeModeReportContext): string => {
+  const lines = ['🧰 DB_FALLBACK: сессия переведена на резервный режим'];
+  const chatLabel = formatChatIdentity(chat);
+  if (chatLabel) {
+    lines.push(`Чат: ${chatLabel}`);
+  }
+  appendUserLine(lines, 'Пользователь', user);
+  const reasonLabel = typeof reason === 'string' ? reason.trim() : undefined;
+  if (reasonLabel) {
+    lines.push(`Причина: ${reasonLabel}`);
+  }
+  return lines.join('\n');
+};
+
+export const reportDatabaseFallback = async (
+  telegram: Telegram,
+  context: { chat?: TelegramChat | null; user?: TelegramUser | null; reason?: string },
+): Promise<ReportSendResult> =>
+  sendStatsReport(
+    telegram,
+    buildDatabaseFallbackReport({
+      chat: context.chat,
+      user: toUserIdentity(context.user),
+      reason: context.reason,
+    }),
   );
 
 export type { UserIdentity, SubscriptionIdentity };

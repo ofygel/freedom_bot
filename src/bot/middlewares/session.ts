@@ -38,6 +38,7 @@ import {
   type UserSubscriptionStatus,
 } from '../types';
 import { enterSafeMode } from '../services/cleanup';
+import { reportDatabaseFallback } from '../services/reports';
 
 const createVerificationState = (): ExecutorVerificationState => {
   const verification = {} as ExecutorVerificationState;
@@ -592,6 +593,20 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   let nextInvoked = false;
   let cachedState: SessionState | null = null;
   let finalState: SessionState | undefined;
+  let fallbackReportSent = false;
+
+  const sendFallbackReport = async (reason: string): Promise<void> => {
+    if (fallbackReportSent) {
+      return;
+    }
+
+    fallbackReportSent = true;
+    await reportDatabaseFallback(ctx.telegram, {
+      chat: ctx.chat ?? undefined,
+      user: ctx.from ?? undefined,
+      reason,
+    });
+  };
 
   const invokeNext = async (): Promise<void> => {
     if (nextInvoked) {
@@ -619,6 +634,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       const fallbackSession = prepareFallbackSession(cachedState);
       ctx.session = fallbackSession;
       await enterSafeMode(ctx, { reason: 'session-db-connect-failed' });
+      await sendFallbackReport('session-db-connect-failed');
       logger.warn({ err: error, key }, 'Failed to connect to database for session state');
 
       fallbackMode = true;
@@ -631,6 +647,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       const fallbackSession = prepareFallbackSession(cachedState);
       ctx.session = fallbackSession;
       await enterSafeMode(ctx, { reason: 'session-client-missing' });
+      await sendFallbackReport('session-client-missing');
       logger.warn({ key }, 'Database client was not initialised for session state');
 
       fallbackMode = true;
@@ -649,6 +666,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         const fallbackSession = prepareFallbackSession(cachedState);
         ctx.session = fallbackSession;
         await enterSafeMode(ctx, { reason: 'session-load-failed' });
+        await sendFallbackReport('session-load-failed');
         logger.warn({ err: error, key }, 'Failed to load session state, using default state');
 
         fallbackMode = true;
@@ -692,6 +710,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         ctx.session = prepareFallbackSession(ctx.session);
         await enterSafeMode(ctx, { reason: 'session-fallback-mode' });
       }
+      await sendFallbackReport('session-fallback-mode');
       await invokeNext();
       finalState = ctx.session;
     }
