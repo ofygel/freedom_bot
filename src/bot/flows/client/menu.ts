@@ -14,7 +14,7 @@ import { CLIENT_COMMANDS } from '../../commands/sets';
 import { setChatCommands } from '../../services/commands';
 import type { BotContext } from '../../types';
 import { presentRolePick } from '../../commands/start';
-import { ensureExecutorState } from '../executor/menu';
+import { ensureExecutorState, EXECUTOR_SUBSCRIPTION_ACTION } from '../executor/menu';
 import { promptClientSupport } from './support';
 import { askCity, getCityFromContext, CITY_ACTION_PATTERN } from '../common/citySelect';
 import { CLIENT_ORDERS_ACTION } from './orderActions';
@@ -39,6 +39,14 @@ const CLIENT_MENU_SUPPORT_ACTION = 'client:menu:support';
 const CLIENT_MENU_CITY_SELECT_ACTION = 'client:menu:city';
 const CLIENT_MENU_SWITCH_ROLE_ACTION = 'client:menu:switch-role';
 const CLIENT_MENU_PROFILE_ACTION = 'client:menu:profile';
+
+const buildClientProfileOptions = () => ({
+  backAction: CLIENT_MENU_ACTION,
+  homeAction: CLIENT_MENU_ACTION,
+  changeCityAction: CLIENT_MENU_CITY_SELECT_ACTION,
+  subscriptionAction: EXECUTOR_SUBSCRIPTION_ACTION,
+  supportAction: CLIENT_MENU_SUPPORT_ACTION,
+});
 export const logClientMenuClick = async (
   ctx: BotContext,
   target: string,
@@ -305,8 +313,7 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     await renderProfileCardFromAction(
       ctx,
       {
-        backAction: CLIENT_MENU_ACTION,
-        homeAction: CLIENT_MENU_ACTION,
+        ...buildClientProfileOptions(),
         onAnswerError: (error) => {
           logger.debug({ err: error }, 'Failed to answer client menu profile callback');
         },
@@ -395,10 +402,7 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    await renderProfileCard(ctx, {
-      backAction: CLIENT_MENU_ACTION,
-      homeAction: CLIENT_MENU_ACTION,
-    });
+    await renderProfileCard(ctx, buildClientProfileOptions());
   });
 
   bot.command('role', async (ctx) => {
@@ -446,10 +450,7 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    await renderProfileCard(ctx, {
-      backAction: CLIENT_MENU_ACTION,
-      homeAction: CLIENT_MENU_ACTION,
-    });
+    await renderProfileCard(ctx, buildClientProfileOptions());
   });
 
   bot.hears(CLIENT_MENU.city, async (ctx) => {
