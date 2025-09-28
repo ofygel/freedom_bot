@@ -420,6 +420,7 @@ const attemptClaimOrder = async (
         return { status: 'already_taken', order: current };
       }
 
+      ctx.auth.user.hasActiveOrder = true;
       return { status: 'claimed', order: updated };
     });
   } catch (error) {
@@ -458,6 +459,7 @@ const attemptReleaseOrder = async (
         throw new Error(`Failed to release order ${orderId}`);
       }
 
+      ctx.auth.user.hasActiveOrder = false;
       return { status: 'released', order: updated };
     });
   } catch (error) {
@@ -496,6 +498,7 @@ const attemptCompleteOrder = async (
         throw new Error(`Failed to complete order ${orderId}`);
       }
 
+      ctx.auth.user.hasActiveOrder = false;
       return { status: 'completed', order: updated };
     });
   } catch (error) {

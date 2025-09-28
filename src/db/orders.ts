@@ -2,6 +2,7 @@ import type { PoolClient } from './client';
 import { pool } from './client';
 import { logger } from '../config';
 import { activeOrdersGauge } from '../metrics/business';
+import { updateUserSubscriptionStatus } from './users';
 
 import type {
   OrderInsertInput,
@@ -186,6 +187,22 @@ const updateActiveOrdersGauge = async (queryable: Pick<PoolClient, 'query'>): Pr
   }
 };
 
+const updateExecutorHasActiveOrder = async (
+  client: PoolClient,
+  executorId: number | null | undefined,
+  hasActiveOrder: boolean,
+): Promise<void> => {
+  if (typeof executorId !== 'number') {
+    return;
+  }
+
+  await updateUserSubscriptionStatus({
+    client,
+    telegramId: executorId,
+    hasActiveOrder,
+  });
+};
+
 export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord> => {
   const { rows } = await pool.query<OrderRow>(
     `
@@ -351,6 +368,7 @@ export const tryClaimOrder = async (
     return null;
   }
 
+  await updateExecutorHasActiveOrder(client, claimedBy, true);
   await updateActiveOrdersGauge(client);
   return mapOrderRow(row);
 };
@@ -378,6 +396,7 @@ export const tryReleaseOrder = async (
     return null;
   }
 
+  await updateExecutorHasActiveOrder(client, claimedBy, false);
   await updateActiveOrdersGauge(client);
   return mapOrderRow(row);
 };
@@ -405,6 +424,7 @@ export const tryReclaimOrder = async (
     return null;
   }
 
+  await updateExecutorHasActiveOrder(client, executorId, true);
   await updateActiveOrdersGauge(client);
   return mapOrderRow(row);
 };
@@ -430,6 +450,7 @@ export const tryCompleteOrder = async (
     return null;
   }
 
+  await updateExecutorHasActiveOrder(client, claimedBy, false);
   await updateActiveOrdersGauge(client);
   return mapOrderRow(row);
 };
