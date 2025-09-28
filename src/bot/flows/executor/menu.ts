@@ -31,7 +31,7 @@ export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
 export const EXECUTOR_ORDERS_ACTION = 'executor:orders:link';
 export const EXECUTOR_SUPPORT_ACTION = 'support:contact';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
-const EXECUTOR_MENU_STEP_ID = 'executor:menu:main';
+const EXECUTOR_MENU_STEP_ID = 'executor:menu:card:v2';
 export const EXECUTOR_MENU_CITY_ACTION = 'executorMenu';
 
 export const EXECUTOR_MENU_TEXT_LABELS = {
@@ -444,9 +444,9 @@ const buildVerificationSection = (
   const instructions = (() => {
     switch (verification.status) {
       case 'idle':
-        return `${guidance.idlePrompt} ${VERIFICATION_ALBUM_HINT}`;
+        return `${guidance.idlePrompt} ${VERIFICATION_ALBUM_HINT} Если нужны примеры, нажмите «Что подходит?» в карточке проверки.`;
       case 'collecting':
-        return `${guidance.collectingPrompt} ${VERIFICATION_ALBUM_HINT}`;
+        return `${guidance.collectingPrompt} ${VERIFICATION_ALBUM_HINT} Не уверены? Откройте «Что подходит?» или воспользуйтесь кнопками «Назад/Где я?» и «Помощь».`;
       case 'submitted':
         return 'Мы передали документы модераторам. После одобрения выдадим доступ автоматически.';
       default:
@@ -524,7 +524,7 @@ const buildNextStepsSection = (
 
   if (!access.isVerified) {
     return [
-      `${guidance.nextStepsPrompt} ${VERIFICATION_ALBUM_HINT}`,
+      `${guidance.nextStepsPrompt} ${VERIFICATION_ALBUM_HINT} Сомневаетесь? Нажмите «Что подходит?» в карточке проверки.`,
       'Дождитесь решения модератора — уведомление придёт в этот чат.',
       'После одобрения автоматически активируется 2-дневный бесплатный доступ, затем оформите подписку через «📨 Получить ссылку на канал».',
     ];

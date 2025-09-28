@@ -84,15 +84,13 @@ const buildVerificationPrompt = (role: ExecutorRole): string => {
   const requiredPhotos = requirements.length || EXECUTOR_VERIFICATION_PHOTO_COUNT;
   const requirementLines = requirements.map((item, index) => `${index + 1}. ${item}`);
 
-  return [
-    '🛡️ Проверка документов',
-    '',
+  const paragraphs = [
     `Чтобы получить доступ к заказам ${copy.genitive}, пришлите ${requiredPhotos} фото в этот чат.`,
-    '',
     ['Нужно:', ...requirementLines].join('\n'),
-    '',
     `ℹ️ ${VERIFICATION_ALBUM_HINT} Не уверены, что отправлять? Нажмите «Что подходит?» — покажем примеры. Запутались? Воспользуйтесь «Назад/Где я?» или «Помощь».`,
-  ].join('\n');
+  ];
+
+  return ['🛡️ Проверка документов', '', paragraphs.join('\n\n')].join('\n');
 };
 
 const VERIFICATION_CHANNEL_MISSING_STEP_ID = 'executor:verification:channel-missing';
@@ -126,15 +124,13 @@ const buildVerificationPromptKeyboard = () =>
 const buildVerificationGuidanceText = (role: ExecutorRole): string => {
   const guidance = getVerificationRoleGuidance(role);
 
-  return [
-    'ℹ️ Что подходит?',
-    '',
+  const paragraphs = [
     guidance.nextStepsPrompt,
-    '',
     '⚠️ Фото должны быть чёткими, без бликов и закрытых данных.',
-    '',
     `ℹ️ ${VERIFICATION_ALBUM_HINT} Если запутались, нажмите «Назад/Где я?» — вернёмся к выбору. Нужна поддержка? Нажмите «Помощь».`,
-  ].join('\n');
+  ];
+
+  return ['ℹ️ Что подходит?', '', paragraphs.join('\n\n')].join('\n');
 };
 
 const VERIFICATION_GUIDANCE_STEP_ID = 'executor:verification:guidance';

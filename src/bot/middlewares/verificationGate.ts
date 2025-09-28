@@ -10,6 +10,7 @@ import {
   EXECUTOR_SUBSCRIPTION_ACTION,
   EXECUTOR_SUPPORT_ACTION,
   EXECUTOR_VERIFICATION_ACTION,
+  ensureExecutorState,
   isExecutorMenuTextCommand,
 } from '../flows/executor/menu';
 import {
@@ -83,7 +84,8 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
     return;
   }
 
-  const verificationState = ctx.session.executor?.verification?.[executorRole];
+  const state = ensureExecutorState(ctx);
+  const verificationState = state.verification[executorRole];
 
   const callbackQuery = ctx.callbackQuery;
   if (callbackQuery && 'data' in callbackQuery) {
@@ -113,32 +115,32 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
     typeof messageText === 'string' &&
     (COLLECTING_SAFE_COMMANDS.has(messageText) || isExecutorMenuTextCommand(messageText));
 
-  if (verificationState?.status === 'collecting' && hasPhoto) {
+  if (verificationState.status === 'collecting' && hasPhoto) {
     await next();
     return;
   }
 
   if (
-    verificationState?.status === 'collecting' &&
+    verificationState.status === 'collecting' &&
     (isSafeCollectingCommand || isSafeCollectingCallback)
   ) {
     await next();
     return;
   }
 
-  if (verificationState?.status === 'collecting') {
+  if (verificationState.status === 'collecting') {
     const now = Date.now();
     const lastReminderAt = verificationState.lastReminderAt ?? 0;
     const shouldSendReminder = now - lastReminderAt >= VERIFICATION_REMINDER_INTERVAL_MS;
     const promptStep = ctx.session.ui?.steps?.[VERIFICATION_PROMPT_STEP_ID];
     const hasPromptStep = Boolean(promptStep && promptStep.chatId === ctx.chat?.id);
     const isUnsupportedInput = !hasPhoto && !isSafeCollectingCommand && !isSafeCollectingCallback;
-    const shouldRefreshPrompt = isUnsupportedInput || shouldSendReminder || !hasPromptStep;
+    const needsPrompt = isUnsupportedInput || shouldSendReminder || !hasPromptStep;
 
-    if (shouldRefreshPrompt) {
+    if (needsPrompt) {
       try {
         const promptResult = await showExecutorVerificationPrompt(ctx, executorRole);
-        if (promptResult) {
+        if (promptResult !== undefined) {
           verificationState.lastReminderAt = now;
         }
       } catch (error) {
@@ -147,10 +149,6 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
     }
 
     if (isUnsupportedInput) {
-      return;
-    }
-
-    if (shouldSendReminder || !hasPromptStep) {
       return;
     }
 
