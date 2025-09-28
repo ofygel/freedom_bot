@@ -204,6 +204,8 @@ const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
     });
 
     ctx.auth.executor.hasActiveSubscription = true;
+    ctx.auth.user.subscriptionStatus = 'trial';
+    ctx.auth.user.subscriptionExpiresAt = trial.expiresAt;
     subscriptionState.moderationChatId = undefined;
     subscriptionState.moderationMessageId = undefined;
 
@@ -247,6 +249,7 @@ const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
     if (error instanceof TrialSubscriptionUnavailableError) {
       if (error.reason === 'active') {
         ctx.auth.executor.hasActiveSubscription = true;
+        ctx.auth.user.subscriptionStatus = 'active';
       }
 
       await notifyTrialUnavailable(ctx, error.reason);

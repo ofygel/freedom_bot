@@ -13,6 +13,8 @@ export type UserRole = 'guest' | 'client' | 'executor';
 
 export type UserVerifyStatus = 'none' | 'pending' | 'active' | 'rejected' | 'expired';
 
+export type UserSubscriptionStatus = 'none' | 'trial' | 'active' | 'grace' | 'expired';
+
 export interface SessionUser {
   id: number;
   username?: string;
@@ -45,12 +47,15 @@ export interface AuthUser {
   executorKind?: ExecutorRole;
   status: UserStatus;
   verifyStatus: UserVerifyStatus;
+  subscriptionStatus: UserSubscriptionStatus;
   isVerified: boolean;
   isBlocked: boolean;
   citySelected?: AppCity;
   verifiedAt?: Date;
   trialStartedAt?: Date;
   trialExpiresAt?: Date;
+  subscriptionExpiresAt?: Date;
+  hasActiveOrder: boolean;
   lastMenuRole?: UserMenuRole;
   keyboardNonce?: string;
 }
@@ -73,12 +78,15 @@ export interface AuthStateSnapshot {
   status: UserStatus;
   phoneVerified: boolean;
   verifyStatus: UserVerifyStatus;
+  subscriptionStatus: UserSubscriptionStatus;
   userIsVerified: boolean;
   executor: AuthExecutorState;
   isModerator: boolean;
   trialStartedAt?: Date;
   trialExpiresAt?: Date;
+  subscriptionExpiresAt?: Date;
   city?: AppCity;
+  hasActiveOrder: boolean;
   stale: boolean;
 }
 

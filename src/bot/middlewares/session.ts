@@ -33,6 +33,7 @@ import {
   type UserRole,
   type UserStatus,
   type UserVerifyStatus,
+  type UserSubscriptionStatus,
 } from '../types';
 
 const createVerificationState = (): ExecutorVerificationState => {
@@ -100,6 +101,14 @@ const VERIFY_STATUSES: readonly UserVerifyStatus[] = [
   'expired',
 ];
 
+const SUBSCRIPTION_STATUSES: readonly UserSubscriptionStatus[] = [
+  'none',
+  'trial',
+  'active',
+  'grace',
+  'expired',
+];
+
 const normaliseSnapshotDate = (value: unknown): Date | undefined => {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? undefined : new Date(value);
@@ -119,6 +128,7 @@ const createAuthSnapshot = (): AuthStateSnapshot => ({
   status: 'guest',
   phoneVerified: false,
   verifyStatus: 'none',
+  subscriptionStatus: 'none',
   userIsVerified: false,
   executor: {
     verifiedRoles: { courier: false, driver: false },
@@ -128,7 +138,9 @@ const createAuthSnapshot = (): AuthStateSnapshot => ({
   isModerator: false,
   trialStartedAt: undefined,
   trialExpiresAt: undefined,
+  subscriptionExpiresAt: undefined,
   city: undefined,
+  hasActiveOrder: false,
   stale: false,
 });
 
@@ -173,6 +185,13 @@ const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthSta
     && VERIFY_STATUSES.includes(candidate.verifyStatus as UserVerifyStatus)
   ) {
     snapshot.verifyStatus = candidate.verifyStatus as UserVerifyStatus;
+  }
+
+  if (
+    typeof candidate.subscriptionStatus === 'string'
+    && SUBSCRIPTION_STATUSES.includes(candidate.subscriptionStatus as UserSubscriptionStatus)
+  ) {
+    snapshot.subscriptionStatus = candidate.subscriptionStatus as UserSubscriptionStatus;
   }
 
   if (typeof candidate.isModerator === 'boolean') {
@@ -237,12 +256,30 @@ const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthSta
     }
   }
 
+  if ('subscriptionExpiresAt' in candidate) {
+    const value = (candidate as { subscriptionExpiresAt?: unknown }).subscriptionExpiresAt;
+    const parsed = normaliseSnapshotDate(value);
+    if (parsed) {
+      snapshot.subscriptionExpiresAt = parsed;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(candidate, 'hasActiveOrder')) {
+    snapshot.hasActiveOrder = Boolean(
+      (candidate as { hasActiveOrder?: unknown }).hasActiveOrder,
+    );
+  }
+
   if (typeof candidate.stale === 'boolean') {
     snapshot.stale = candidate.stale;
   }
 
   if (!snapshot.userIsVerified && snapshot.verifyStatus === 'active') {
     snapshot.userIsVerified = true;
+  }
+
+  if (['trial', 'active', 'grace'].includes(snapshot.subscriptionStatus)) {
+    snapshot.executor.hasActiveSubscription = true;
   }
 
   return snapshot;
