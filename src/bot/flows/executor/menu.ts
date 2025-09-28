@@ -575,13 +575,49 @@ const buildMenuText = (
         : 'не начаты';
   statusLines.push(`🛡️ Документы: ${verificationStatusLabel} ${uploadedPhotos}/${requiredPhotos}`);
 
-  if (access.hasActiveSubscription) {
-    statusLines.push('📨 Подписка: активна');
-  } else if (access.isVerified) {
-    statusLines.push('📨 Подписка: нужна оплата');
-  } else {
-    statusLines.push('📨 Подписка: после проверки');
-  }
+  const formatExpiry = (date?: Date): string | null => {
+    if (!date || Number.isNaN(date.getTime())) {
+      return null;
+    }
+
+    const formatted = date.toLocaleDateString('ru-RU');
+    const msLeft = date.getTime() - Date.now();
+    if (msLeft <= 0) {
+      return formatted;
+    }
+
+    const daysLeft = Math.max(1, Math.ceil(msLeft / 86_400_000));
+    return `${formatted} (осталось ${daysLeft} дн.)`;
+  };
+
+  const subscriptionLine = (() => {
+    if (state.subscription.status === 'awaitingReceipt') {
+      return '📨 Подписка: ждём чек';
+    }
+
+    if (state.subscription.status === 'pendingModeration') {
+      return '📨 Подписка: модерация платежа';
+    }
+
+    switch (user.subscriptionStatus) {
+      case 'trial': {
+        const expiry = formatExpiry(user.subscriptionExpiresAt);
+        return expiry ? `📨 Подписка: пробный доступ до ${expiry}` : '📨 Подписка: пробный доступ активен';
+      }
+      case 'active':
+      case 'grace': {
+        const expiry = formatExpiry(user.subscriptionExpiresAt);
+        return expiry ? `📨 Подписка: активна до ${expiry}` : '📨 Подписка: активна';
+      }
+      case 'expired':
+        return '📨 Подписка: истекла';
+      case 'none':
+      default:
+        return access.isVerified ? '📨 Подписка: нужна оплата' : '📨 Подписка: после проверки';
+    }
+  })();
+
+  statusLines.push(subscriptionLine);
 
   const parts = [`${copy.emoji} Меню ${copy.genitive}`, `🏙️ Город: ${cityLabel}`];
   if (statusLines.length > 0) {
