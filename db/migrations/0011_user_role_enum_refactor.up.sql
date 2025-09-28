@@ -28,27 +28,63 @@ SET executor_kind = CASE role::text
 END
 WHERE role::text IN ('courier', 'driver');
 
-WITH latest AS (
-  SELECT DISTINCT ON (user_id) user_id, status
-  FROM verifications
-  ORDER BY user_id, updated_at DESC, id DESC
-)
-UPDATE users AS u
-SET verify_status = CASE
-  WHEN u.is_verified THEN 'active'
-  WHEN latest.status IS NULL THEN 'none'
-  WHEN latest.status = 'active' THEN 'active'
-  WHEN latest.status = 'pending' THEN 'pending'
-  WHEN latest.status = 'rejected' THEN 'rejected'
-  WHEN latest.status = 'expired' THEN 'expired'
-  ELSE 'none'
-END
-FROM latest
-WHERE u.tg_id = latest.user_id;
+DO $$
+DECLARE
+  has_is_verified_column BOOLEAN;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'users'
+      AND column_name = 'is_verified'
+  ) INTO has_is_verified_column;
 
-UPDATE users
-SET verify_status = 'active'
-WHERE verify_status = 'none' AND is_verified IS TRUE;
+  IF has_is_verified_column THEN
+    WITH latest AS (
+      SELECT DISTINCT ON (user_id) user_id, status
+      FROM verifications
+      ORDER BY user_id, updated_at DESC, id DESC
+    )
+    UPDATE users AS u
+    SET verify_status = (
+      CASE
+        WHEN u.is_verified THEN 'active'
+        WHEN latest.status IS NULL THEN 'none'
+        WHEN latest.status = 'active' THEN 'active'
+        WHEN latest.status = 'pending' THEN 'pending'
+        WHEN latest.status = 'rejected' THEN 'rejected'
+        WHEN latest.status = 'expired' THEN 'expired'
+        ELSE 'none'
+      END
+    )::user_verify_status
+    FROM latest
+    WHERE u.tg_id = latest.user_id;
+
+    UPDATE users
+    SET verify_status = 'active'::user_verify_status
+    WHERE verify_status = 'none' AND is_verified IS TRUE;
+  ELSE
+    WITH latest AS (
+      SELECT DISTINCT ON (user_id) user_id, status
+      FROM verifications
+      ORDER BY user_id, updated_at DESC, id DESC
+    )
+    UPDATE users AS u
+    SET verify_status = (
+      CASE
+        WHEN latest.status IS NULL THEN 'none'
+        WHEN latest.status = 'active' THEN 'active'
+        WHEN latest.status = 'pending' THEN 'pending'
+        WHEN latest.status = 'rejected' THEN 'rejected'
+        WHEN latest.status = 'expired' THEN 'expired'
+        ELSE 'none'
+      END
+    )::user_verify_status
+    FROM latest
+    WHERE u.tg_id = latest.user_id;
+  END IF;
+END $$;
 
 UPDATE users
 SET trial_started_at = COALESCE(verified_at, trial_ends_at),
