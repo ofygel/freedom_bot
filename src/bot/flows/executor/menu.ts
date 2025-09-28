@@ -243,23 +243,29 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
       role: derivedRole,
       verification: createDefaultVerificationState(),
       subscription: createSubscriptionState(),
+      awaitingRoleSelection: derivedRole === undefined,
     } satisfies ExecutorFlowState;
   } else {
+    const state = ctx.session.executor;
+    const awaitingSelection = state.awaitingRoleSelection === true;
+
     if (derivedRole !== undefined) {
-      ctx.session.executor.role = derivedRole;
+      if (!awaitingSelection) {
+        state.role = derivedRole;
+        state.awaitingRoleSelection = false;
+      }
     } else if (ctx.session.isAuthenticated === false && ctx.auth.user.role === 'guest') {
       // Preserve the existing executor role when auth falls back to the guest context.
     } else {
-      ctx.session.executor.role = undefined;
+      state.role = undefined;
+      if (!awaitingSelection) {
+        state.awaitingRoleSelection = true;
+      }
     }
-    ctx.session.executor.verification = normaliseVerificationState(
-      ctx.session.executor.verification,
-    );
-    ctx.session.executor.subscription = normaliseSubscriptionState(
-      ctx.session.executor.subscription,
-    );
+    state.verification = normaliseVerificationState(state.verification);
+    state.subscription = normaliseSubscriptionState(state.subscription);
 
-    const subscription = ctx.session.executor.subscription;
+    const subscription = state.subscription;
     if (ctx.auth.executor.hasActiveSubscription) {
       const preserveSubscriptionFlow =
         subscription.status === 'selectingPeriod' ||

@@ -787,6 +787,8 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
       await setChatCommands(ctx.telegram, ctx.chat.id, CLIENT_COMMANDS, { showMenuButton: true });
     }
 
+    state.awaitingRoleSelection = true;
+    state.role = undefined;
     await presentRoleSelection(ctx);
   });
 

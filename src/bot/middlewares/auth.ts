@@ -80,8 +80,9 @@ const normaliseRole = (value: Nullable<string>): UserRole => {
     case 'moderator':
       return value;
     case 'client':
-    default:
       return 'client';
+    default:
+      return 'guest';
   }
 };
 
@@ -224,6 +225,10 @@ const deriveUserStatus = (row: AuthQueryRow, status: UserStatus): UserStatus => 
     return 'active_executor';
   }
 
+  if (status === 'onboarding') {
+    return 'onboarding';
+  }
+
   const hasExecutorAccess =
     role === 'courier' || role === 'driver' ? Boolean(row.has_active_subscription) : false;
 
@@ -317,8 +322,22 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
 const mapAuthRow = (row: AuthQueryRow): AuthState => {
   const telegramId = parseNumericId(row.tg_id);
   const executor = buildExecutorState(row);
-  const role = normaliseRole(row.role);
+  let role = normaliseRole(row.role);
   const status = deriveUserStatus(row, normaliseStatus(row.status));
+  const lastMenuRole = normaliseMenuRole(row.last_menu_role);
+
+  if (role === 'client') {
+    const awaitingActivation =
+      status === 'guest' ||
+      status === 'awaiting_phone' ||
+      status === 'onboarding' ||
+      !row.phone_verified;
+    const roleNeverConfirmed = !lastMenuRole;
+
+    if (awaitingActivation || roleNeverConfirmed) {
+      role = 'guest';
+    }
+  }
 
   return {
     user: {
@@ -337,7 +356,7 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
         : undefined,
       verifiedAt: parseTimestamp(row.verified_at),
       trialEndsAt: parseTimestamp(row.trial_ends_at),
-      lastMenuRole: normaliseMenuRole(row.last_menu_role),
+      lastMenuRole,
       keyboardNonce: normaliseString(row.keyboard_nonce),
     },
     executor,
@@ -509,18 +528,25 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   } catch (error) {
     if (error instanceof AuthStateQueryError) {
       const cachedSnapshot = ctx.session.authSnapshot;
-      const snapshot: AuthStateSnapshot = {
-        role: cachedSnapshot.role,
-        status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
-        phoneVerified: cachedSnapshot.phoneVerified,
-        userIsVerified: cachedSnapshot.userIsVerified,
-        executor: cloneExecutorState(cachedSnapshot.executor),
-        city: cachedSnapshot.city,
-        stale: true,
-      } satisfies AuthStateSnapshot;
 
-      const authState = buildAuthStateFromSnapshot(ctx, snapshot);
-      applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
+      if (cachedSnapshot) {
+        const snapshot: AuthStateSnapshot = {
+          role: cachedSnapshot.role,
+          status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
+          phoneVerified: cachedSnapshot.phoneVerified,
+          userIsVerified: cachedSnapshot.userIsVerified,
+          executor: cloneExecutorState(cachedSnapshot.executor),
+          city: cachedSnapshot.city,
+          stale: true,
+        } satisfies AuthStateSnapshot;
+
+        const authState = buildAuthStateFromSnapshot(ctx, snapshot);
+        applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
+      } else {
+        const guestState = createGuestAuthState(ctx.from!);
+        applyAuthState(ctx, guestState, { isAuthenticated: false, isStale: true });
+      }
+
       ctx.session.isAuthenticated = false;
       ctx.session.authSnapshot.stale = true;
       logger.warn(
