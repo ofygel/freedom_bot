@@ -3,6 +3,7 @@ import type { MiddlewareFn } from 'telegraf';
 import { executorKeyboard, onboardingKeyboard, removeKeyboard } from '../ui/menus';
 import type { BotContext } from '../types';
 import { logger } from '../../config';
+import { isSafeModeSession, showSafeModeCard } from '../flows/common/safeMode';
 
 const GUEST_ALLOWLIST = new Set<string>([
   '/start',
@@ -48,6 +49,16 @@ export const stateGate = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       logger.debug({ err: error }, 'Failed to answer callback query in stateGate');
     }
   };
+
+  if (isSafeModeSession(ctx)) {
+    const warning = 'Сервис временно работает в безопасном режиме.';
+    await answerCallbackQuery(warning);
+
+    if (!isCallbackQuery || !isChannelChat) {
+      await showSafeModeCard(ctx, { prompt: 'Доступны только базовые действия ниже.' });
+    }
+    return;
+  }
 
   if (!user || user.status === 'awaiting_phone' || !user.phoneVerified) {
     if (!text || GUEST_ALLOWLIST.has(text) || isContactMessage(ctx)) {

@@ -9,6 +9,7 @@ import {
   removeKeyboard,
 } from '../ui/menus';
 import type { BotContext } from '../types';
+import { isSafeModeSession, showSafeModeCard } from '../flows/common/safeMode';
 
 const hasKnownButtonText = (text: string): boolean =>
   CLIENT_WHITELIST.has(text) || EXECUTOR_WHITELIST.has(text);
@@ -47,6 +48,11 @@ export const keyboardGuard = (): MiddlewareFn<BotContext> => async (ctx, next) =
   }
 
   const user = ctx.auth?.user;
+  if (isSafeModeSession(ctx)) {
+    await showSafeModeCard(ctx);
+    return;
+  }
+
   if (!user || user.status === 'awaiting_phone' || !user.phoneVerified) {
     await ctx.reply('Нужно авторизоваться, чтобы продолжить.', onboardingKeyboard());
     return;

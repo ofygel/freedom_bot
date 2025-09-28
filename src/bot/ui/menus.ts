@@ -3,6 +3,7 @@ import { Markup } from 'telegraf';
 import { CLIENT_MENU } from '../../ui/clientMenu';
 import type { BotContext } from '../types';
 import { EXECUTOR_MENU_TEXT_LABELS } from '../flows/executor/menu';
+import { isSafeModeSession, showSafeModeCard } from '../flows/common/safeMode';
 
 export const CLIENT_WHITELIST: Set<string> = new Set(Object.values(CLIENT_MENU));
 export const EXECUTOR_WHITELIST: Set<string> = new Set(
@@ -46,6 +47,11 @@ export const renderMenuFor = async (
   options: RenderMenuOptions = {},
 ): Promise<void> => {
   const prompt = options.prompt;
+  if (isSafeModeSession(ctx)) {
+    await showSafeModeCard(ctx, { prompt });
+    return;
+  }
+
   const user = ctx.auth?.user;
   const text = prompt ?? 'Выберите действие из меню ниже.';
 

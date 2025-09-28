@@ -116,6 +116,7 @@ const normaliseStatus = (value: Nullable<string>): UserStatus => {
     case 'awaiting_phone':
     case 'active_client':
     case 'active_executor':
+    case 'safe_mode':
     case 'trial_expired':
     case 'suspended':
     case 'banned':
@@ -241,6 +242,10 @@ const buildAuthStateFromSnapshot = (
     base.user.role = 'executor';
   }
 
+  if (ctx.session.safeMode) {
+    base.user.status = 'safe_mode';
+  }
+
   return base;
 };
 
@@ -249,7 +254,12 @@ const deriveUserStatus = (
   status: UserStatus,
   isModerator = false,
 ): UserStatus => {
-  if (status === 'trial_expired' || status === 'suspended' || status === 'banned') {
+  if (
+    status === 'trial_expired'
+    || status === 'suspended'
+    || status === 'banned'
+    || status === 'safe_mode'
+  ) {
     return status;
   }
 
@@ -499,10 +509,11 @@ const createGuestAuthState = (from: NonNullable<BotContext['from']>): AuthState 
 const applyAuthState = (
   ctx: BotContext,
   authState: AuthState,
-  options?: { isAuthenticated?: boolean; isStale?: boolean },
+  options?: { isAuthenticated?: boolean; isStale?: boolean; safeMode?: boolean },
 ): void => {
   ctx.auth = authState;
   ctx.session.isAuthenticated = options?.isAuthenticated ?? true;
+  ctx.session.safeMode = options?.safeMode ?? false;
   ctx.session.user = {
     id: authState.user.telegramId,
     username: authState.user.username,
@@ -633,13 +644,24 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         } satisfies AuthStateSnapshot;
 
         const authState = buildAuthStateFromSnapshot(ctx, snapshot);
-        applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
+        authState.user.status = 'safe_mode';
+        applyAuthState(ctx, authState, {
+          isAuthenticated: false,
+          isStale: true,
+          safeMode: true,
+        });
       } else {
         const guestState = createGuestAuthState(ctx.from!);
-        applyAuthState(ctx, guestState, { isAuthenticated: false, isStale: true });
+        guestState.user.status = 'safe_mode';
+        applyAuthState(ctx, guestState, {
+          isAuthenticated: false,
+          isStale: true,
+          safeMode: true,
+        });
       }
 
       ctx.session.isAuthenticated = false;
+      ctx.session.safeMode = true;
       ctx.session.authSnapshot.stale = true;
       logger.warn(
         { err: error.cause ?? error, update: ctx.update },
