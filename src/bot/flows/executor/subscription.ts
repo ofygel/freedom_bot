@@ -53,6 +53,8 @@ const SUBSCRIPTION_TRIAL_ACTION = 'executor:subscription:trial';
 const SUBSCRIPTION_TRIAL_UNAVAILABLE_STEP_ID = 'executor:subscription:trial-unavailable';
 const SUBSCRIPTION_TRIAL_ERROR_STEP_ID = 'executor:subscription:trial-error';
 
+const EXECUTOR_JOBS_HOME_ACTION = 'executor:jobs:refresh';
+
 const buildVerificationRequiredMessage = (role: ExecutorRole): string => {
   const guidance = getVerificationRoleGuidance(role);
   const prompt = guidance.nextStepsPrompt.replace(/^📸\s*/, '');
@@ -272,6 +274,7 @@ const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
 
 export interface StartExecutorSubscriptionOptions {
   skipVerificationCheck?: boolean;
+  homeAction?: string;
 }
 
 export const startExecutorSubscription = async (
@@ -286,6 +289,8 @@ export const startExecutorSubscription = async (
   const copy = getExecutorRoleCopy(role);
 
   const isVerified = isExecutorRoleVerified(ctx, role);
+  const homeAction =
+    options.homeAction ?? (ctx.auth.user.hasActiveOrder ? EXECUTOR_JOBS_HOME_ACTION : EXECUTOR_MENU_ACTION);
 
   if (!options.skipVerificationCheck && !isVerified) {
     state.subscription.status = 'idle';
@@ -296,7 +301,7 @@ export const startExecutorSubscription = async (
       id: SUBSCRIPTION_VERIFICATION_REQUIRED_STEP_ID,
       text: verificationRequiredMessage,
       cleanup: true,
-      homeAction: EXECUTOR_MENU_ACTION,
+      homeAction,
     });
     return;
   }
@@ -313,7 +318,7 @@ export const startExecutorSubscription = async (
     id: 'executor:subscription:step',
     text,
     keyboard,
-    homeAction: EXECUTOR_MENU_ACTION,
+    homeAction,
   });
 };
 
