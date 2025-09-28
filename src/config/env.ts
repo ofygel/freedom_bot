@@ -281,6 +281,7 @@ export interface AppConfig {
     trialEnabled: boolean;
     executorReplyKeyboard: boolean;
     reportsEnabled: boolean;
+    nudgerEnabled: boolean;
   };
   webhook: {
     domain: string;
@@ -354,6 +355,7 @@ export const loadConfig = (): AppConfig => {
       trialEnabled: parseBoolean(process.env.FEATURE_TRIAL_ENABLED, true),
       executorReplyKeyboard: parseBoolean(process.env.FEATURE_EXECUTOR_REPLY_KEYBOARD),
       reportsEnabled: parseBoolean(process.env.FEATURE_REPORTS_ENABLED),
+      nudgerEnabled: parseBoolean(process.env.FEATURE_NUDGER_ENABLED, true),
     },
     webhook: {
       domain: getRequiredString('WEBHOOK_DOMAIN'),
