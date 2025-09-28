@@ -25,7 +25,11 @@ import {
 import { CITY_LABEL } from '../../../domain/cities';
 import { CITY_ACTION_PATTERN, ensureCitySelected } from '../common/citySelect';
 import { showMenu } from '../client/menu';
-import { PROFILE_BUTTON_LABEL, renderProfileCard } from '../common/profileCard';
+import {
+  PROFILE_BUTTON_LABEL,
+  renderProfileCard,
+  renderProfileCardFromAction,
+} from '../common/profileCard';
 
 export const EXECUTOR_VERIFICATION_ACTION = 'executor:verification:start';
 export const EXECUTOR_SUBSCRIPTION_ACTION = 'executor:subscription:link';
@@ -799,16 +803,16 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    try {
-      await ctx.answerCbQuery();
-    } catch (error) {
-      logger.debug({ err: error }, 'Failed to answer executor profile callback');
-    }
-
-    await renderProfileCard(ctx, {
-      backAction: EXECUTOR_MENU_ACTION,
-      homeAction: EXECUTOR_MENU_ACTION,
-    });
+    await renderProfileCardFromAction(
+      ctx,
+      {
+        backAction: EXECUTOR_MENU_ACTION,
+        homeAction: EXECUTOR_MENU_ACTION,
+        onAnswerError: (error) => {
+          logger.debug({ err: error }, 'Failed to answer executor profile callback');
+        },
+      },
+    );
   });
 
   bot.command('menu', async (ctx) => {

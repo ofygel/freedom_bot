@@ -7,11 +7,13 @@ export const SAFE_MODE_CARD_STEP_ID = 'common:safe-mode:card';
 const SAFE_MODE_PROFILE_ACTION = 'safe-mode:profile';
 const SAFE_MODE_CITY_ACTION = 'safe-mode:city';
 const SAFE_MODE_SUPPORT_ACTION = 'safe-mode:support';
+const SAFE_MODE_MENU_ACTION = 'safe-mode:menu';
 
 export const SAFE_MODE_CARD_ACTIONS = {
   profile: SAFE_MODE_PROFILE_ACTION,
   city: SAFE_MODE_CITY_ACTION,
   support: SAFE_MODE_SUPPORT_ACTION,
+  menu: SAFE_MODE_MENU_ACTION,
 } as const;
 
 const buildSafeModeKeyboard = () =>
