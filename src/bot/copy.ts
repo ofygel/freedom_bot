@@ -1,7 +1,7 @@
 import type { ExecutorRole } from './types';
 
 export const copy = {
-  // nudge убран — мешал пользователям.
+  inactivityNudge: '⏳ Похоже, вы отвлеклись. Продолжить можно кнопками ниже.',
   expiredButton: 'Кнопка устарела — отправляю актуальное меню…',
   tooFrequent: 'Слишком часто. Попробуйте через секунду.',
   waiting: 'Принял. Обрабатываю…',

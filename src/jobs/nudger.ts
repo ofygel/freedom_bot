@@ -34,6 +34,31 @@ interface FlowPayloadShape {
 const secret = config.bot.callbackSignSecret ?? config.bot.token;
 const BATCH_LIMIT = 100;
 
+const fetchPendingSessions = async (): Promise<PendingSessionRow[]> => {
+  const { rows } = await pool.query<PendingSessionRow>(
+    `
+      SELECT
+        s.scope,
+        s.scope_id::text AS scope_id,
+        s.flow_state,
+        s.flow_payload,
+        COALESCE(u.last_menu_role, u.role) AS role,
+        u.keyboard_nonce
+      FROM sessions s
+      LEFT JOIN users u ON s.scope = 'chat' AND u.tg_id = s.scope_id
+      WHERE s.scope = 'chat'
+        AND s.last_step_at IS NOT NULL
+        AND s.last_step_at <= now() - ($1::int * INTERVAL '1 second')
+        AND (s.nudge_sent_at IS NULL OR s.nudge_sent_at < s.last_step_at)
+      ORDER BY s.last_step_at ASC
+      LIMIT $2
+    `,
+    [config.jobs.nudgerInactivitySeconds, BATCH_LIMIT],
+  );
+
+  return rows;
+};
+
 const parseFlowPayload = (value: unknown): FlowPayloadShape => {
   if (!value || typeof value !== 'object') {
     return {};
@@ -130,13 +155,109 @@ const buildSessionKey = (row: PendingSessionRow): SessionKey | null => {
   return { scope: 'chat', scopeId };
 };
 
+const deliverNudge = async (bot: Telegraf<BotContext>, row: PendingSessionRow): Promise<void> => {
+  const sessionKey = buildSessionKey(row);
+  if (!sessionKey) {
+    logger.debug({ job: 'nudger', scope: row.scope }, 'inactivity_nudger_skipped_scope');
+    return;
+  }
+
+  const payload = parseFlowPayload(row.flow_payload);
+  const keyboard = buildNudgeKeyboard(
+    payload,
+    row.role,
+    sessionKey.scopeId,
+    row.keyboard_nonce,
+  );
+
+  if (!keyboard) {
+    logger.debug(
+      { job: 'nudger', scope: sessionKey.scope, scopeId: sessionKey.scopeId },
+      'inactivity_nudger_no_keyboard',
+    );
+    return;
+  }
+
+  try {
+    await bot.telegram.sendMessage(sessionKey.scopeId, copy.inactivityNudge, {
+      reply_markup: keyboard,
+      disable_notification: true,
+    });
+  } catch (error) {
+    logger.error(
+      { err: error, job: 'nudger', scope: sessionKey.scope, scopeId: sessionKey.scopeId },
+      'inactivity_nudge_delivery_failed',
+    );
+    return;
+  }
+
+  try {
+    await markNudged(pool, sessionKey);
+  } catch (error) {
+    logger.error(
+      { err: error, job: 'nudger', scope: sessionKey.scope, scopeId: sessionKey.scopeId },
+      'inactivity_nudge_mark_failed',
+    );
+    return;
+  }
+
+  logger.debug(
+    { job: 'nudger', scope: sessionKey.scope, scopeId: sessionKey.scopeId },
+    'inactivity_nudge_sent',
+  );
+};
+
+const runNudgerTick = async (bot: Telegraf<BotContext>): Promise<void> => {
+  let sessions: PendingSessionRow[];
+  try {
+    sessions = await fetchPendingSessions();
+  } catch (error) {
+    logger.error({ err: error, job: 'nudger' }, 'inactivity_nudger_query_failed');
+    return;
+  }
+
+  if (sessions.length === 0) {
+    return;
+  }
+
+  logger.debug(
+    { job: 'nudger', pending: sessions.length },
+    'inactivity_nudger_pending_sessions',
+  );
+
+  for (const session of sessions) {
+    // Run sequentially to avoid overwhelming Telegram with bursts.
+    // eslint-disable-next-line no-await-in-loop
+    await deliverNudge(bot, session);
+  }
+};
+
 export const startInactivityNudger = (bot: Telegraf<BotContext>): void => {
   if (task) {
     return;
   }
 
-  // cron disabled: UX-spam, включать после доработки.
-  logger.info('Inactivity nudger disabled until UX improvements are implemented');
+  if (!config.jobs.nudgerEnabled) {
+    logger.info({ job: 'nudger' }, 'inactivity_nudger_disabled');
+    return;
+  }
+
+  task = cron.schedule(
+    config.jobs.nudger,
+    () => {
+      void runNudgerTick(bot);
+    },
+    { timezone: config.timezone },
+  );
+
+  logger.info(
+    {
+      job: 'nudger',
+      cron: config.jobs.nudger,
+      inactivitySeconds: config.jobs.nudgerInactivitySeconds,
+    },
+    'inactivity_nudger_started',
+  );
 };
 
 export const stopInactivityNudger = (): void => {
@@ -146,4 +267,6 @@ export const stopInactivityNudger = (): void => {
 
   task.stop();
   task = null;
+
+  logger.info({ job: 'nudger' }, 'inactivity_nudger_stopped');
 };
