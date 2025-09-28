@@ -13,12 +13,19 @@ import {
   loadSessionCache,
   saveSessionCache,
 } from '../../infra/sessionCache';
+<<<<<<< HEAD
+=======
+import { isAppCity } from '../../domain/cities';
+>>>>>>> origin/main
 import {
   EXECUTOR_ROLES,
   EXECUTOR_VERIFICATION_PHOTO_COUNT,
   type AuthStateSnapshot,
+<<<<<<< HEAD
   type AuthStateSnapshotExecutor,
   type AuthStateSnapshotUser,
+=======
+>>>>>>> origin/main
   type BotContext,
   type ClientFlowState,
   type ClientOrderDraftState,
@@ -28,11 +35,18 @@ import {
   type ExecutorUploadedPhoto,
   type ExecutorVerificationState,
   type SessionState,
+  type SessionUser,
   type SupportSessionState,
   type UiSessionState,
+<<<<<<< HEAD
   type UserMenuRole,
   type UserRole,
   type UserStatus,
+=======
+  type UserRole,
+  type UserStatus,
+  type ExecutorRole,
+>>>>>>> origin/main
 } from '../types';
 import { isAppCity } from '../../domain/cities';
 
@@ -78,10 +92,107 @@ const createSupportState = (): SupportSessionState => ({
   status: 'idle',
 });
 
+<<<<<<< HEAD
 const createAuthSnapshot = (): AuthStateSnapshot => ({
   stale: false,
 });
 
+=======
+const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'courier', 'driver', 'moderator'];
+const USER_STATUSES: readonly UserStatus[] = [
+  'guest',
+  'onboarding',
+  'awaiting_phone',
+  'active_client',
+  'active_executor',
+  'trial_expired',
+  'suspended',
+  'banned',
+];
+
+const createAuthSnapshot = (): AuthStateSnapshot => ({
+  role: 'guest',
+  status: 'guest',
+  phoneVerified: false,
+  userIsVerified: false,
+  executor: {
+    verifiedRoles: { courier: false, driver: false },
+    hasActiveSubscription: false,
+    isVerified: false,
+  },
+  city: undefined,
+  stale: false,
+});
+
+const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthStateSnapshot => {
+  const snapshot = createAuthSnapshot();
+  if (!value || typeof value !== 'object') {
+    if (sessionUser?.phoneVerified !== undefined) {
+      snapshot.phoneVerified = Boolean(sessionUser.phoneVerified);
+    }
+    return snapshot;
+  }
+
+  const candidate = value as Partial<AuthStateSnapshot> & {
+    executor?: Partial<AuthStateSnapshot['executor']> & {
+      verifiedRoles?: Partial<Record<ExecutorRole, unknown>>;
+    };
+  };
+
+  if (typeof candidate.role === 'string' && USER_ROLES.includes(candidate.role as UserRole)) {
+    snapshot.role = candidate.role as UserRole;
+  }
+
+  if (typeof candidate.status === 'string' && USER_STATUSES.includes(candidate.status as UserStatus)) {
+    snapshot.status = candidate.status as UserStatus;
+  }
+
+  if (candidate.executor && typeof candidate.executor === 'object') {
+    const executor = candidate.executor;
+    const verifiedRoles = executor.verifiedRoles ?? {};
+    snapshot.executor = {
+      verifiedRoles: {
+        courier: Boolean((verifiedRoles as Record<ExecutorRole, unknown>).courier),
+        driver: Boolean((verifiedRoles as Record<ExecutorRole, unknown>).driver),
+      },
+      hasActiveSubscription: Boolean(executor.hasActiveSubscription),
+      isVerified: Boolean(executor.isVerified),
+    };
+  }
+
+  const hasPhoneVerifiedField = Object.prototype.hasOwnProperty.call(candidate, 'phoneVerified');
+  if (hasPhoneVerifiedField) {
+    snapshot.phoneVerified = Boolean(
+      (candidate as { phoneVerified?: unknown }).phoneVerified,
+    );
+  } else if (sessionUser?.phoneVerified !== undefined) {
+    snapshot.phoneVerified = Boolean(sessionUser.phoneVerified);
+  }
+
+  const hasUserVerifiedField = Object.prototype.hasOwnProperty.call(candidate, 'userIsVerified');
+  if (hasUserVerifiedField && typeof candidate.userIsVerified === 'boolean') {
+    snapshot.userIsVerified = candidate.userIsVerified;
+  } else if (candidate.executor && typeof candidate.executor === 'object') {
+    const executorIsVerified = Boolean(
+      (candidate.executor as { isVerified?: unknown }).isVerified,
+    );
+    if (executorIsVerified) {
+      snapshot.userIsVerified = true;
+    }
+  }
+
+  if (candidate.city && isAppCity(candidate.city)) {
+    snapshot.city = candidate.city;
+  }
+
+  if (typeof candidate.stale === 'boolean') {
+    snapshot.stale = candidate.stale;
+  }
+
+  return snapshot;
+};
+
+>>>>>>> origin/main
 const isExecutorRole = (value: unknown): value is ExecutorFlowState['role'] =>
   typeof value === 'string' && EXECUTOR_ROLES.includes(value as (typeof EXECUTOR_ROLES)[number]);
 
@@ -315,12 +426,21 @@ const createDefaultState = (): SessionState => ({
   isAuthenticated: false,
   awaitingPhone: false,
   city: undefined,
+  authSnapshot: createAuthSnapshot(),
   executor: createExecutorState(),
   client: createClientState(),
   ui: createUiState(),
   support: createSupportState(),
   authSnapshot: createAuthSnapshot(),
 });
+
+const prepareFallbackSession = (
+  state: SessionState | null | undefined,
+): SessionState => {
+  const session = state ?? createDefaultState();
+  session.isAuthenticated = false;
+  return session;
+};
 
 const SESSION_META = Symbol('session-meta');
 
@@ -444,10 +564,15 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     try {
       client = await pool.connect();
     } catch (error) {
+<<<<<<< HEAD
       const fallbackState = normaliseSessionState(cachedState ?? createDefaultState());
       fallbackState.isAuthenticated = false;
       fallbackState.authSnapshot.stale = true;
       ctx.session = fallbackState;
+=======
+      const fallbackSession = prepareFallbackSession(cachedState);
+      ctx.session = fallbackSession;
+>>>>>>> origin/main
       logger.warn({ err: error, key }, 'Failed to connect to database for session state');
 
       fallbackMode = true;
@@ -457,10 +582,15 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
     const dbClient = client;
     if (!fallbackMode && !dbClient) {
+<<<<<<< HEAD
       const fallbackState = normaliseSessionState(cachedState ?? createDefaultState());
       fallbackState.isAuthenticated = false;
       fallbackState.authSnapshot.stale = true;
       ctx.session = fallbackState;
+=======
+      const fallbackSession = prepareFallbackSession(cachedState);
+      ctx.session = fallbackSession;
+>>>>>>> origin/main
       logger.warn({ key }, 'Database client was not initialised for session state');
 
       fallbackMode = true;
@@ -476,10 +606,15 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         const existing = await loadSessionState(activeClient, key);
         state = existing ?? cachedState ?? createDefaultState();
       } catch (error) {
+<<<<<<< HEAD
         const fallbackState = normaliseSessionState(cachedState ?? createDefaultState());
         fallbackState.isAuthenticated = false;
         fallbackState.authSnapshot.stale = true;
         ctx.session = fallbackState;
+=======
+        const fallbackSession = prepareFallbackSession(cachedState);
+        ctx.session = fallbackSession;
+>>>>>>> origin/main
         logger.warn({ err: error, key }, 'Failed to load session state, using default state');
 
         fallbackMode = true;
@@ -494,7 +629,31 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         state = cachedState ?? createDefaultState();
       }
 
+<<<<<<< HEAD
       ctx.session = normaliseSessionState(state);
+=======
+      if (!('city' in state)) {
+        state.city = undefined;
+      }
+
+      if (!state.ui) {
+        state.ui = createUiState();
+      }
+
+      if (!state.support) {
+        state.support = createSupportState();
+      }
+
+      state.authSnapshot = rebuildAuthSnapshot(
+        (state as { authSnapshot?: unknown }).authSnapshot,
+        (state as { user?: SessionUser }).user,
+      );
+
+      state.executor = rebuildExecutorState((state as { executor?: unknown }).executor);
+      state.client = rebuildClientState((state as { client?: unknown }).client);
+
+      ctx.session = state;
+>>>>>>> origin/main
 
       await invokeNext();
       finalState = ctx.session;
@@ -515,6 +674,9 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     }
 
     if (fallbackMode) {
+      if (ctx.session) {
+        ctx.session = prepareFallbackSession(ctx.session);
+      }
       await invokeNext();
       finalState = ctx.session;
     }
@@ -541,7 +703,12 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   }
 
   try {
+<<<<<<< HEAD
     await saveSessionCache(key, finalState);
+=======
+    const stateToCache = fallbackMode ? prepareFallbackSession(finalState) : finalState;
+    await saveSessionCache(key, stateToCache);
+>>>>>>> origin/main
   } catch (error) {
     logger.warn({ err: error, key }, 'Failed to persist session cache');
   }

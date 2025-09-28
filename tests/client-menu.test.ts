@@ -46,6 +46,19 @@ const createSessionState = (): SessionState => ({
   isAuthenticated: false,
   awaitingPhone: false,
   city: DEFAULT_CITY,
+  authSnapshot: {
+    role: 'guest',
+    status: 'guest',
+    phoneVerified: false,
+    userIsVerified: false,
+    executor: {
+      verifiedRoles: { courier: false, driver: false },
+      hasActiveSubscription: false,
+      isVerified: false,
+    },
+    city: undefined,
+    stale: false,
+  },
   executor: {
     role: 'courier',
     verification: {

@@ -9,8 +9,11 @@ import {
   type AuthExecutorState,
   type AuthState,
   type AuthStateSnapshot,
+<<<<<<< HEAD
   type AuthStateSnapshotExecutor,
   type AuthStateSnapshotUser,
+=======
+>>>>>>> origin/main
   type BotContext,
   type ExecutorRole,
   type UserRole,
@@ -145,6 +148,65 @@ const buildExecutorState = (row: AuthQueryRow): AuthExecutorState => {
     hasActiveSubscription: Boolean(row.has_active_subscription),
     isVerified,
   } satisfies AuthExecutorState;
+};
+
+const deriveSnapshotStatus = (role: UserRole): UserStatus => {
+  switch (role) {
+    case 'courier':
+    case 'driver':
+      return 'active_executor';
+    case 'moderator':
+      return 'active_executor';
+    case 'client':
+      return 'active_client';
+    case 'guest':
+    default:
+      return 'guest';
+  }
+};
+
+const cloneExecutorState = (executor: AuthExecutorState): AuthExecutorState => ({
+  verifiedRoles: { ...executor.verifiedRoles },
+  hasActiveSubscription: executor.hasActiveSubscription,
+  isVerified: executor.isVerified,
+});
+
+interface SnapshotHydrationOptions {
+  restoreRole?: boolean;
+}
+
+const buildAuthStateFromSnapshot = (
+  ctx: BotContext,
+  snapshot: AuthStateSnapshot,
+  options: SnapshotHydrationOptions = {},
+): AuthState => {
+  const base = createGuestAuthState(ctx.from!);
+  const sessionUser = ctx.session.user;
+
+  if (sessionUser) {
+    base.user.username = sessionUser.username ?? base.user.username;
+    base.user.firstName = sessionUser.firstName ?? base.user.firstName;
+    base.user.lastName = sessionUser.lastName ?? base.user.lastName;
+    base.user.phoneVerified = sessionUser.phoneVerified ?? base.user.phoneVerified;
+  }
+
+  if (ctx.session.phoneNumber) {
+    base.user.phone = ctx.session.phoneNumber;
+  }
+
+  const shouldRestoreRole = options.restoreRole ?? true;
+  if (shouldRestoreRole) {
+    base.user.role = snapshot.role;
+    base.user.status = snapshot.status ?? deriveSnapshotStatus(snapshot.role);
+  }
+  base.user.phoneVerified = Boolean(snapshot.phoneVerified || base.user.phoneVerified);
+  const userVerifiedFromSnapshot = snapshot.userIsVerified || snapshot.executor.isVerified;
+  base.user.isVerified = Boolean(userVerifiedFromSnapshot || base.user.isVerified);
+  base.user.citySelected = snapshot.city ?? base.user.citySelected;
+  base.executor = cloneExecutorState(snapshot.executor);
+  base.isModerator = shouldRestoreRole && snapshot.role === 'moderator';
+
+  return base;
 };
 
 const deriveUserStatus = (row: AuthQueryRow, status: UserStatus): UserStatus => {
@@ -343,7 +405,7 @@ const createGuestAuthState = (from: NonNullable<BotContext['from']>): AuthState 
 const applyAuthState = (
   ctx: BotContext,
   authState: AuthState,
-  options?: { isAuthenticated?: boolean },
+  options?: { isAuthenticated?: boolean; isStale?: boolean },
 ): void => {
   ctx.auth = authState;
   ctx.session.isAuthenticated = options?.isAuthenticated ?? true;
@@ -360,6 +422,16 @@ const applyAuthState = (
   if (authState.user.citySelected && !ctx.session.city) {
     ctx.session.city = authState.user.citySelected;
   }
+
+  ctx.session.authSnapshot = {
+    role: authState.user.role,
+    status: authState.user.status,
+    phoneVerified: authState.user.phoneVerified,
+    userIsVerified: authState.user.isVerified,
+    executor: cloneExecutorState(authState.executor),
+    city: authState.user.citySelected,
+    stale: options?.isStale ?? false,
+  } satisfies AuthStateSnapshot;
 };
 
 const toTimestamp = (value: Date | undefined): number | undefined =>
@@ -517,6 +589,7 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
   try {
     const authState = await loadAuthState(ctx.from);
+<<<<<<< HEAD
     applyAuthState(ctx, authState);
     ctx.session.authSnapshot = serialiseAuthSnapshot(authState);
   } catch (error) {
@@ -533,6 +606,30 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         ctx.session.authSnapshot.stale = true;
       }
       logger.warn({ err: error.cause ?? error, update: ctx.update }, 'Failed to load auth state, using guest context');
+=======
+    applyAuthState(ctx, authState, { isStale: false });
+  } catch (error) {
+    if (error instanceof AuthStateQueryError) {
+      const cachedSnapshot = ctx.session.authSnapshot;
+      const snapshot: AuthStateSnapshot = {
+        role: cachedSnapshot.role,
+        status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
+        phoneVerified: cachedSnapshot.phoneVerified,
+        userIsVerified: cachedSnapshot.userIsVerified,
+        executor: cloneExecutorState(cachedSnapshot.executor),
+        city: cachedSnapshot.city,
+        stale: true,
+      } satisfies AuthStateSnapshot;
+
+      const authState = buildAuthStateFromSnapshot(ctx, snapshot);
+      applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
+      ctx.session.isAuthenticated = false;
+      ctx.session.authSnapshot.stale = true;
+      logger.warn(
+        { err: error.cause ?? error, update: ctx.update },
+        'Failed to load auth state, using cached snapshot',
+      );
+>>>>>>> origin/main
       await next();
       return;
     }
