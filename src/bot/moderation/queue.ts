@@ -1,7 +1,11 @@
 import crypto from 'crypto';
 
-import { Markup, Telegraf, Telegram } from 'telegraf';
-import type { ForceReply } from 'telegraf/typings/core/types/typegram';
+import { Telegraf, Telegram } from 'telegraf';
+import type {
+  ForceReply,
+  InlineKeyboardButton,
+  InlineKeyboardMarkup,
+} from 'telegraf/typings/core/types/typegram';
 import type { ExtraEditMessageText, ExtraReplyMessage } from 'telegraf/typings/telegram-types';
 
 import { getChannelBinding, type ChannelType } from '../channels/bindings';
@@ -124,16 +128,24 @@ const buildMessageKeyboard = (
   reasons: string[],
   acceptAction: string,
   rejectAction: string,
-) => {
-  const rows = [
-    [Markup.button.callback('✅ Одобрить', `${acceptAction}:${token}`)],
+): InlineKeyboardMarkup => {
+  const rows: InlineKeyboardButton[][] = [
+    [
+      {
+        text: '✅ Одобрить',
+        callback_data: `${acceptAction}:${token}`,
+      },
+    ],
   ];
 
   reasons.forEach((reason, index) => {
     const trimmed = reason.trim();
     const label = trimmed ? `❌ ${trimmed}` : '❌ Отклонить';
     rows.push([
-      Markup.button.callback(label, `${rejectAction}:${token}:${index.toString(10)}`),
+      {
+        text: label,
+        callback_data: `${rejectAction}:${token}:${index.toString(10)}`,
+      },
     ]);
   });
 
@@ -141,10 +153,13 @@ const buildMessageKeyboard = (
   const manualLabel =
     reasons.length > 0 ? '❌ Отклонить с комментарием' : '❌ Отклонить';
   rows.push([
-    Markup.button.callback(manualLabel, `${rejectAction}:${token}:${manualIndex.toString(10)}`),
+    {
+      text: manualLabel,
+      callback_data: `${rejectAction}:${token}:${manualIndex.toString(10)}`,
+    },
   ]);
 
-  return Markup.inlineKeyboard(rows);
+  return { inline_keyboard: rows } satisfies InlineKeyboardMarkup;
 };
 
 const toModeratorInfo = (from?: BotContext['from']): ModeratorInfo => ({
@@ -504,7 +519,7 @@ export const createModerationQueue = <T extends ModerationQueueItemBase<T>>(
     const keyboard = buildMessageKeyboard(token, rejectionReasons, acceptAction, rejectAction);
     const message = await telegram.sendMessage(binding.chatId, messageText, {
       ...item.messageOptions,
-      reply_markup: keyboard.reply_markup,
+      reply_markup: keyboard,
     });
 
     const entry: PendingModerationItem<T> = {

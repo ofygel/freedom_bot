@@ -16,7 +16,7 @@ import {
   tryRestoreCompletedOrder,
 } from '../../db/orders';
 import type { OrderKind, OrderRecord, OrderWithExecutor } from '../../types';
-import type { BotContext, UserRole } from '../types';
+import type { BotContext, ExecutorRole, UserRole } from '../types';
 import type { AppCity } from '../../domain/cities';
 import { buildOrderLocationsKeyboard } from '../keyboards/orders';
 import { buildInlineKeyboard, mergeInlineKeyboards } from '../keyboards/common';
@@ -615,12 +615,15 @@ type OrderActionOutcome =
   | { outcome: 'already_dismissed' }
   | { outcome: 'limit_exceeded' }
   | { outcome: 'forbidden_kind'; order: OrderRecord }
+  | { outcome: 'driver_unverified'; order: OrderRecord }
+  | { outcome: 'courier_unverified'; order: OrderRecord }
   | { outcome: 'city_mismatch'; order: OrderRecord };
 
 interface OrderActionActor {
   id?: number;
   role?: UserRole;
   city?: AppCity;
+  verifiedRoles?: Partial<Record<ExecutorRole, boolean>>;
 }
 
 type OrderReleaseOutcome =
@@ -674,8 +677,20 @@ const processOrderAction = async (
           throw new Error('Missing moderator identifier for order claim');
         }
 
-        if (order.kind === 'taxi' && actor.role !== 'driver') {
-          return { outcome: 'forbidden_kind', order } as const;
+        const verifiedRoles = actor.verifiedRoles ?? {};
+        const courierVerified = Boolean(verifiedRoles.courier);
+        const driverVerified = Boolean(verifiedRoles.driver);
+
+        if (order.kind === 'taxi') {
+          if (actor.role !== 'driver') {
+            return { outcome: 'forbidden_kind', order } as const;
+          }
+
+          if (!driverVerified) {
+            return { outcome: 'driver_unverified', order } as const;
+          }
+        } else if (!courierVerified && !driverVerified) {
+          return { outcome: 'courier_unverified', order } as const;
         }
 
         if (actor.role === 'driver') {
@@ -855,6 +870,7 @@ const handleOrderDecision = async (
       id: actorId,
       role: actorRole,
       city: actorCity,
+      verifiedRoles: ctx.auth?.executor.verifiedRoles,
     });
   } catch (error) {
     logger.error({ err: error, orderId }, 'Failed to apply order channel decision');
@@ -893,6 +909,14 @@ const handleOrderDecision = async (
     }
     case 'forbidden_kind': {
       await ctx.answerCbQuery('🚫 Этот заказ доступен только водителям.', { show_alert: true });
+      return;
+    }
+    case 'driver_unverified': {
+      await ctx.answerCbQuery(copy.orderDriverVerificationRequired, { show_alert: true });
+      return;
+    }
+    case 'courier_unverified': {
+      await ctx.answerCbQuery(copy.orderCourierVerificationRequired, { show_alert: true });
       return;
     }
     case 'claimed': {
