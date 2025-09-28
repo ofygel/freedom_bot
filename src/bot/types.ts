@@ -118,6 +118,7 @@ export interface ExecutorFlowState {
   role?: ExecutorRole;
   verification: ExecutorVerificationState;
   subscription: ExecutorSubscriptionState;
+  awaitingRoleSelection?: boolean;
 }
 
 export type ClientOrderStage =

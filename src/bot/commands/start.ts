@@ -45,6 +45,10 @@ const buildRoleKeyboard = (): InlineKeyboardMarkup =>
   ).reply_markup as InlineKeyboardMarkup;
 
 export const presentRoleSelection = async (ctx: BotContext): Promise<void> => {
+  const executorState = ensureExecutorState(ctx);
+  executorState.awaitingRoleSelection = true;
+  executorState.role = undefined;
+
   const description = ROLE_OPTIONS.map((option) => `• ${option.label} — ${option.description}`)
     .join('\n');
 
@@ -94,6 +98,9 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
   const executorState = ensureExecutorState(ctx);
   const role = executorState.role;
   if (!role) {
+    executorState.awaitingRoleSelection = true;
+    executorState.role = undefined;
+    await hideClientMenu(ctx, 'Меняем роль — выберите подходящий вариант ниже.');
     await presentRoleSelection(ctx);
     return;
   }
@@ -132,6 +139,9 @@ export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
     }
 
     await applyCommandsForRole(ctx);
+    const executorState = ensureExecutorState(ctx);
+    executorState.awaitingRoleSelection = true;
+    executorState.role = undefined;
     await presentRoleSelection(ctx);
   });
 };

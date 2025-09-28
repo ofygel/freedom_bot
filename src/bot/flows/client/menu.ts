@@ -14,6 +14,7 @@ import { CLIENT_COMMANDS } from '../../commands/sets';
 import { setChatCommands } from '../../services/commands';
 import type { BotContext } from '../../types';
 import { presentRoleSelection } from '../../commands/start';
+import { ensureExecutorState } from '../executor/menu';
 import { promptClientSupport } from './support';
 import { askCity, getCityFromContext, CITY_ACTION_PATTERN } from '../common/citySelect';
 import { CLIENT_ORDERS_ACTION } from './orderActions';
@@ -313,6 +314,9 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     await hideClientMenu(ctx, 'Меняем роль — выберите подходящий вариант ниже.');
+    const executorState = ensureExecutorState(ctx);
+    executorState.awaitingRoleSelection = true;
+    executorState.role = undefined;
     await presentRoleSelection(ctx);
   });
 
@@ -355,6 +359,9 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     await hideClientMenu(ctx, 'Меняем роль — выберите подходящий вариант ниже.');
+    const executorState = ensureExecutorState(ctx);
+    executorState.awaitingRoleSelection = true;
+    executorState.role = undefined;
     await presentRoleSelection(ctx);
   });
 

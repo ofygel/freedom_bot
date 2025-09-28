@@ -225,6 +225,10 @@ const deriveUserStatus = (row: AuthQueryRow, status: UserStatus): UserStatus => 
     return 'active_executor';
   }
 
+  if (status === 'onboarding') {
+    return 'onboarding';
+  }
+
   const hasExecutorAccess =
     role === 'courier' || role === 'driver' ? Boolean(row.has_active_subscription) : false;
 
@@ -318,8 +322,22 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
 const mapAuthRow = (row: AuthQueryRow): AuthState => {
   const telegramId = parseNumericId(row.tg_id);
   const executor = buildExecutorState(row);
-  const role = normaliseRole(row.role);
+  let role = normaliseRole(row.role);
   const status = deriveUserStatus(row, normaliseStatus(row.status));
+  const lastMenuRole = normaliseMenuRole(row.last_menu_role);
+
+  if (role === 'client') {
+    const awaitingActivation =
+      status === 'guest' ||
+      status === 'awaiting_phone' ||
+      status === 'onboarding' ||
+      !row.phone_verified;
+    const roleNeverConfirmed = !lastMenuRole;
+
+    if (awaitingActivation || roleNeverConfirmed) {
+      role = 'guest';
+    }
+  }
 
   return {
     user: {
@@ -338,7 +356,7 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
         : undefined,
       verifiedAt: parseTimestamp(row.verified_at),
       trialEndsAt: parseTimestamp(row.trial_ends_at),
-      lastMenuRole: normaliseMenuRole(row.last_menu_role),
+      lastMenuRole,
       keyboardNonce: normaliseString(row.keyboard_nonce),
     },
     executor,

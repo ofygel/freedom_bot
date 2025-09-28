@@ -22,6 +22,7 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
 
   const state = ensureExecutorState(ctx);
   state.role = role;
+  state.awaitingRoleSelection = false;
   ctx.auth.user.role = role;
   ctx.auth.user.status = 'active_executor';
 

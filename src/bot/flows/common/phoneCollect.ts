@@ -5,7 +5,6 @@ import { pool } from '../../../db';
 import { setUserBlockedStatus } from '../../../db/users';
 import { reportUserRegistration, toUserIdentity } from '../../services/reports';
 import type { BotContext } from '../../types';
-import { sendClientMenu } from '../../../ui/clientMenu';
 
 const normalisePhone = (phone: string): string => {
   const trimmed = phone.trim();
@@ -119,8 +118,8 @@ export const savePhone: MiddlewareFn<BotContext> = async (ctx, next) => {
           phone_verified = true,
           status = CASE
             WHEN status IN ('suspended', 'banned') THEN status
-            WHEN status IN ('awaiting_phone', 'guest') THEN 'active_client'
-            WHEN status IS NULL THEN 'active_client'
+            WHEN status IN ('awaiting_phone', 'guest') THEN 'onboarding'
+            WHEN status IS NULL THEN 'onboarding'
             ELSE status
           END,
           updated_at = now()
@@ -143,17 +142,9 @@ export const savePhone: MiddlewareFn<BotContext> = async (ctx, next) => {
     ctx.auth.user.phone = phone;
     ctx.auth.user.phoneVerified = true;
     if (ctx.auth.user.status === 'awaiting_phone' || ctx.auth.user.status === 'guest') {
-      ctx.auth.user.status = 'active_client';
-    }
-    if (ctx.auth.user.role === 'guest') {
-      ctx.auth.user.role = 'client';
+      ctx.auth.user.status = 'onboarding';
     }
   }
-
-  await sendClientMenu(
-    ctx,
-    'Номер сохранён. Ниже основное меню заказа такси или доставки.',
-  );
 
   if (!wasVerified) {
     const identity = ctx.auth?.user
