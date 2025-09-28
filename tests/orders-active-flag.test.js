@@ -126,6 +126,18 @@ const createTestDatabase = () => {
       return { rows: [{ count }] };
     }
 
+    if (
+      normalized.startsWith('select exists ( select 1 from orders where claimed_by = $1') &&
+      normalized.includes("status = 'claimed'")
+    ) {
+      const [executorId] = params;
+      const hasActiveOrder = Array.from(orders.values()).some(
+        (order) => order.claimed_by === executorId && order.status === 'claimed',
+      );
+
+      return { rows: [{ has_active_order: hasActiveOrder }] };
+    }
+
     if (normalized.startsWith('update users set has_active_order = $2')) {
       const [telegramId, hasActiveOrder, updatedAt] = params;
       const user = users.get(telegramId);
