@@ -66,7 +66,7 @@ export const renderMenuFor = async (
   }
 
   const role = user.role;
-  if (role === 'executor') {
+  if (role === 'executor' || role === 'moderator') {
     await ctx.reply(prompt ?? 'Меню исполнителя доступно ниже.', executorKeyboard());
     return;
   }

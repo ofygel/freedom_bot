@@ -1,5 +1,5 @@
 import { pool } from './client';
-import type { ExecutorRole } from '../bot/types';
+import type { ExecutorKind, UserRole } from '../bot/types';
 
 export interface EnsureClientRoleParams {
   telegramId: number;
@@ -11,8 +11,8 @@ export interface EnsureClientRoleParams {
 
 export interface UpdateUserRoleParams {
   telegramId: number;
-  role: 'guest' | 'client' | 'executor';
-  executorKind?: ExecutorRole | null;
+  role: Exclude<UserRole, 'moderator'>;
+  executorKind?: ExecutorKind | null;
   status?: 'active_client' | 'active_executor' | 'safe_mode';
   menuRole?: 'client' | 'courier';
 }
@@ -116,8 +116,14 @@ export const updateUserRole = async ({
   status,
   menuRole,
 }: UpdateUserRoleParams): Promise<void> => {
-  const effectiveStatus = status ?? (role === 'client' ? 'active_client' : 'active_executor');
-  const effectiveMenuRole = menuRole ?? (role === 'client' ? 'client' : 'courier');
+  const effectiveStatus = status
+    ?? (role === 'client'
+      ? 'active_client'
+      : role === 'executor'
+        ? 'active_executor'
+        : 'guest');
+  const effectiveMenuRole = menuRole
+    ?? (role === 'client' ? 'client' : role === 'executor' ? 'courier' : 'client');
   const resolvedExecutorKind = role === 'executor' ? executorKind ?? null : null;
 
   await pool.query(

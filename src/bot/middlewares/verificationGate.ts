@@ -49,7 +49,7 @@ const resolveExecutorRole = (ctx: BotContext, fallback: ExecutorRole): ExecutorR
 
 export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next) => {
   const role = ctx.auth?.user.role;
-  if (role !== 'executor') {
+  if (role !== 'executor' && role !== 'moderator') {
     await next();
     return;
   }

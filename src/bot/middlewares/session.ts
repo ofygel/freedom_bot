@@ -81,7 +81,7 @@ const createSupportState = (): SupportSessionState => ({
   status: 'idle',
 });
 
-const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'executor'];
+const USER_ROLES: readonly UserRole[] = ['guest', 'client', 'executor', 'moderator'];
 const USER_STATUSES: readonly UserStatus[] = [
   'guest',
   'onboarding',
@@ -161,12 +161,10 @@ const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthSta
   };
 
   const candidateRole = (candidate as { role?: unknown }).role;
-  if (typeof candidateRole === 'string') {
+  if (typeof candidateRole === 'string' && USER_ROLES.includes(candidateRole as UserRole)) {
+    snapshot.role = candidateRole as UserRole;
     if (candidateRole === 'moderator') {
-      snapshot.role = 'executor';
       snapshot.isModerator = true;
-    } else if (USER_ROLES.includes(candidateRole as UserRole)) {
-      snapshot.role = candidateRole as UserRole;
     }
   }
 
@@ -200,6 +198,8 @@ const rebuildAuthSnapshot = (value: unknown, sessionUser?: SessionUser): AuthSta
   }
 
   if (snapshot.isModerator) {
+    snapshot.role = 'moderator';
+  } else if (snapshot.role === 'moderator') {
     snapshot.role = 'executor';
   }
 

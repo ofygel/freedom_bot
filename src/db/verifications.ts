@@ -1,8 +1,8 @@
 import { pool, withTx } from './client';
 import type { PoolClient } from './client';
-import type { ExecutorRole } from '../bot/types';
+import type { ExecutorKind } from '../bot/types';
 
-export type VerificationRole = ExecutorRole;
+export type VerificationRole = ExecutorKind;
 
 export interface VerificationApplicant {
   telegramId: number;
