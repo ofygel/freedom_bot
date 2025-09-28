@@ -86,10 +86,25 @@ BEGIN
   END IF;
 END $$;
 
-UPDATE users
-SET trial_started_at = COALESCE(verified_at, trial_ends_at),
-    trial_expires_at = trial_ends_at
-WHERE trial_ends_at IS NOT NULL;
+DO $$
+DECLARE
+  has_trial_ends_at BOOLEAN;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'users'
+      AND column_name = 'trial_ends_at'
+  ) INTO has_trial_ends_at;
+
+  IF has_trial_ends_at THEN
+    UPDATE users
+    SET trial_started_at = COALESCE(verified_at, trial_ends_at),
+        trial_expires_at = trial_ends_at
+    WHERE trial_ends_at IS NOT NULL;
+  END IF;
+END $$;
 
 ALTER TYPE user_role RENAME TO user_role_old;
 
