@@ -21,6 +21,7 @@ solely for local development resets.
 | `0002_add_flow_state_index.up.sql` | Keeps a concurrent creation path for the `sessions_scope_state_idx` index when upgrading an existing database. New installations already receive the index from migration 0001. |
 | `0006_update_recent_locations_schema.up.sql` | Expands `user_recent_locations` to track multiple entries per user/city/kind combination and aligns the types with the application service. |
 | `0008_add_user_foreign_keys.up.sql` | Adds cascading foreign keys from analytics and cache tables to `users(tg_id)` to keep auxiliary data in sync. |
+| `0009_activate_verified_clients.up.sql` | Promotes phone-verified users stuck in onboarding to the `active_client` status and stores their previous status for easy rollback. |
 
 If your database is empty, running the migrations once is sufficient — both
 files will be executed and the second one becomes a no-op after the index
