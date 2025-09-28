@@ -491,6 +491,7 @@ export const tryRestoreCompletedOrder = async (
     return null;
   }
 
+  await updateExecutorHasActiveOrder(client, executorId);
   await updateActiveOrdersGauge(client);
   return mapOrderRow(row);
 };

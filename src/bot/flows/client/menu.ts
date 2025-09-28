@@ -15,6 +15,8 @@ import { setChatCommands } from '../../services/commands';
 import type { BotContext } from '../../types';
 import { presentRolePick } from '../../commands/start';
 import { ensureExecutorState, EXECUTOR_SUBSCRIPTION_ACTION } from '../executor/menu';
+import { reportRoleSet, toUserIdentity } from '../../services/reports';
+import { ensureExecutorState } from '../executor/menu';
 import { promptClientSupport } from './support';
 import { askCity, getCityFromContext, CITY_ACTION_PATTERN } from '../common/citySelect';
 import { CLIENT_ORDERS_ACTION } from './orderActions';
@@ -97,7 +99,7 @@ const removeRoleSelectionMessage = async (ctx: BotContext): Promise<void> => {
   }
 };
 
-const applyClientRole = async (ctx: BotContext): Promise<void> => {
+export const applyClientRole = async (ctx: BotContext): Promise<void> => {
   const authUser = ctx.auth.user;
 
   const username = ctx.from?.username ?? authUser.username;
@@ -158,6 +160,26 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   }
 
   clearOnboardingState(ctx);
+
+  const identity = {
+    ...toUserIdentity(ctx.from),
+    telegramId: authUser.telegramId,
+    username: username ?? undefined,
+    firstName: firstName ?? undefined,
+    lastName: lastName ?? undefined,
+    phone: phone ?? authUser.phone ?? undefined,
+  };
+  const city = getCityFromContext(ctx) ?? authUser.citySelected;
+
+  try {
+    await reportRoleSet(ctx.telegram, {
+      user: identity,
+      role: 'client',
+      city,
+    });
+  } catch (error) {
+    logger.error({ err: error, telegramId: authUser.telegramId }, 'Failed to report client role');
+  }
 };
 
 export const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {

@@ -3,7 +3,11 @@ import { Markup, type MiddlewareFn } from 'telegraf';
 import { logger } from '../../../config';
 import { pool } from '../../../db';
 import { setUserBlockedStatus } from '../../../db/users';
-import { reportUserRegistration, toUserIdentity } from '../../services/reports';
+import {
+  reportPhoneVerified,
+  reportUserRegistration,
+  toUserIdentity,
+} from '../../services/reports';
 import type { BotContext } from '../../types';
 import { ui } from '../../ui';
 
@@ -250,6 +254,13 @@ export const savePhone: MiddlewareFn<BotContext> = async (ctx, next) => {
       await reportUserRegistration(ctx.telegram, identity, phone, ctx.auth?.user?.role ?? 'unknown');
     } catch (error) {
       logger.error({ err: error, telegramId: fromId }, 'Failed to report user registration');
+    }
+
+    const city = ctx.auth?.user?.citySelected ?? ctx.session.city;
+    try {
+      await reportPhoneVerified(ctx.telegram, { user: identity, city });
+    } catch (error) {
+      logger.error({ err: error, telegramId: fromId }, 'Failed to report phone verification');
     }
   }
 
