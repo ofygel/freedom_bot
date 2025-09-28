@@ -80,8 +80,9 @@ const normaliseRole = (value: Nullable<string>): UserRole => {
     case 'moderator':
       return value;
     case 'client':
-    default:
       return 'client';
+    default:
+      return 'guest';
   }
 };
 
@@ -509,18 +510,25 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
   } catch (error) {
     if (error instanceof AuthStateQueryError) {
       const cachedSnapshot = ctx.session.authSnapshot;
-      const snapshot: AuthStateSnapshot = {
-        role: cachedSnapshot.role,
-        status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
-        phoneVerified: cachedSnapshot.phoneVerified,
-        userIsVerified: cachedSnapshot.userIsVerified,
-        executor: cloneExecutorState(cachedSnapshot.executor),
-        city: cachedSnapshot.city,
-        stale: true,
-      } satisfies AuthStateSnapshot;
 
-      const authState = buildAuthStateFromSnapshot(ctx, snapshot);
-      applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
+      if (cachedSnapshot) {
+        const snapshot: AuthStateSnapshot = {
+          role: cachedSnapshot.role,
+          status: cachedSnapshot.status ?? deriveSnapshotStatus(cachedSnapshot.role),
+          phoneVerified: cachedSnapshot.phoneVerified,
+          userIsVerified: cachedSnapshot.userIsVerified,
+          executor: cloneExecutorState(cachedSnapshot.executor),
+          city: cachedSnapshot.city,
+          stale: true,
+        } satisfies AuthStateSnapshot;
+
+        const authState = buildAuthStateFromSnapshot(ctx, snapshot);
+        applyAuthState(ctx, authState, { isAuthenticated: false, isStale: true });
+      } else {
+        const guestState = createGuestAuthState(ctx.from!);
+        applyAuthState(ctx, guestState, { isAuthenticated: false, isStale: true });
+      }
+
       ctx.session.isAuthenticated = false;
       ctx.session.authSnapshot.stale = true;
       logger.warn(

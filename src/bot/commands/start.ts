@@ -7,7 +7,7 @@ import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from './sets';
 import { hideClientMenu, sendClientMenu } from '../../ui/clientMenu';
 import { bindInlineKeyboardToUser } from '../services/callbackTokens';
 import { askPhone } from '../flows/common/phoneCollect';
-import { ensureExecutorState } from '../flows/executor/menu';
+import { ensureExecutorState, showExecutorMenu } from '../flows/executor/menu';
 import { startExecutorVerification } from '../flows/executor/verification';
 import { startExecutorSubscription } from '../flows/executor/subscription';
 
@@ -62,7 +62,7 @@ const applyCommandsForRole = async (ctx: BotContext): Promise<void> => {
   }
 
   const role = ctx.auth?.user.role;
-  if (role === 'client' || role === 'guest' || role === undefined) {
+  if (role === 'client') {
     await setChatCommands(ctx.telegram, ctx.chat.id, CLIENT_COMMANDS, { showMenuButton: true });
     return;
   }
@@ -84,14 +84,9 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
   }
 
   await applyCommandsForRole(ctx);
-  await hideClientMenu(ctx, 'Возвращаю стандартную клавиатуру…');
-
-  const userStatus = ctx.auth.user.status;
   const userRole = ctx.auth.user.role;
-  const clientReadyStatuses: Array<typeof userStatus> = ['active_client', 'guest', 'awaiting_phone'];
-  const isClientRole = userRole === 'client' || userRole === 'guest';
-
-  if (isClientRole && clientReadyStatuses.includes(userStatus)) {
+  if (userRole === 'client') {
+    await hideClientMenu(ctx, 'Открываю главное меню…');
     await sendClientMenu(ctx, 'Чем займёмся дальше? Выберите действие из меню ниже.');
     return;
   }
@@ -102,8 +97,9 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
     await presentRoleSelection(ctx);
     return;
   }
+
   const verification = executorState.verification[role];
-  if (verification.status === 'collecting') {
+  if (verification.status === 'idle' || verification.status === 'collecting') {
     await startExecutorVerification(ctx);
     return;
   }
@@ -114,7 +110,7 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
-  await presentRoleSelection(ctx);
+  await showExecutorMenu(ctx);
 };
 
 export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
