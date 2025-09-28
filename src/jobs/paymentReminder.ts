@@ -9,6 +9,7 @@ import { config, logger } from '../config';
 import type { PoolClient } from '../db/client';
 import { pool } from '../db/client';
 import { loadSessionState, saveSessionState, type SessionKey } from '../db/sessions';
+import { updateUserSubscriptionStatus } from '../db/users';
 
 type ReminderReason = 'awaitingReceipt' | 'trialEnding';
 
@@ -68,6 +69,76 @@ const parseReminderTimestamp = (value: unknown): number | undefined => {
   }
 
   return undefined;
+};
+
+interface ExpiredTrialRow {
+  tg_id: number | string;
+  status: string | null;
+  trial_expires_at: Date | string | null;
+}
+
+const parseTelegramId = (value: number | string): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value);
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  return null;
+};
+
+const expireExpiredTrials = async (client: PoolClient, now: Date): Promise<void> => {
+  let rows: ExpiredTrialRow[] = [];
+  try {
+    ({ rows } = await client.query<ExpiredTrialRow>(
+      `
+        SELECT tg_id, status, trial_expires_at
+        FROM users
+        WHERE role = ANY($1::user_role[])
+          AND sub_status = 'trial'
+          AND trial_expires_at IS NOT NULL
+          AND trial_expires_at <= $2
+      `,
+      [['executor'], now],
+    ));
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to load expired trials for reminders');
+    return;
+  }
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  for (const row of rows) {
+    const telegramId = parseTelegramId(row.tg_id);
+    if (!telegramId) {
+      logger.warn({ rawId: row.tg_id }, 'Skipping expired trial update due to invalid user id');
+      continue;
+    }
+
+    const trialExpiresAt = parseTimestamp(row.trial_expires_at) ?? now;
+    const preserveStatus = row.status === 'suspended' || row.status === 'banned';
+
+    try {
+      await updateUserSubscriptionStatus({
+        client,
+        telegramId,
+        subscriptionStatus: 'expired',
+        subscriptionExpiresAt: trialExpiresAt,
+        trialExpiresAt: null,
+        hasActiveOrder: false,
+        status: preserveStatus ? undefined : 'trial_expired',
+        updatedAt: now,
+      });
+      logger.info({ telegramId }, 'Marked trial as expired');
+    } catch (error) {
+      logger.error({ err: error, telegramId }, 'Failed to update user after trial expiration');
+    }
+  }
 };
 
 const gatherReminderDescriptors = async (
@@ -304,6 +375,7 @@ const executeReminderCycle = async (
   const client = await pool.connect();
   let candidates: ReminderCandidate[] = [];
   try {
+    await expireExpiredTrials(client, now);
     const descriptors = await gatherReminderDescriptors(client, now);
     candidates = await loadReminderCandidates(client, descriptors);
   } catch (error) {

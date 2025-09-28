@@ -216,6 +216,10 @@ const activateTrialSubscription = async (ctx: BotContext): Promise<void> => {
       lastName: ctx.auth.user.lastName ?? undefined,
       phone: ctx.auth.user.phone ?? ctx.session.phoneNumber ?? undefined,
       shortId: trial.subscriptionId ? String(trial.subscriptionId) : undefined,
+      subscriptionStatus: 'trial',
+      subscriptionExpiresAt: trial.expiresAt,
+      trialExpiresAt: trial.expiresAt,
+      hasActiveOrder: ctx.auth.user.hasActiveOrder,
     };
 
     await reportSubscriptionTrialActivated(ctx.telegram, subscriber, trial.expiresAt);

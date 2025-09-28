@@ -9,6 +9,7 @@ import {
   type ActiveSubscriptionDetails,
 } from '../../db/subscriptions';
 import type { BotContext } from '../types';
+import { updateUserSubscriptionStatus } from '../../db/users';
 
 const INACTIVE_STATUSES = new Set<ChatMemberUpdated['new_chat_member']['status']>([
   'left',
@@ -75,6 +76,16 @@ export const registerMembershipSync = (
         },
         'Marked subscription inactive after membership downgrade',
       );
+      const subscriptionExpiresAt = subscription.expiresAt ?? endedAt;
+      await updateUserSubscriptionStatus({
+        telegramId: userId,
+        subscriptionStatus: 'expired',
+        subscriptionExpiresAt,
+        trialExpiresAt: null,
+        hasActiveOrder: false,
+        status: 'trial_expired',
+        updatedAt: endedAt,
+      });
     } catch (error) {
       logger.error(
         { err: error, chatId, userId, subscriptionId: subscription.id },

@@ -1,6 +1,7 @@
 import type { ExecutorKind } from '../bot/types';
 import type { PoolClient } from './client';
 import { pool, withTx } from './client';
+import { updateUserSubscriptionStatus } from './users';
 
 export type SubscriptionStatus =
   | 'pending'
@@ -499,6 +500,17 @@ export const activateSubscription = async (
       ],
     );
 
+    await updateUserSubscriptionStatus({
+      client,
+      telegramId,
+      subscriptionStatus: 'active',
+      subscriptionExpiresAt: periodEnd,
+      trialStartedAt: null,
+      trialExpiresAt: null,
+      status: 'active_executor',
+      updatedAt: submittedAt,
+    });
+
     return {
       subscriptionId,
       telegramId,
@@ -604,6 +616,17 @@ export const createTrialSubscription = async (
         throw new Error(`Failed to determine subscription id for ${existing.id}`);
       }
 
+      await updateUserSubscriptionStatus({
+        client,
+        telegramId,
+        subscriptionStatus: 'trial',
+        subscriptionExpiresAt: nextBillingAt,
+        trialStartedAt: now,
+        trialExpiresAt: nextBillingAt,
+        status: 'active_executor',
+        updatedAt: now,
+      });
+
       return {
         subscriptionId,
         expiresAt: nextBillingAt,
@@ -662,6 +685,17 @@ export const createTrialSubscription = async (
     if (subscriptionId === undefined) {
       throw new Error(`Failed to parse subscription id returned from insert (${row.id})`);
     }
+
+    await updateUserSubscriptionStatus({
+      client,
+      telegramId,
+      subscriptionStatus: 'trial',
+      subscriptionExpiresAt: nextBillingAt,
+      trialStartedAt: now,
+      trialExpiresAt: nextBillingAt,
+      status: 'active_executor',
+      updatedAt: now,
+    });
 
     return {
       subscriptionId,

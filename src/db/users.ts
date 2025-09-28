@@ -1,5 +1,6 @@
 import { pool } from './client';
-import type { ExecutorRole, UserStatus } from '../bot/types';
+import type { PoolClient } from './client';
+import type { ExecutorRole, UserStatus, UserSubscriptionStatus } from '../bot/types';
 
 export interface EnsureClientRoleParams {
   telegramId: number;
@@ -22,6 +23,18 @@ export interface UpdateUserRoleParams {
 export interface SetUserBlockedStatusParams {
   telegramId: number;
   isBlocked: boolean;
+}
+
+export interface UpdateUserSubscriptionStatusParams {
+  telegramId: number;
+  client?: PoolClient;
+  subscriptionStatus?: UserSubscriptionStatus;
+  subscriptionExpiresAt?: Date | null;
+  trialStartedAt?: Date | null;
+  trialExpiresAt?: Date | null;
+  hasActiveOrder?: boolean | null;
+  status?: UserStatus;
+  updatedAt?: Date;
 }
 
 export const ensureClientRole = async ({
@@ -166,5 +179,77 @@ export const setUserBlockedStatus = async ({
       WHERE tg_id = $1
     `,
     [telegramId, isBlocked],
+  );
+};
+
+export const updateUserSubscriptionStatus = async ({
+  telegramId,
+  client,
+  subscriptionStatus,
+  subscriptionExpiresAt,
+  trialStartedAt,
+  trialExpiresAt,
+  hasActiveOrder,
+  status,
+  updatedAt,
+}: UpdateUserSubscriptionStatusParams): Promise<void> => {
+  const assignments: string[] = [];
+  const values: unknown[] = [telegramId];
+  let index = 2;
+
+  if (subscriptionStatus !== undefined) {
+    assignments.push(`sub_status = $${index}::user_subscription_status`);
+    values.push(subscriptionStatus);
+    index += 1;
+  }
+
+  if (subscriptionExpiresAt !== undefined) {
+    assignments.push(`sub_expires_at = $${index}`);
+    values.push(subscriptionExpiresAt);
+    index += 1;
+  }
+
+  if (trialStartedAt !== undefined) {
+    assignments.push(`trial_started_at = $${index}`);
+    values.push(trialStartedAt);
+    index += 1;
+  }
+
+  if (trialExpiresAt !== undefined) {
+    assignments.push(`trial_expires_at = $${index}`);
+    values.push(trialExpiresAt);
+    index += 1;
+  }
+
+  if (hasActiveOrder !== undefined) {
+    assignments.push(`has_active_order = $${index}`);
+    values.push(hasActiveOrder);
+    index += 1;
+  }
+
+  if (status !== undefined) {
+    assignments.push(
+      `status = CASE WHEN status IN ('suspended', 'banned') THEN status ELSE $${index} END`,
+    );
+    values.push(status);
+    index += 1;
+  }
+
+  if (assignments.length === 0) {
+    return;
+  }
+
+  const effectiveUpdatedAt = updatedAt ?? new Date();
+  assignments.push(`updated_at = $${index}`);
+  values.push(effectiveUpdatedAt);
+
+  const executor = client ?? pool;
+  await executor.query(
+    `
+      UPDATE users
+      SET ${assignments.join(',\n          ')}
+      WHERE tg_id = $1
+    `,
+    values,
   );
 };
