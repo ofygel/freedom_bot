@@ -9,6 +9,7 @@ import { resetClientOrderDraft } from '../../services/orders';
 import { ui } from '../../ui';
 import { copy } from '../../copy';
 import { ROLE_SELECTION_BACK_ACTION, EXECUTOR_ROLE_PENDING_CITY_ACTION } from '../executor/roleSelectionConstants';
+import { clearOnboardingState } from '../../services/onboarding';
 
 export const CITY_CONFIRM_STEP_ID = 'common:city:confirm';
 
@@ -88,9 +89,7 @@ export const askCity = async (
 
   if (homeAction === ROLE_SELECTION_BACK_ACTION && ctx.session.executor) {
     ctx.session.executor.awaitingRoleSelection = true;
-    if (ctx.session.executor.roleSelectionStage === undefined) {
-      ctx.session.executor.roleSelectionStage = 'city';
-    }
+    ctx.session.executor.roleSelectionStage = 'city';
   }
 
   await ui.step(ctx, {
@@ -201,6 +200,7 @@ export const registerCityAction = (bot: Telegraf<BotContext>): void => {
     if (ctx.session.executor?.roleSelectionStage === 'city') {
       ctx.session.executor.roleSelectionStage = undefined;
       ctx.session.executor.awaitingRoleSelection = false;
+      clearOnboardingState(ctx);
     }
 
     if (typeof next === 'function') {

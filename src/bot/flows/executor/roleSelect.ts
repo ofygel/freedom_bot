@@ -16,6 +16,7 @@ import {
   EXECUTOR_KIND_COURIER_ACTION,
   EXECUTOR_KIND_DRIVER_ACTION,
 } from './roleSelectionConstants';
+import { clearOnboardingState } from '../../services/onboarding';
 
 const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise<void> => {
   if (ctx.chat?.type !== 'private') {
@@ -25,7 +26,7 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
 
   const state = ensureExecutorState(ctx);
   state.role = role;
-  state.awaitingRoleSelection = false;
+  state.awaitingRoleSelection = true;
   state.roleSelectionStage = 'city';
   ctx.auth.user.role = 'executor';
   ctx.auth.user.executorKind = role;
@@ -83,6 +84,7 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
     id: CITY_CONFIRM_STEP_ID,
     homeAction: ROLE_SELECTION_BACK_ACTION,
   });
+  clearOnboardingState(ctx);
 };
 
 export const registerExecutorRoleSelect = (bot: Telegraf<BotContext>): void => {

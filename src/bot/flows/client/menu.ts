@@ -24,6 +24,7 @@ import { buildInlineKeyboard } from '../../keyboards/common';
 import { bindInlineKeyboardToUser } from '../../services/callbackTokens';
 import { copy } from '../../copy';
 import { ROLE_PICK_CLIENT_ACTION } from '../executor/roleSelectionConstants';
+import { clearOnboardingState } from '../../services/onboarding';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
@@ -141,6 +142,8 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   if (phone && !ctx.session.phoneNumber) {
     ctx.session.phoneNumber = phone;
   }
+
+  clearOnboardingState(ctx);
 };
 
 export const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> => {
