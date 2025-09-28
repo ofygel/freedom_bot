@@ -307,6 +307,8 @@ export interface AppConfig {
   timezone: string;
   jobs: {
     nudger: string;
+    nudgerEnabled: boolean;
+    nudgerInactivitySeconds: number;
     subscription: string;
     metrics: string;
     paymentReminder: string;
@@ -383,6 +385,8 @@ export const loadConfig = (): AppConfig => {
     timezone: getOptionalString('TIMEZONE') ?? 'Asia/Almaty',
     jobs: {
       nudger: getCronExpression('JOBS_NUDGER_CRON', '*/1 * * * *'),
+      nudgerEnabled: parseBoolean(process.env.JOBS_NUDGER_ENABLED),
+      nudgerInactivitySeconds: parsePositiveInt('JOBS_NUDGER_INACTIVITY_SECONDS', 90),
       subscription: getCronExpression('JOBS_SUBSCRIPTION_CRON', '*/10 * * * *'),
       metrics: getCronExpression('JOBS_METRICS_CRON', '*/60 * * * * *'),
       paymentReminder: getCronExpression('JOBS_PAYMENT_REMINDER_CRON', '*/10 * * * *'),

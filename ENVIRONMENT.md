@@ -67,6 +67,13 @@ are missing or blank.
   subscription period from the bot. Enabled by default; set to `false` to disable
   the trial offer entirely.
 
+## Background jobs
+
+- `JOBS_NUDGER_ENABLED` – Enables the inactivity nudger that reminds users about
+  unfinished flows. Disabled by default.
+- `JOBS_NUDGER_INACTIVITY_SECONDS` – Amount of idle time (in seconds) after which
+  the nudger sends a reminder message. Defaults to 90 seconds.
+
 ## Location and geocoding
 
 - `CITY_DEFAULT` – Optional default city appended to short address queries.
