@@ -86,6 +86,8 @@ export const askCity = async (
 
   const keyboard = buildCityKeyboard();
   const homeAction = options.homeAction ?? resolveHomeAction(ctx);
+  const needsBackLabel = homeAction === ROLE_SELECTION_BACK_ACTION;
+  const homeLabel = options.homeLabel ?? (needsBackLabel ? '⬅️ Назад' : undefined);
 
   if (homeAction === ROLE_SELECTION_BACK_ACTION && ctx.session.executor) {
     ctx.session.executor.awaitingRoleSelection = true;
@@ -97,7 +99,7 @@ export const askCity = async (
     text: title,
     keyboard,
     homeAction,
-    homeLabel: options.homeLabel,
+    homeLabel,
   });
 };
 
