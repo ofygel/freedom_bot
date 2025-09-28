@@ -23,6 +23,20 @@ export const enterSafeMode = async (
 
   const alreadySafe = ctx.session.safeMode === true && ctx.session.isDegraded === true;
 
+  const providedReason =
+    typeof options.reason === 'string' ? options.reason.trim() : undefined;
+  if (providedReason && providedReason.length > 0) {
+    ctx.session.safeModeReason = providedReason;
+  }
+
+  const providedPrompt =
+    typeof options.prompt === 'string' ? options.prompt.trim() : undefined;
+  if (providedPrompt && providedPrompt.length > 0) {
+    ctx.session.safeModePrompt = providedPrompt;
+  } else if (!ctx.session.safeModePrompt) {
+    ctx.session.safeModePrompt = DEFAULT_SAFE_MODE_PROMPT;
+  }
+
   ctx.session.safeMode = true;
   ctx.session.isDegraded = true;
   ctx.session.isAuthenticated = false;
@@ -54,7 +68,8 @@ export const enterSafeMode = async (
   }
 
   try {
-    await showSafeModeCard(ctx, { prompt: options.prompt ?? DEFAULT_SAFE_MODE_PROMPT });
+    const promptToShow = ctx.session.safeModePrompt ?? DEFAULT_SAFE_MODE_PROMPT;
+    await showSafeModeCard(ctx, { prompt: promptToShow });
   } catch (error) {
     logger.warn(
       { err: error, chatId: ctx.chat.id },

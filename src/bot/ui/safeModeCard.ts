@@ -49,9 +49,26 @@ export const showSafeModeCard = async (
     return;
   }
 
+  const promptFromOptions =
+    typeof options.prompt === 'string' ? options.prompt.trim() : undefined;
+  const sessionPrompt =
+    typeof ctx.session?.safeModePrompt === 'string'
+      ? ctx.session.safeModePrompt.trim()
+      : undefined;
+  const resolvedPrompt =
+    promptFromOptions && promptFromOptions.length > 0
+      ? promptFromOptions
+      : sessionPrompt && sessionPrompt.length > 0
+        ? sessionPrompt
+        : undefined;
+
+  if (resolvedPrompt && ctx.session) {
+    ctx.session.safeModePrompt = resolvedPrompt;
+  }
+
   await ui.step(ctx, {
     id: SAFE_MODE_CARD_STEP_ID,
-    text: buildSafeModeCardText(options.prompt),
+    text: buildSafeModeCardText(resolvedPrompt),
     keyboard: buildSafeModeKeyboard(),
     cleanup: false,
   });

@@ -210,6 +210,8 @@ export interface SessionState {
   isAuthenticated: boolean;
   safeMode: boolean;
   isDegraded: boolean;
+  safeModeReason?: string;
+  safeModePrompt?: string;
   awaitingPhone: boolean;
   phoneNumber?: string;
   user?: SessionUser;
