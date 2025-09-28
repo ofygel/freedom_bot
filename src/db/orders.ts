@@ -190,17 +190,32 @@ const updateActiveOrdersGauge = async (queryable: Pick<PoolClient, 'query'>): Pr
 const updateExecutorHasActiveOrder = async (
   client: PoolClient,
   executorId: number | null | undefined,
-  hasActiveOrder: boolean,
-): Promise<void> => {
+): Promise<boolean> => {
   if (typeof executorId !== 'number') {
-    return;
+    return false;
   }
+
+  const { rows } = await client.query<{ has_active_order: boolean }>(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM orders
+        WHERE claimed_by = $1
+          AND status = 'claimed'
+      ) AS has_active_order
+    `,
+    [executorId],
+  );
+
+  const hasActiveOrder = Boolean(rows[0]?.has_active_order);
 
   await updateUserSubscriptionStatus({
     client,
     telegramId: executorId,
     hasActiveOrder,
   });
+
+  return hasActiveOrder;
 };
 
 export const createOrder = async (input: OrderInsertInput): Promise<OrderRecord> => {
@@ -368,7 +383,7 @@ export const tryClaimOrder = async (
     return null;
   }
 
-  await updateExecutorHasActiveOrder(client, claimedBy, true);
+  await updateExecutorHasActiveOrder(client, claimedBy);
   await updateActiveOrdersGauge(client);
   return mapOrderRow(row);
 };
@@ -396,7 +411,7 @@ export const tryReleaseOrder = async (
     return null;
   }
 
-  await updateExecutorHasActiveOrder(client, claimedBy, false);
+  await updateExecutorHasActiveOrder(client, claimedBy);
   await updateActiveOrdersGauge(client);
   return mapOrderRow(row);
 };
@@ -424,7 +439,7 @@ export const tryReclaimOrder = async (
     return null;
   }
 
-  await updateExecutorHasActiveOrder(client, executorId, true);
+  await updateExecutorHasActiveOrder(client, executorId);
   await updateActiveOrdersGauge(client);
   return mapOrderRow(row);
 };
@@ -450,7 +465,7 @@ export const tryCompleteOrder = async (
     return null;
   }
 
-  await updateExecutorHasActiveOrder(client, claimedBy, false);
+  await updateExecutorHasActiveOrder(client, claimedBy);
   await updateActiveOrdersGauge(client);
   return mapOrderRow(row);
 };

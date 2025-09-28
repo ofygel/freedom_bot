@@ -322,17 +322,17 @@ const ensureExecutorReady = async (
 const loadActiveOrder = async (ctx: BotContext): Promise<OrderRecord | null> => {
   const executorId = ctx.auth.user.telegramId;
   if (typeof executorId !== 'number') {
+    ctx.auth.user.hasActiveOrder = false;
     return null;
   }
 
   try {
     const order = await findActiveOrderForExecutor(executorId);
-    if (order) {
-      ctx.auth.user.hasActiveOrder = true;
-    }
+    ctx.auth.user.hasActiveOrder = Boolean(order);
     return order;
   } catch (error) {
     logger.error({ err: error, executorId }, 'Failed to load active order for executor');
+    ctx.auth.user.hasActiveOrder = false;
     return null;
   }
 };
