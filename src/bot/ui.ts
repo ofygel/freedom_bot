@@ -28,6 +28,8 @@ export interface UiTrackOptions {
   homeAction?: string;
   /** Information that allows restoring the step after a failure. */
   recovery?: FlowRecoveryDescriptor;
+  /** Arbitrary payload stored alongside the flow state (used by nudger, hints, etc.). */
+  payload?: unknown;
 }
 
 const ensureUiState = (ctx: BotContext): UiSessionState => {
@@ -106,10 +108,20 @@ const trackFlowStep = async (ctx: BotContext, options: UiTrackOptions): Promise<
       return;
     }
 
-    await updateFlowMeta(pool, key, options.id, {
+    const payload: Record<string, unknown> = {
       homeAction: options.homeAction ?? null,
       recovery: options.recovery ?? null,
-    });
+    };
+
+    if (options.payload !== undefined) {
+      if (options.payload && typeof options.payload === 'object') {
+        Object.assign(payload, options.payload as Record<string, unknown>);
+      } else {
+        payload.payload = options.payload;
+      }
+    }
+
+    await updateFlowMeta(pool, key, options.id, payload);
   } catch (error) {
     logger.debug({ err: error, stepId: options.id }, 'Failed to update flow metadata');
   }

@@ -4,7 +4,8 @@ import type { BotContext } from '../types';
 import { setChatCommands } from '../services/commands';
 import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from './sets';
 import { hideClientMenu, sendClientMenu } from '../../ui/clientMenu';
-import { askPhone } from '../flows/common/phoneCollect';
+import { logger } from '../../config';
+import { askPhone, buildPhoneCollectKeyboard, PHONE_HELP_BUTTON_LABEL } from '../flows/common/phoneCollect';
 import { ensureExecutorState, showExecutorMenu } from '../flows/executor/menu';
 import { startExecutorVerification } from '../flows/executor/verification';
 import { startExecutorSubscription } from '../flows/executor/subscription';
@@ -34,6 +35,25 @@ const EXECUTOR_KIND_TITLE = 'Выбор специализации';
 const EXECUTOR_KIND_DESCRIPTION =
   'Уточните, какие заказы хотите получать: доставка подходит курьерам, поездки — водителям.';
 const EXECUTOR_KIND_HINT = 'ℹ️ Курьеры занимаются доставкой, водители помогают с поездками.';
+
+const START_WELCOME_STEP_ID = 'start:welcome';
+const START_WELCOME_TITLE = 'Добро пожаловать в Freedom Bot';
+const START_WELCOME_TEXT = [
+  'Freedom Bot помогает оформить заказ и подключиться к исполнителям.',
+  'Чтобы начать, поделитесь контактом — Telegram отправит номер автоматически. Если нужна подсказка, нажмите «Помощь».',
+].join('\n\n');
+const START_WELCOME_ACTIONS = ['📲 Поделиться контактом', PHONE_HELP_BUTTON_LABEL];
+
+const buildStartWelcomeText = (): string => [START_WELCOME_TITLE, '', START_WELCOME_TEXT].join('\n');
+
+const buildStartWelcomePayload = () => ({
+  step: {
+    id: START_WELCOME_STEP_ID,
+    title: START_WELCOME_TITLE,
+    text: START_WELCOME_TEXT,
+    actions: START_WELCOME_ACTIONS,
+  },
+});
 
 const buildRolePickKeyboard = () =>
   buildInlineKeyboard([
@@ -140,6 +160,16 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
   }
 
   if (!ctx.session.user?.phoneVerified) {
+    try {
+      await ui.step(ctx, {
+        id: START_WELCOME_STEP_ID,
+        text: buildStartWelcomeText(),
+        keyboard: buildPhoneCollectKeyboard(),
+        payload: buildStartWelcomePayload(),
+      });
+    } catch (error) {
+      logger.debug({ err: error, chatId: ctx.chat?.id }, 'Failed to render start welcome step');
+    }
     await askPhone(ctx);
     return;
   }
