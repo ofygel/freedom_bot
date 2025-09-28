@@ -25,6 +25,7 @@ import { bindInlineKeyboardToUser } from '../../services/callbackTokens';
 import { copy } from '../../copy';
 import { ROLE_PICK_CLIENT_ACTION } from '../executor/roleSelectionConstants';
 import { clearOnboardingState } from '../../services/onboarding';
+import { PROFILE_BUTTON_LABEL, renderProfileCard } from '../common/profileCard';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
@@ -33,6 +34,7 @@ const CLIENT_MENU_REFRESH_ACTION = 'client:menu:refresh';
 const CLIENT_MENU_SUPPORT_ACTION = 'client:menu:support';
 const CLIENT_MENU_CITY_SELECT_ACTION = 'client:menu:city';
 const CLIENT_MENU_SWITCH_ROLE_ACTION = 'client:menu:switch-role';
+const CLIENT_MENU_PROFILE_ACTION = 'client:menu:profile';
 export const logClientMenuClick = async (
   ctx: BotContext,
   target: string,
@@ -190,12 +192,13 @@ export const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> 
       ],
       [
         { label: CLIENT_MENU.orders, action: CLIENT_ORDERS_ACTION },
-        { label: CLIENT_MENU.support, action: CLIENT_MENU_SUPPORT_ACTION },
+        { label: PROFILE_BUTTON_LABEL, action: CLIENT_MENU_PROFILE_ACTION },
       ],
       [
+        { label: CLIENT_MENU.support, action: CLIENT_MENU_SUPPORT_ACTION },
         { label: CLIENT_MENU.city, action: CLIENT_MENU_CITY_SELECT_ACTION },
-        { label: CLIENT_MENU.switchRole, action: CLIENT_MENU_SWITCH_ROLE_ACTION },
       ],
+      [{ label: CLIENT_MENU.switchRole, action: CLIENT_MENU_SWITCH_ROLE_ACTION }],
       [{ label: copy.refresh, action: CLIENT_MENU_REFRESH_ACTION }],
     ];
 
@@ -287,6 +290,26 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     await promptClientSupport(ctx);
   });
 
+  bot.action(CLIENT_MENU_PROFILE_ACTION, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      await showMenu(ctx);
+      return;
+    }
+
+    await logClientMenuClick(ctx, 'client_home_menu:profile');
+
+    try {
+      await ctx.answerCbQuery();
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to answer client menu profile callback');
+    }
+
+    await renderProfileCard(ctx, {
+      backAction: CLIENT_MENU_ACTION,
+      homeAction: CLIENT_MENU_ACTION,
+    });
+  });
+
   bot.action(CLIENT_MENU_CITY_SELECT_ACTION, async (ctx) => {
     if (!isClientChat(ctx, ctx.auth?.user.role)) {
       await showMenu(ctx);
@@ -360,6 +383,20 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     await promptClientSupport(ctx);
   });
 
+  bot.command('profile', async (ctx, next) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      if (typeof next === 'function') {
+        await next();
+      }
+      return;
+    }
+
+    await renderProfileCard(ctx, {
+      backAction: CLIENT_MENU_ACTION,
+      homeAction: CLIENT_MENU_ACTION,
+    });
+  });
+
   bot.command('role', async (ctx) => {
     if (ctx.chat?.type !== 'private') {
       await ctx.reply('Смена роли доступна только в личном чате с ботом.');
@@ -398,6 +435,17 @@ export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     await promptClientSupport(ctx);
+  });
+
+  bot.hears(CLIENT_MENU.profile, async (ctx) => {
+    if (!isClientChat(ctx, ctx.auth?.user.role)) {
+      return;
+    }
+
+    await renderProfileCard(ctx, {
+      backAction: CLIENT_MENU_ACTION,
+      homeAction: CLIENT_MENU_ACTION,
+    });
   });
 
   bot.hears(CLIENT_MENU.city, async (ctx) => {

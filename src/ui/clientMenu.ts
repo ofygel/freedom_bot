@@ -3,11 +3,13 @@ import type { Telegram } from 'telegraf';
 import type { Message } from 'telegraf/typings/core/types/typegram';
 
 import type { BotContext, UserRole } from '../bot/types';
+import { PROFILE_BUTTON_LABEL } from '../bot/flows/common/profileCard';
 
 export const CLIENT_MENU = {
   taxi: '🚕 Заказать такси',
   delivery: '📦 Доставка',
   orders: '🧾 Мои заказы',
+  profile: PROFILE_BUTTON_LABEL,
   support: '🆘 Поддержка',
   city: '🏙️ Сменить город',
   switchRole: '👥 Сменить роль',
@@ -17,7 +19,7 @@ export const CLIENT_MENU = {
 const buildKeyboard = (): ReturnType<typeof Markup.keyboard> =>
   Markup.keyboard([
     [CLIENT_MENU.taxi, CLIENT_MENU.delivery],
-    [CLIENT_MENU.orders],
+    [CLIENT_MENU.orders, CLIENT_MENU.profile],
     [CLIENT_MENU.support, CLIENT_MENU.city],
     [CLIENT_MENU.switchRole],
     [CLIENT_MENU.refresh],
@@ -88,6 +90,7 @@ export const clientMenuText = (): string =>
     '• 🚕 Такси — подача машины и поездка по указанному адресу.',
     '• 📦 Доставка — курьер заберёт и доставит вашу посылку.',
     '• 🧾 Мои заказы — проверка статуса и управление оформленными заказами.',
+    '• 👤 Профиль — данные аккаунта, телефон и выбранный город.',
     '• 🆘 Поддержка — напишите нам, если нужна помощь.',
     '• 🏙️ Сменить город — обновите географию заказов.',
     '• 👥 Сменить роль — переключитесь на режим исполнителя или клиента.',
