@@ -269,6 +269,9 @@ const buildOrderDetailText = (
   if (options.confirmCancellation) {
     lines.push('');
     lines.push('⚠️ Подтвердите отмену заказа. После отмены он станет недоступен исполнителям.');
+    if (order.status === 'claimed') {
+      lines.push('Если исполнитель уже назначен, возможна комиссия.');
+    }
   }
 
   lines.push('');
