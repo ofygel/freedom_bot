@@ -16,7 +16,6 @@ import type { BotContext } from '../../types';
 import { presentRolePick } from '../../commands/start';
 import { ensureExecutorState, EXECUTOR_SUBSCRIPTION_ACTION } from '../executor/menu';
 import { reportRoleSet, toUserIdentity } from '../../services/reports';
-import { ensureExecutorState } from '../executor/menu';
 import { promptClientSupport } from './support';
 import { askCity, getCityFromContext, CITY_ACTION_PATTERN } from '../common/citySelect';
 import { CLIENT_ORDERS_ACTION } from './orderActions';
