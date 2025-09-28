@@ -3,6 +3,7 @@ import type { BotContext } from '../types';
 
 import { safeEditReplyMarkup } from '../../utils/tg';
 import { showSafeModeCard } from '../ui/safeModeCard';
+import { reportSafeModeEnter } from './reports';
 
 const DEFAULT_SAFE_MODE_PROMPT =
   'Мы восстанавливаем данные. Пока доступны действия: [Профиль], [Сменить город], [Помощь].';
@@ -48,6 +49,11 @@ export const enterSafeMode = async (
   }
 
   if (!alreadySafe) {
+    await reportSafeModeEnter(ctx.telegram, {
+      chat: ctx.chat ?? undefined,
+      user: ctx.from ?? undefined,
+      reason: options.reason,
+    });
     logger.warn(
       {
         chatId: ctx.chat?.id,
