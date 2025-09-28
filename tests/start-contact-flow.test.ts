@@ -11,6 +11,7 @@ let savePhone: typeof import('../src/bot/flows/common/phoneCollect')['savePhone'
 let askCityModule: typeof import('../src/bot/flows/common/citySelect');
 let usersDb: typeof import('../src/db/users');
 let dbClient: typeof import('../src/db/client');
+let reportsModule: typeof import('../src/bot/services/reports');
 
 before(async () => {
   registerStartCommand = (await import('../src/bot/commands/start')).registerStartCommand;
@@ -19,6 +20,7 @@ before(async () => {
   askCityModule = await import('../src/bot/flows/common/citySelect');
   usersDb = await import('../src/db/users');
   dbClient = await import('../src/db/client');
+  reportsModule = await import('../src/bot/services/reports');
 });
 
 const createSessionState = () => ({
@@ -114,14 +116,17 @@ const createMockBot = () => {
 let ensureClientRoleMock: ReturnType<typeof mock.method> | undefined;
 let askCityMock: ReturnType<typeof mock.method> | undefined;
 let poolQueryMock: ReturnType<typeof mock.method> | undefined;
+let reportRegistrationMock: ReturnType<typeof mock.method> | undefined;
 
 afterEach(() => {
   ensureClientRoleMock?.mock.restore();
   askCityMock?.mock.restore();
   poolQueryMock?.mock.restore();
+  reportRegistrationMock?.mock.restore();
   ensureClientRoleMock = undefined;
   askCityMock = undefined;
   poolQueryMock = undefined;
+  reportRegistrationMock = undefined;
 });
 
 describe('start contact flow', () => {
@@ -206,5 +211,50 @@ describe('start contact flow', () => {
 
     assert.equal(setMyCommands.mock.callCount(), 2);
     assert.equal(setChatMenuButton.mock.callCount(), 2);
+  });
+
+  it('upgrades guest users to active clients when saving phone', async () => {
+    poolQueryMock = mock.method(dbClient.pool, 'query', async () => ({ rows: [], rowCount: 1 }));
+    reportRegistrationMock = mock.method(
+      reportsModule,
+      'reportUserRegistration',
+      async () => ({ status: 'sent' }),
+    );
+
+    const session = createSessionState();
+    const auth = createAuthState();
+    auth.user.status = 'guest';
+
+    const ctx = {
+      chat: { id: 1002, type: 'private' as const },
+      from: { id: 1002, is_bot: false, first_name: 'Guest' },
+      session,
+      auth,
+      state: {},
+      reply: async (text: string) => ({ message_id: 1, chat: { id: 1002 }, text }),
+      telegram: {
+        setMyCommands: async () => undefined,
+        setChatMenuButton: async () => undefined,
+      },
+    } as unknown as BotContext;
+
+    const contactCtx = {
+      ...ctx,
+      message: {
+        contact: { phone_number: '+1234567890', user_id: 1002 },
+      } as BotContext['message'],
+    } as BotContext;
+
+    await savePhone(contactCtx, async () => {});
+
+    assert.equal(auth.user.status, 'active_client');
+
+    const call = poolQueryMock?.mock.calls[0];
+    assert.ok(call, 'database update should be performed');
+    assert.match(
+      String(call.arguments[0]),
+      /WHEN status IN \('awaiting_phone', 'guest'\) THEN 'active_client'/,
+    );
+    assert.deepEqual(call.arguments[1], ['+1234567890', 1002]);
   });
 });

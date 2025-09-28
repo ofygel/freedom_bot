@@ -119,6 +119,7 @@ export const savePhone: MiddlewareFn<BotContext> = async (ctx, next) => {
           phone_verified = true,
           status = CASE
             WHEN status IN ('suspended', 'banned') THEN status
+            WHEN status IN ('awaiting_phone', 'guest') THEN 'active_client'
             ELSE COALESCE(status, 'active_client')
           END,
           updated_at = now()
