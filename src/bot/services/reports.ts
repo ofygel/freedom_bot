@@ -276,6 +276,29 @@ export const sendStatsReport = async (
   }
 };
 
+const formatRoleLabel = (
+  role?: string,
+  executorRole?: ExecutorRole,
+): string | undefined => {
+  if (!role) {
+    return undefined;
+  }
+
+  const labels: Record<string, string> = {
+    guest: 'Гость',
+    client: 'Клиент',
+    executor: 'Исполнитель',
+    moderator: 'Модератор',
+  };
+
+  if (role === 'executor') {
+    const executorLabel = executorRole ? formatExecutorRole(executorRole) : undefined;
+    return executorLabel ? `${labels.executor} — ${executorLabel}` : labels.executor;
+  }
+
+  return labels[role] ?? role;
+};
+
 const buildRegistrationReport = (
   user: UserIdentity,
   phone?: string,
@@ -290,12 +313,95 @@ const buildRegistrationReport = (
   return lines.join('\n');
 };
 
+interface PhoneVerifiedReportContext {
+  user: UserIdentity;
+  city?: AppCity;
+}
+
+const buildPhoneVerifiedReport = ({ user, city }: PhoneVerifiedReportContext): string => {
+  const lines = ['📱 Телефон подтверждён'];
+  appendUserLine(lines, 'Пользователь', user);
+  appendPhoneLine(lines, user.phone);
+  if (city) {
+    const cityLabel = CITY_LABEL[city] ?? city;
+    lines.push(`Город: ${cityLabel}`);
+  }
+  return lines.join('\n');
+};
+
+interface RoleSetReportContext {
+  user: UserIdentity;
+  role: string;
+  executorRole?: ExecutorRole;
+  city?: AppCity;
+}
+
+const buildRoleSetReport = ({
+  user,
+  role,
+  executorRole,
+  city,
+}: RoleSetReportContext): string => {
+  const lines = ['🎭 Роль пользователя обновлена'];
+  appendUserLine(lines, 'Пользователь', user);
+  appendPhoneLine(lines, user.phone);
+  const roleLabel = formatRoleLabel(role, executorRole);
+  if (roleLabel) {
+    lines.push(`Роль: ${roleLabel}`);
+  }
+  if (city) {
+    const cityLabel = CITY_LABEL[city] ?? city;
+    lines.push(`Город: ${cityLabel}`);
+  }
+  return lines.join('\n');
+};
+
+interface CitySetReportContext {
+  user: UserIdentity;
+  city: AppCity;
+  role?: string;
+  executorRole?: ExecutorRole;
+}
+
+const buildCitySetReport = ({
+  user,
+  city,
+  role,
+  executorRole,
+}: CitySetReportContext): string => {
+  const lines = ['🗺️ Город обновлён'];
+  appendUserLine(lines, 'Пользователь', user);
+  appendPhoneLine(lines, user.phone);
+  const roleLabel = formatRoleLabel(role, executorRole);
+  if (roleLabel) {
+    lines.push(`Роль: ${roleLabel}`);
+  }
+  const cityLabel = CITY_LABEL[city] ?? city;
+  lines.push(`Город: ${cityLabel}`);
+  return lines.join('\n');
+};
+
 export const reportUserRegistration = async (
   telegram: Telegram,
   user: UserIdentity,
   phone?: string,
   source?: string,
 ): Promise<ReportSendResult> => sendStatsReport(telegram, buildRegistrationReport(user, phone, source));
+
+export const reportPhoneVerified = async (
+  telegram: Telegram,
+  context: PhoneVerifiedReportContext,
+): Promise<ReportSendResult> => sendStatsReport(telegram, buildPhoneVerifiedReport(context));
+
+export const reportRoleSet = async (
+  telegram: Telegram,
+  context: RoleSetReportContext,
+): Promise<ReportSendResult> => sendStatsReport(telegram, buildRoleSetReport(context));
+
+export const reportCitySet = async (
+  telegram: Telegram,
+  context: CitySetReportContext,
+): Promise<ReportSendResult> => sendStatsReport(telegram, buildCitySetReport(context));
 
 const buildVerificationSubmittedReport = (
   applicant: UserIdentity,

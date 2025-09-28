@@ -17,8 +17,9 @@ import {
   EXECUTOR_KIND_DRIVER_ACTION,
 } from './roleSelectionConstants';
 import { clearOnboardingState } from '../../services/onboarding';
+import { reportRoleSet, toUserIdentity } from '../../services/reports';
 
-const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise<void> => {
+export const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise<void> => {
   if (ctx.chat?.type !== 'private') {
     await ctx.answerCbQuery('Пожалуйста, продолжите в личных сообщениях с ботом.');
     return;
@@ -85,6 +86,27 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
     homeAction: ROLE_SELECTION_BACK_ACTION,
   });
   clearOnboardingState(ctx);
+
+  const identity = {
+    ...toUserIdentity(ctx.from),
+    telegramId: ctx.auth.user.telegramId,
+    username: ctx.from?.username ?? ctx.auth.user.username ?? undefined,
+    firstName: ctx.from?.first_name ?? ctx.auth.user.firstName ?? undefined,
+    lastName: ctx.from?.last_name ?? ctx.auth.user.lastName ?? undefined,
+    phone: ctx.auth.user.phone ?? ctx.session.phoneNumber ?? undefined,
+  };
+  const city = ctx.auth.user.citySelected ?? (ctx.chat?.type === 'private' ? ctx.session.city : undefined);
+
+  try {
+    await reportRoleSet(ctx.telegram, {
+      user: identity,
+      role: 'executor',
+      executorRole: role,
+      city,
+    });
+  } catch (error) {
+    logger.error({ err: error, telegramId: ctx.auth.user.telegramId }, 'Failed to report executor role');
+  }
 };
 
 export const registerExecutorRoleSelect = (bot: Telegraf<BotContext>): void => {
