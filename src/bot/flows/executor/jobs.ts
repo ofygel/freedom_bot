@@ -263,6 +263,10 @@ const ensureExecutorReady = async (
   }
 
   if (!access.hasActiveSubscription) {
+    if (ctx.auth.user.hasActiveOrder) {
+      return true;
+    }
+
     await startExecutorSubscription(ctx, { skipVerificationCheck: true });
     return false;
   }
@@ -532,6 +536,14 @@ const processJobFeed = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
+  const active = await loadActiveOrder(ctx);
+  if (active) {
+    await showJobInProgress(ctx, state, active);
+    return;
+  }
+
+  ctx.auth.user.hasActiveOrder = false;
+
   if (!(await ensureExecutorReady(ctx, state))) {
     return;
   }
@@ -541,13 +553,6 @@ const processJobFeed = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
-  const active = await loadActiveOrder(ctx);
-  if (active) {
-    await showJobInProgress(ctx, state, active);
-    return;
-  }
-
-  ctx.auth.user.hasActiveOrder = false;
   const orders = await loadFeedOrders(city);
   await showJobFeed(ctx, state, city, orders);
 };
