@@ -8,8 +8,12 @@ import { setChatCommands } from '../../services/commands';
 import type { BotContext, ExecutorRole } from '../../types';
 import { ui } from '../../ui';
 import { askCity, CITY_CONFIRM_STEP_ID } from '../common/citySelect';
-import { ensureExecutorState, EXECUTOR_MENU_ACTION, EXECUTOR_MENU_CITY_ACTION } from './menu';
+import { ensureExecutorState } from './menu';
 import { getExecutorRoleCopy } from '../../copy';
+import {
+  ROLE_SELECTION_BACK_ACTION,
+  EXECUTOR_ROLE_PENDING_CITY_ACTION,
+} from './roleSelectionConstants';
 
 const ROLE_COURIER_ACTION = 'role:courier';
 const ROLE_DRIVER_ACTION = 'role:driver';
@@ -23,6 +27,7 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
   const state = ensureExecutorState(ctx);
   state.role = role;
   state.awaitingRoleSelection = false;
+  state.roleSelectionStage = 'city';
   ctx.auth.user.role = 'executor';
   ctx.auth.user.executorKind = role;
   ctx.auth.user.status = 'active_executor';
@@ -70,11 +75,14 @@ const handleRoleSelection = async (ctx: BotContext, role: ExecutorRole): Promise
   await setChatCommands(ctx.telegram, ctx.chat.id, EXECUTOR_COMMANDS, { showMenuButton: true });
 
   await hideClientMenu(ctx, 'Переключаемся…');
-  ctx.session.ui.pendingCityAction = EXECUTOR_MENU_CITY_ACTION;
-  await askCity(ctx, 'Сначала выбери город для работы');
+  ctx.session.ui.pendingCityAction = EXECUTOR_ROLE_PENDING_CITY_ACTION;
+  await askCity(ctx, 'Сначала выбери город для работы', {
+    homeAction: ROLE_SELECTION_BACK_ACTION,
+    homeLabel: '⬅️ Назад',
+  });
   await ui.trackStep(ctx, {
     id: CITY_CONFIRM_STEP_ID,
-    homeAction: EXECUTOR_MENU_ACTION,
+    homeAction: ROLE_SELECTION_BACK_ACTION,
   });
 };
 

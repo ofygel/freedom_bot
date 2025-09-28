@@ -128,6 +128,7 @@ export interface ExecutorFlowState {
   verification: ExecutorVerificationState;
   subscription: ExecutorSubscriptionState;
   awaitingRoleSelection?: boolean;
+  roleSelectionStage?: 'role' | 'specialization' | 'city';
 }
 
 export type ClientOrderStage =
@@ -171,7 +172,7 @@ export interface UiTrackedStepState {
 export interface UiSessionState {
   steps: Record<string, UiTrackedStepState | undefined>;
   homeActions: string[];
-  pendingCityAction?: 'clientMenu' | 'executorMenu';
+  pendingCityAction?: 'clientMenu' | 'executorMenu' | 'executorRoleSelection';
   clientMenuVariant?: 'A' | 'B';
 }
 

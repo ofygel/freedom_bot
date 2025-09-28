@@ -244,6 +244,7 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
       verification: createDefaultVerificationState(),
       subscription: createSubscriptionState(),
       awaitingRoleSelection: derivedRole === undefined,
+      roleSelectionStage: derivedRole === undefined ? 'role' : undefined,
     } satisfies ExecutorFlowState;
   } else {
     const state = ctx.session.executor;
@@ -253,6 +254,7 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
       if (!awaitingSelection) {
         state.role = derivedRole;
         state.awaitingRoleSelection = false;
+        state.roleSelectionStage = undefined;
       }
     } else if (ctx.session.isAuthenticated === false && ctx.auth.user.role === 'guest') {
       // Preserve the existing executor role when auth falls back to the guest context.
@@ -260,6 +262,9 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
       state.role = undefined;
       if (!awaitingSelection) {
         state.awaitingRoleSelection = true;
+      }
+      if (state.roleSelectionStage === undefined) {
+        state.roleSelectionStage = 'role';
       }
     }
     state.verification = normaliseVerificationState(state.verification);

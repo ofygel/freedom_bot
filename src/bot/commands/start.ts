@@ -1,63 +1,95 @@
-import { Markup, Telegraf } from 'telegraf';
-import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
+import { Telegraf } from 'telegraf';
 
 import type { BotContext } from '../types';
 import { setChatCommands } from '../services/commands';
 import { CLIENT_COMMANDS, EXECUTOR_COMMANDS } from './sets';
 import { hideClientMenu, sendClientMenu } from '../../ui/clientMenu';
-import { bindInlineKeyboardToUser } from '../services/callbackTokens';
 import { askPhone } from '../flows/common/phoneCollect';
 import { ensureExecutorState, showExecutorMenu } from '../flows/executor/menu';
 import { startExecutorVerification } from '../flows/executor/verification';
 import { startExecutorSubscription } from '../flows/executor/subscription';
+import { buildInlineKeyboard } from '../keyboards/common';
+import { ui } from '../ui';
+import {
+  ROLE_SELECTION_BACK_ACTION,
+  EXECUTOR_ROLE_PENDING_CITY_ACTION,
+} from '../flows/executor/roleSelectionConstants';
 
-type RoleKey = 'client' | 'courier' | 'driver';
+const ROLE_SELECTION_STEP_ID = 'start:role:selection';
+const ROLE_CLIENT_ACTION = 'role:client';
+const ROLE_EXECUTOR_ACTION = 'role:executor';
+const ROLE_COURIER_ACTION = 'role:courier';
+const ROLE_DRIVER_ACTION = 'role:driver';
+const SUPPORT_CONTACT_ACTION = 'support:contact';
 
-interface RoleOption {
-  key: RoleKey;
-  label: string;
-  description: string;
-}
+const ROLE_SELECTION_TITLE = 'Выбор роли';
+const ROLE_SELECTION_DESCRIPTION =
+  'Freedom Bot помогает клиентам оформлять заказы и исполнителям брать их в работу. Выберите подходящую роль.';
 
-const ROLE_OPTIONS: RoleOption[] = [
-  {
-    key: 'client',
-    label: '🧑‍💼 Я клиент',
-    description: 'Оформление заказов на такси и доставку.',
-  },
-  {
-    key: 'courier',
-    label: '🚚 Я курьер',
-    description: 'Получение заказов на доставку и управление сменами.',
-  },
-  {
-    key: 'driver',
-    label: '🚗 Я водитель',
-    description: 'Получение заказов на поездки и управление сменами.',
-  },
-];
+const SPECIALISATION_TITLE = 'Выбор специализации';
+const SPECIALISATION_DESCRIPTION =
+  'Уточните, какие заказы хотите получать: доставка подходит курьерам, поездки — водителям.';
 
-const buildRoleKeyboard = (): InlineKeyboardMarkup =>
-  Markup.inlineKeyboard(
-    ROLE_OPTIONS.map((option) => [
-      Markup.button.callback(option.label, `role:${option.key}`),
-    ]),
-  ).reply_markup as InlineKeyboardMarkup;
+const buildRoleSelectionKeyboard = () =>
+  buildInlineKeyboard([
+    [
+      { label: '🧑‍💼 Я клиент', action: ROLE_CLIENT_ACTION },
+      { label: '🛠️ Я исполнитель', action: ROLE_EXECUTOR_ACTION },
+    ],
+    [
+      { label: '🆘 Помощь', action: SUPPORT_CONTACT_ACTION },
+      { label: '❓ Где я?', action: ROLE_SELECTION_BACK_ACTION },
+    ],
+  ]);
+
+const buildExecutorSpecialisationKeyboard = () =>
+  buildInlineKeyboard([
+    [
+      { label: '🚚 Я курьер', action: ROLE_COURIER_ACTION },
+      { label: '🚗 Я водитель', action: ROLE_DRIVER_ACTION },
+    ],
+    [
+      { label: '🆘 Помощь', action: SUPPORT_CONTACT_ACTION },
+      { label: '⬅️ Назад', action: ROLE_SELECTION_BACK_ACTION },
+    ],
+  ]);
+
+const resetCitySelectionTracking = (ctx: BotContext): void => {
+  if (ctx.session.ui?.pendingCityAction === EXECUTOR_ROLE_PENDING_CITY_ACTION) {
+    ctx.session.ui.pendingCityAction = undefined;
+  }
+};
 
 export const presentRoleSelection = async (ctx: BotContext): Promise<void> => {
   const executorState = ensureExecutorState(ctx);
   executorState.awaitingRoleSelection = true;
   executorState.role = undefined;
+  executorState.roleSelectionStage = 'role';
+  ctx.auth.user.executorKind = undefined;
+  resetCitySelectionTracking(ctx);
 
-  const description = ROLE_OPTIONS.map((option) => `• ${option.label} — ${option.description}`)
-    .join('\n');
+  await ui.step(ctx, {
+    id: ROLE_SELECTION_STEP_ID,
+    text: `${ROLE_SELECTION_TITLE}\n\n${ROLE_SELECTION_DESCRIPTION}`,
+    keyboard: buildRoleSelectionKeyboard(),
+  });
+};
 
-  const keyboard = buildRoleKeyboard();
-  const replyMarkup = bindInlineKeyboardToUser(ctx, keyboard) ?? keyboard;
-  await ctx.reply(
-    ['Выберите роль, чтобы продолжить работу с ботом:', description].join('\n\n'),
-    { reply_markup: replyMarkup },
-  );
+export const presentExecutorSpecialisationSelection = async (
+  ctx: BotContext,
+): Promise<void> => {
+  const executorState = ensureExecutorState(ctx);
+  executorState.awaitingRoleSelection = true;
+  executorState.role = undefined;
+  executorState.roleSelectionStage = 'specialization';
+  ctx.auth.user.executorKind = undefined;
+  resetCitySelectionTracking(ctx);
+
+  await ui.step(ctx, {
+    id: ROLE_SELECTION_STEP_ID,
+    text: `${SPECIALISATION_TITLE}\n\n${SPECIALISATION_DESCRIPTION}`,
+    keyboard: buildExecutorSpecialisationKeyboard(),
+  });
 };
 
 const applyCommandsForRole = async (ctx: BotContext): Promise<void> => {
@@ -97,11 +129,20 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
 
   const executorState = ensureExecutorState(ctx);
   const role = executorState.role;
-  if (!role) {
+  const stage = executorState.roleSelectionStage;
+  const awaitingRoleSelection = executorState.awaitingRoleSelection === true;
+  if (!role || awaitingRoleSelection || stage === 'role' || stage === 'specialization') {
     executorState.awaitingRoleSelection = true;
     executorState.role = undefined;
-    await hideClientMenu(ctx, 'Меняем роль — выберите подходящий вариант ниже.');
-    await presentRoleSelection(ctx);
+    const prompt = stage === 'specialization'
+      ? 'Выберите специализацию исполнителя ниже.'
+      : 'Меняем роль — выберите подходящий вариант ниже.';
+    await hideClientMenu(ctx, prompt);
+    if (stage === 'specialization') {
+      await presentExecutorSpecialisationSelection(ctx);
+    } else {
+      await presentRoleSelection(ctx);
+    }
     return;
   }
 
@@ -123,6 +164,86 @@ export const handleStart = async (ctx: BotContext): Promise<void> => {
 export const registerStartCommand = (bot: Telegraf<BotContext>): void => {
   bot.start(handleStart);
   bot.hears(/^start$/i, handleStart);
+
+  bot.action(ROLE_EXECUTOR_ACTION, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      try {
+        await ctx.answerCbQuery('Пожалуйста, продолжите в личном чате с ботом.');
+      } catch {
+        // Ignore
+      }
+      return;
+    }
+
+    const executorState = ensureExecutorState(ctx);
+    executorState.awaitingRoleSelection = true;
+    executorState.role = undefined;
+    executorState.roleSelectionStage = 'specialization';
+    ctx.auth.user.executorKind = undefined;
+    resetCitySelectionTracking(ctx);
+
+    try {
+      await ctx.answerCbQuery('Теперь выберите специализацию.');
+    } catch {
+      // Ignore callback errors
+    }
+
+    await presentExecutorSpecialisationSelection(ctx);
+  });
+
+  bot.action(ROLE_SELECTION_BACK_ACTION, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      try {
+        await ctx.answerCbQuery('Доступно только в личном чате с ботом.');
+      } catch {
+        // Ignore
+      }
+      return;
+    }
+
+    const executorState = ensureExecutorState(ctx);
+    const stage = executorState.roleSelectionStage;
+
+    const goToRoleSelection = async (message: string) => {
+      executorState.awaitingRoleSelection = true;
+      executorState.role = undefined;
+      executorState.roleSelectionStage = 'role';
+      ctx.auth.user.executorKind = undefined;
+      resetCitySelectionTracking(ctx);
+
+      try {
+        await ctx.answerCbQuery(message);
+      } catch {
+        // Ignore callback errors
+      }
+
+      await presentRoleSelection(ctx);
+    };
+
+    if (stage === 'city') {
+      executorState.awaitingRoleSelection = true;
+      executorState.role = undefined;
+      executorState.roleSelectionStage = 'specialization';
+      ctx.auth.user.executorKind = undefined;
+      resetCitySelectionTracking(ctx);
+
+      try {
+        await ctx.answerCbQuery('Вернёмся к выбору специализации.');
+      } catch {
+        // Ignore callback errors
+      }
+
+      await presentExecutorSpecialisationSelection(ctx);
+      return;
+    }
+
+    if (stage === 'specialization') {
+      await goToRoleSelection('Вернёмся к выбору роли.');
+      return;
+    }
+
+    await goToRoleSelection('Вы на шаге выбора роли.');
+  });
 
   bot.on('contact', async (ctx, next) => {
     if (ctx.chat?.type !== 'private') {

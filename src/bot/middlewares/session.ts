@@ -55,6 +55,8 @@ const createExecutorState = (): ExecutorFlowState => ({
   role: undefined,
   verification: createVerificationState(),
   subscription: createSubscriptionState(),
+  awaitingRoleSelection: true,
+  roleSelectionStage: 'role',
 });
 
 const createClientOrderDraft = (): ClientOrderDraftState => ({
