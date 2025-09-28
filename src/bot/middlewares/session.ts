@@ -26,6 +26,7 @@ import {
   type ExecutorSubscriptionState,
   type ExecutorUploadedPhoto,
   type ExecutorVerificationState,
+  type OnboardingState,
   type SessionState,
   type SessionUser,
   type SupportSessionState,
@@ -60,6 +61,8 @@ const createExecutorState = (): ExecutorFlowState => ({
   awaitingRoleSelection: true,
   roleSelectionStage: 'role',
 });
+
+const createOnboardingState = () => ({ active: false }) satisfies OnboardingState;
 
 const createClientOrderDraft = (): ClientOrderDraftState => ({
   stage: 'idle',
@@ -391,6 +394,10 @@ const normaliseSessionState = (state: SessionState): SessionState => {
     working.support = createSupportState();
   }
 
+  if (!working.onboarding) {
+    working.onboarding = createOnboardingState();
+  }
+
   working.executor = rebuildExecutorState((working as { executor?: unknown }).executor);
   working.client = rebuildClientState((working as { client?: unknown }).client);
   working.authSnapshot = rebuildAuthSnapshot(
@@ -413,6 +420,7 @@ const createDefaultState = (): SessionState => ({
   client: createClientState(),
   ui: createUiState(),
   support: createSupportState(),
+  onboarding: createOnboardingState(),
 });
 
 const prepareFallbackSession = (

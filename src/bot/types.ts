@@ -141,6 +141,13 @@ export interface ExecutorFlowState {
   roleSelectionStage?: 'role' | 'executorKind' | 'city';
 }
 
+export type OnboardingStep = 'role' | 'executorKind';
+
+export interface OnboardingState {
+  active: boolean;
+  step?: OnboardingStep;
+}
+
 export type ClientOrderStage =
   | 'idle'
   | 'collectingPickup'
@@ -208,6 +215,7 @@ export interface SessionState {
   client: ClientFlowState;
   ui: UiSessionState;
   support: SupportSessionState;
+  onboarding: OnboardingState;
 }
 
 export type BotContext = Context & {
