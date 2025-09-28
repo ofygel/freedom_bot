@@ -40,6 +40,15 @@ export type UserStatus =
 
 export type UserMenuRole = 'client' | 'courier' | 'moderator';
 
+export interface UserPerformanceMetrics {
+  completionRate?: number;
+  ordersCompleted?: number;
+  ordersCancelled?: number;
+  rating?: number;
+  earningsTotal?: number;
+  [metric: string]: number | string | undefined;
+}
+
 export interface AuthUser {
   telegramId: number;
   username?: string;
@@ -62,6 +71,8 @@ export interface AuthUser {
   hasActiveOrder: boolean;
   lastMenuRole?: UserMenuRole;
   keyboardNonce?: string;
+  performance?: UserPerformanceMetrics;
+  performanceMetrics?: UserPerformanceMetrics;
 }
 
 export interface AuthExecutorState {

@@ -23,7 +23,7 @@ import {
   startExecutorVerification,
 } from './verification';
 import { CITY_LABEL } from '../../../domain/cities';
-import { CITY_ACTION_PATTERN, ensureCitySelected } from '../common/citySelect';
+import { CITY_ACTION_PATTERN, askCity, ensureCitySelected } from '../common/citySelect';
 import { showMenu } from '../client/menu';
 import {
   PROFILE_BUTTON_LABEL,
@@ -38,7 +38,16 @@ export const EXECUTOR_SUPPORT_ACTION = 'support:contact';
 export const EXECUTOR_MENU_ACTION = 'executor:menu:refresh';
 const EXECUTOR_MENU_STEP_ID = 'executor:menu:card:v2';
 export const EXECUTOR_MENU_CITY_ACTION = 'executorMenu';
+const EXECUTOR_MENU_CITY_SELECT_ACTION = 'executor:menu:city';
 const EXECUTOR_PROFILE_ACTION = 'executor:menu:profile';
+
+const buildExecutorProfileOptions = () => ({
+  backAction: EXECUTOR_MENU_ACTION,
+  homeAction: EXECUTOR_MENU_ACTION,
+  changeCityAction: EXECUTOR_MENU_CITY_SELECT_ACTION,
+  subscriptionAction: EXECUTOR_SUBSCRIPTION_ACTION,
+  supportAction: EXECUTOR_SUPPORT_ACTION,
+});
 
 export const EXECUTOR_MENU_TEXT_LABELS = {
   documents: '📸 Документы',
@@ -791,6 +800,27 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
     await showExecutorMenu(ctx);
   });
 
+  bot.action(EXECUTOR_MENU_CITY_SELECT_ACTION, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      await ctx.answerCbQuery('Доступно только в личных сообщениях.');
+      return;
+    }
+
+    ensureExecutorState(ctx);
+    const uiState = ctx.session.ui;
+    if (uiState) {
+      uiState.pendingCityAction = EXECUTOR_MENU_CITY_ACTION;
+    }
+
+    try {
+      await ctx.answerCbQuery();
+    } catch (error) {
+      logger.debug({ err: error }, 'Failed to answer executor city callback');
+    }
+
+    await askCity(ctx, 'Выберите город:');
+  });
+
   bot.action(EXECUTOR_PROFILE_ACTION, async (ctx) => {
     if (ctx.chat?.type !== 'private') {
       await ctx.answerCbQuery('Карточка доступна только в личных сообщениях.');
@@ -806,8 +836,7 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
     await renderProfileCardFromAction(
       ctx,
       {
-        backAction: EXECUTOR_MENU_ACTION,
-        homeAction: EXECUTOR_MENU_ACTION,
+        ...buildExecutorProfileOptions(),
         onAnswerError: (error) => {
           logger.debug({ err: error }, 'Failed to answer executor profile callback');
         },
@@ -854,10 +883,7 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
-    await renderProfileCard(ctx, {
-      backAction: EXECUTOR_MENU_ACTION,
-      homeAction: EXECUTOR_MENU_ACTION,
-    });
+    await renderProfileCard(ctx, buildExecutorProfileOptions());
   });
 
   bot.hears(EXECUTOR_MENU_TEXT_LABELS.refresh, async (ctx) => {
