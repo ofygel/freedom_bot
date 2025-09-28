@@ -17,7 +17,12 @@ ensureEnv('KASPI_PHONE', '+70000000000');
 ensureEnv('WEBHOOK_DOMAIN', 'example.com');
 ensureEnv('WEBHOOK_SECRET', 'secret');
 
-const { tryClaimOrder, tryReleaseOrder, tryCompleteOrder } = require('../src/db/orders');
+const {
+  tryClaimOrder,
+  tryReleaseOrder,
+  tryCompleteOrder,
+  tryRestoreCompletedOrder,
+} = require('../src/db/orders');
 
 const normalizeSql = (text) => text.replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -104,6 +109,18 @@ const createTestDatabase = () => {
       order.claimed_by = null;
       order.claimed_at = null;
       order.channel_message_id = null;
+      return { rows: [cloneOrderRow(order)] };
+    }
+
+    if (normalized.startsWith("update orders set status = 'claimed'") && normalized.includes("status = 'done'")) {
+      const [id, executorId] = params;
+      const order = orders.get(id);
+      if (!order || order.status !== 'done' || order.claimed_by !== executorId) {
+        return { rows: [] };
+      }
+
+      order.status = 'claimed';
+      order.completed_at = null;
       return { rows: [cloneOrderRow(order)] };
     }
 
@@ -201,4 +218,10 @@ test('order lifecycle updates users.has_active_order flag', async () => {
 
   result = await db.client.query('SELECT has_active_order FROM users WHERE tg_id = $1', [executorId]);
   assert.equal(result.rows[0]?.has_active_order, false, 'complete should reset has_active_order');
+
+  const restored = await tryRestoreCompletedOrder(db.client, 1, executorId);
+  assert.ok(restored, 'order should be restored');
+
+  result = await db.client.query('SELECT has_active_order FROM users WHERE tg_id = $1', [executorId]);
+  assert.equal(result.rows[0]?.has_active_order, true, 'restore should set has_active_order to true again');
 });
