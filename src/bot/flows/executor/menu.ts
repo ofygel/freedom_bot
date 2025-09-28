@@ -249,6 +249,7 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
       role: derivedRole,
       verification: createDefaultVerificationState(),
       subscription: createSubscriptionState(),
+      jobs: { stage: 'idle' },
       awaitingRoleSelection: derivedRole === undefined,
       roleSelectionStage: derivedRole === undefined ? 'role' : undefined,
     } satisfies ExecutorFlowState;
@@ -302,6 +303,33 @@ export const ensureExecutorState = (ctx: BotContext): ExecutorFlowState => {
       subscription.lastInviteLink = undefined;
       subscription.lastIssuedAt = undefined;
     }
+
+    if (!state.jobs || typeof state.jobs !== 'object') {
+      state.jobs = { stage: 'idle' };
+    } else {
+      const allowedStages: ExecutorFlowState['jobs']['stage'][] = [
+        'idle',
+        'feed',
+        'confirm',
+        'inProgress',
+        'complete',
+      ];
+      if (!allowedStages.includes(state.jobs.stage)) {
+        state.jobs.stage = 'idle';
+      }
+      if (typeof state.jobs.activeOrderId !== 'number' || !Number.isFinite(state.jobs.activeOrderId)) {
+        state.jobs.activeOrderId = undefined;
+      }
+      if (typeof state.jobs.pendingOrderId !== 'number' || !Number.isFinite(state.jobs.pendingOrderId)) {
+        state.jobs.pendingOrderId = undefined;
+      }
+      if (
+        typeof state.jobs.lastViewedAt !== 'number' ||
+        !Number.isFinite(state.jobs.lastViewedAt)
+      ) {
+        state.jobs.lastViewedAt = undefined;
+      }
+    }
   }
 
   return ctx.session.executor;
@@ -352,7 +380,7 @@ const formatTimestamp = (timestamp: number): string => {
   }).format(new Date(timestamp));
 };
 
-interface ExecutorAccessStatus {
+export interface ExecutorAccessStatus {
   isVerified: boolean;
   hasActiveSubscription: boolean;
 }
@@ -386,6 +414,11 @@ const determineExecutorAccessStatus = (
     hasActiveSubscription: ctx.auth.executor.hasActiveSubscription,
   } satisfies ExecutorAccessStatus;
 };
+
+export const getExecutorAccessStatus = (
+  ctx: BotContext,
+  state: ExecutorFlowState,
+): ExecutorAccessStatus => determineExecutorAccessStatus(ctx, state);
 
 const shouldRedirectToVerification = (
   state: ExecutorFlowState,

@@ -137,10 +137,20 @@ export interface ExecutorSubscriptionState {
 
 export type ExecutorVerificationState = Record<ExecutorRole, ExecutorVerificationRoleState>;
 
+export type ExecutorJobStage = 'idle' | 'feed' | 'confirm' | 'inProgress' | 'complete';
+
+export interface ExecutorJobsState {
+  stage: ExecutorJobStage;
+  activeOrderId?: number;
+  pendingOrderId?: number;
+  lastViewedAt?: number;
+}
+
 export interface ExecutorFlowState {
   role?: ExecutorRole;
   verification: ExecutorVerificationState;
   subscription: ExecutorSubscriptionState;
+  jobs: ExecutorJobsState;
   awaitingRoleSelection?: boolean;
   roleSelectionStage?: 'role' | 'executorKind' | 'city';
 }

@@ -22,6 +22,7 @@ import {
   type ClientFlowState,
   type ClientOrderDraftState,
   type ExecutorFlowState,
+  type ExecutorJobsState,
   type ExecutorRole,
   type ExecutorSubscriptionState,
   type ExecutorUploadedPhoto,
@@ -54,10 +55,21 @@ const createSubscriptionState = (): ExecutorSubscriptionState => ({
   status: 'idle',
 });
 
+const EXECUTOR_JOB_STAGES: readonly ExecutorJobsState['stage'][] = [
+  'idle',
+  'feed',
+  'confirm',
+  'inProgress',
+  'complete',
+];
+
+const createJobsState = (): ExecutorJobsState => ({ stage: 'idle' });
+
 const createExecutorState = (): ExecutorFlowState => ({
   role: undefined,
   verification: createVerificationState(),
   subscription: createSubscriptionState(),
+  jobs: createJobsState(),
   awaitingRoleSelection: true,
   roleSelectionStage: 'role',
 });
@@ -307,6 +319,25 @@ const rebuildExecutorState = (value: unknown): ExecutorFlowState => {
 
   if (executor.subscription && typeof executor.subscription === 'object') {
     Object.assign(state.subscription, executor.subscription);
+  }
+
+  if (executor.jobs && typeof executor.jobs === 'object') {
+    const jobs = executor.jobs as Partial<ExecutorJobsState>;
+    if (
+      typeof jobs.stage === 'string' &&
+      EXECUTOR_JOB_STAGES.includes(jobs.stage as ExecutorJobsState['stage'])
+    ) {
+      state.jobs.stage = jobs.stage as ExecutorJobsState['stage'];
+    }
+    if (typeof jobs.activeOrderId === 'number') {
+      state.jobs.activeOrderId = jobs.activeOrderId;
+    }
+    if (typeof jobs.pendingOrderId === 'number') {
+      state.jobs.pendingOrderId = jobs.pendingOrderId;
+    }
+    if (typeof jobs.lastViewedAt === 'number' && Number.isFinite(jobs.lastViewedAt)) {
+      state.jobs.lastViewedAt = jobs.lastViewedAt;
+    }
   }
 
   if (executor.verification && typeof executor.verification === 'object') {
