@@ -83,7 +83,7 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
     return;
   }
 
-  const executorState = ctx.session.executor?.verification?.[executorRole];
+  const verificationState = ctx.session.executor?.verification?.[executorRole];
 
   const callbackQuery = ctx.callbackQuery;
   if (callbackQuery && 'data' in callbackQuery) {
@@ -113,31 +113,45 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
     typeof messageText === 'string' &&
     (COLLECTING_SAFE_COMMANDS.has(messageText) || isExecutorMenuTextCommand(messageText));
 
-  if (executorState?.status === 'collecting' && hasPhoto) {
+  if (verificationState?.status === 'collecting' && hasPhoto) {
     await next();
     return;
   }
 
-  if (executorState?.status === 'collecting' && (isSafeCollectingCommand || isSafeCollectingCallback)) {
+  if (
+    verificationState?.status === 'collecting' &&
+    (isSafeCollectingCommand || isSafeCollectingCallback)
+  ) {
     await next();
     return;
   }
 
-  if (executorState?.status === 'collecting') {
+  if (verificationState?.status === 'collecting') {
     const now = Date.now();
-    const lastReminderAt = executorState.lastReminderAt ?? 0;
+    const lastReminderAt = verificationState.lastReminderAt ?? 0;
     const shouldSendReminder = now - lastReminderAt >= VERIFICATION_REMINDER_INTERVAL_MS;
     const promptStep = ctx.session.ui?.steps?.[VERIFICATION_PROMPT_STEP_ID];
     const hasPromptStep = Boolean(promptStep && promptStep.chatId === ctx.chat?.id);
-    const shouldRefreshPrompt = shouldSendReminder || !hasPromptStep;
+    const isUnsupportedInput = !hasPhoto && !isSafeCollectingCommand && !isSafeCollectingCallback;
+    const shouldRefreshPrompt = isUnsupportedInput || shouldSendReminder || !hasPromptStep;
 
-    try {
-      const promptResult = await showExecutorVerificationPrompt(ctx, executorRole);
-      if (promptResult && (shouldRefreshPrompt || promptResult.sent)) {
-        executorState.lastReminderAt = now;
+    if (shouldRefreshPrompt) {
+      try {
+        const promptResult = await showExecutorVerificationPrompt(ctx, executorRole);
+        if (promptResult) {
+          verificationState.lastReminderAt = now;
+        }
+      } catch (error) {
+        logger.debug({ err: error }, 'Failed to send verification reminder');
       }
-    } catch (error) {
-      logger.debug({ err: error }, 'Failed to send verification reminder');
+    }
+
+    if (isUnsupportedInput) {
+      return;
+    }
+
+    if (shouldSendReminder || !hasPromptStep) {
+      return;
     }
 
     return;
