@@ -21,8 +21,9 @@ const isExecutorUser = (ctx: BotContext): boolean => {
     return false;
   }
   return (
-    role === 'executor' ||
-    status === 'active_executor'
+    role === 'executor'
+    || role === 'moderator'
+    || status === 'active_executor'
   );
 };
 

@@ -5,11 +5,15 @@ import type { AppCity } from '../domain/cities';
 
 export const EXECUTOR_VERIFICATION_PHOTO_COUNT = 2;
 
-export type ExecutorRole = 'courier' | 'driver';
+export type ExecutorKind = 'courier' | 'driver';
 
-export const EXECUTOR_ROLES: readonly ExecutorRole[] = ['courier', 'driver'];
+export const EXECUTOR_KINDS: readonly ExecutorKind[] = ['courier', 'driver'];
 
-export type UserRole = 'guest' | 'client' | 'executor';
+export type ExecutorRole = ExecutorKind;
+
+export const EXECUTOR_ROLES = EXECUTOR_KINDS;
+
+export type UserRole = 'guest' | 'client' | 'executor' | 'moderator';
 
 export type UserVerifyStatus = 'none' | 'pending' | 'active' | 'rejected' | 'expired';
 

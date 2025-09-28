@@ -121,7 +121,7 @@ const applyCommandsForRole = async (ctx: BotContext): Promise<void> => {
     return;
   }
 
-  if (role === 'executor') {
+  if (role === 'executor' || role === 'moderator') {
     await setChatCommands(ctx.telegram, ctx.chat.id, EXECUTOR_COMMANDS, { showMenuButton: true });
   }
 };

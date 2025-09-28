@@ -1,7 +1,6 @@
+import type { ExecutorKind } from '../bot/types';
 import type { PoolClient } from './client';
 import { pool, withTx } from './client';
-
-type ExecutorRole = 'courier' | 'driver';
 
 export type SubscriptionStatus =
   | 'pending'
@@ -15,7 +14,7 @@ interface TelegramUserDetails {
   firstName?: string;
   lastName?: string;
   phone?: string;
-  executorKind: ExecutorRole;
+  executorKind: ExecutorKind;
 }
 
 interface SubscriptionRow {

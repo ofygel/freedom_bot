@@ -83,8 +83,9 @@ const normaliseRole = (value: Nullable<string>): UserRole => {
     case 'client':
       return 'client';
     case 'executor':
-    case 'moderator':
       return 'executor';
+    case 'moderator':
+      return 'moderator';
     case 'guest':
     default:
       return 'guest';
@@ -198,7 +199,7 @@ const deriveSnapshotStatus = (
   role: UserRole,
   options: { isModerator?: boolean } = {},
 ): UserStatus => {
-  if (options.isModerator) {
+  if (options.isModerator || role === 'moderator') {
     return 'active_executor';
   }
 
@@ -262,9 +263,10 @@ const buildAuthStateFromSnapshot = (
   base.user.hasActiveOrder = snapshot.hasActiveOrder ?? base.user.hasActiveOrder;
   base.user.citySelected = snapshot.city ?? base.user.citySelected;
   base.executor = cloneExecutorState(snapshot.executor);
-  base.isModerator = shouldRestoreRole && snapshot.isModerator === true;
+  const snapshotIsModerator = snapshot.isModerator === true || snapshot.role === 'moderator';
+  base.isModerator = shouldRestoreRole && snapshotIsModerator;
   if (base.isModerator) {
-    base.user.role = 'executor';
+    base.user.role = 'moderator';
   }
 
   if (ctx.session.safeMode) {
@@ -402,9 +404,8 @@ const buildAuthQuery = (includeCitySelected: boolean): string => `
 const mapAuthRow = (row: AuthQueryRow): AuthState => {
   const telegramId = parseNumericId(row.tg_id);
   const executor = buildExecutorState(row);
-  const rawRole = row.role ?? undefined;
-  const isModerator = rawRole === 'moderator';
   let role = normaliseRole(row.role);
+  const isModerator = role === 'moderator';
   let executorKind = normaliseExecutorKind(row.executor_kind);
   const verifyStatus = normaliseVerifyStatus(row.verify_status);
   const subscriptionStatus = normaliseSubscriptionStatus(row.sub_status);
@@ -422,16 +423,12 @@ const mapAuthRow = (row: AuthQueryRow): AuthState => {
     if (awaitingActivation || roleNeverConfirmed) {
       role = 'guest';
     }
-  } else if (role === 'executor' && !executorKind && !isModerator) {
+  } else if (role === 'executor' && !executorKind) {
     role = 'guest';
   }
 
   if (!isModerator && role !== 'executor') {
     executorKind = undefined;
-  }
-
-  if (isModerator) {
-    role = 'executor';
   }
 
   const verifiedAt = parseTimestamp(row.verified_at);
