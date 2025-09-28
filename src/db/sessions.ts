@@ -58,10 +58,20 @@ const parseSessionState = (row: SessionRow): SessionState => {
     state.safeMode = false;
   }
 
+  const legacyState = state as { isDegraded?: unknown; degraded?: unknown };
+
   if (typeof row.is_degraded === 'boolean') {
-    state.degraded = row.is_degraded;
-  } else if (typeof (state as { degraded?: unknown }).degraded !== 'boolean') {
-    state.degraded = false;
+    state.isDegraded = row.is_degraded;
+  } else if (typeof legacyState.isDegraded === 'boolean') {
+    state.isDegraded = legacyState.isDegraded;
+  } else if (typeof legacyState.degraded === 'boolean') {
+    state.isDegraded = legacyState.degraded;
+  } else {
+    state.isDegraded = false;
+  }
+
+  if ('degraded' in legacyState) {
+    delete legacyState.degraded;
   }
 
   return state;
@@ -122,7 +132,7 @@ export const saveSessionState = async (
           is_degraded = EXCLUDED.is_degraded,
           updated_at = now()
     `,
-    [key.scope, key.scopeId, payload, state.safeMode === true, state.degraded === true],
+    [key.scope, key.scopeId, payload, state.safeMode === true, state.isDegraded === true],
   );
 };
 

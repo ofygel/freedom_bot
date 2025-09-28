@@ -1,5 +1,5 @@
 import { pool } from './client';
-import type { ExecutorRole } from '../bot/types';
+import type { ExecutorRole, UserStatus } from '../bot/types';
 
 export interface EnsureClientRoleParams {
   telegramId: number;
@@ -9,11 +9,13 @@ export interface EnsureClientRoleParams {
   phone?: string;
 }
 
+type ActiveUserStatuses = Extract<UserStatus, 'active_client' | 'active_executor' | 'safe_mode'>;
+
 export interface UpdateUserRoleParams {
   telegramId: number;
   role: 'guest' | 'client' | 'executor';
   executorKind?: ExecutorRole | null;
-  status?: 'active_client' | 'active_executor' | 'safe_mode';
+  status?: ActiveUserStatuses;
   menuRole?: 'client' | 'courier';
 }
 

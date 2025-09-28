@@ -66,7 +66,7 @@ const buildProfileSummary = (ctx: BotContext): string => {
 
 export const isSafeModeSession = (ctx: BotContext): boolean =>
   ctx.session.safeMode === true
-  || ctx.session.degraded === true
+  || ctx.session.isDegraded === true
   || ctx.auth?.user.status === 'safe_mode';
 
 export const showSafeModeCard = async (

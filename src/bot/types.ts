@@ -198,7 +198,7 @@ export interface SessionState {
   ephemeralMessages: number[];
   isAuthenticated: boolean;
   safeMode: boolean;
-  degraded: boolean;
+  isDegraded: boolean;
   awaitingPhone: boolean;
   phoneNumber?: string;
   user?: SessionUser;
