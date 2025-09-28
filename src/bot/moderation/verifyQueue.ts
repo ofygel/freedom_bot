@@ -31,10 +31,7 @@ import {
 } from '../../db';
 import { getChannelBinding } from '../channels/bindings';
 import { getExecutorRoleCopy } from '../copy';
-import {
-  EXECUTOR_ORDERS_ACTION,
-  EXECUTOR_SUBSCRIPTION_ACTION,
-} from '../flows/executor/menu';
+import { EXECUTOR_ORDERS_ACTION } from '../flows/executor/menu';
 import {
   createTrialSubscription,
   TrialSubscriptionUnavailableError,
@@ -291,11 +288,6 @@ const resetVerificationSessionState = async (
   });
 };
 
-const buildApprovalKeyboard = (): InlineKeyboardMarkup =>
-  Markup.inlineKeyboard([
-    [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
-  ]).reply_markup;
-
 const buildTrialApprovalKeyboard = (): InlineKeyboardMarkup =>
   Markup.inlineKeyboard([[Markup.button.callback('Заказы', EXECUTOR_ORDERS_ACTION)]]).reply_markup;
 
@@ -303,43 +295,70 @@ const buildFallbackApprovalNotification = (
   application: VerificationApplication,
 ): { text: string; keyboard: InlineKeyboardMarkup } => {
   const copy = getExecutorRoleCopy(application.role);
+  const periodLabel = formatTrialDays(DEFAULT_VERIFICATION_TRIAL_DAYS);
   const text = [
     '✅ Документы подтверждены.',
-    `Чтобы получить доступ к заказам ${copy.genitive}, оформите подписку и запросите ссылку через кнопку ниже.`,
+    `Мы активировали для вас бесплатный доступ на ${periodLabel}.`,
+    `Как только ссылка на канал ${copy.genitive} будет доступна, мы отправим её дополнительно.`,
     'Если потребуется помощь, напишите в поддержку.',
   ].join('\n');
 
-  const keyboard = buildApprovalKeyboard();
+  const keyboard = buildTrialApprovalKeyboard();
 
   return { text, keyboard };
 };
 
+interface VerificationTrialDependencies {
+  getChannelBinding: typeof getChannelBinding;
+  createTrialSubscription: typeof createTrialSubscription;
+}
+
+const defaultVerificationTrialDependencies: VerificationTrialDependencies = {
+  getChannelBinding,
+  createTrialSubscription,
+};
+
+const verificationTrialDependencies: VerificationTrialDependencies = {
+  ...defaultVerificationTrialDependencies,
+};
+
 const activateVerificationTrial = async (
   application: VerificationApplication,
-): Promise<{ text: string; keyboard: InlineKeyboardMarkup } | null> => {
+): Promise<{ text: string; keyboard?: InlineKeyboardMarkup } | null> => {
   const applicantId = application.applicant.telegramId;
   if (!applicantId) {
     return null;
   }
 
-  const binding = await getChannelBinding('drivers');
+  const binding = await verificationTrialDependencies.getChannelBinding('drivers');
+  let inviteAvailable = true;
+
   if (!binding) {
-    logger.warn(
-      { applicationId: application.id, applicantId },
-      'Drivers channel binding missing during verification trial activation',
-    );
-    return null;
+    inviteAvailable = false;
+    const fallbackChatId = config.subscriptions.payment.driversChannelId;
+
+    if (!fallbackChatId) {
+      logger.warn(
+        { applicationId: application.id, applicantId },
+        'Drivers channel binding missing during verification trial activation',
+      );
+    } else {
+      logger.warn(
+        { applicationId: application.id, applicantId, fallbackChatId },
+        'Drivers channel binding missing, using configured fallback chat id for verification trial',
+      );
+    }
   }
 
   try {
-    const trial = await createTrialSubscription({
+    const trial = await verificationTrialDependencies.createTrialSubscription({
       telegramId: applicantId,
       username: application.applicant.username ?? undefined,
       firstName: application.applicant.firstName ?? undefined,
       lastName: application.applicant.lastName ?? undefined,
       phone: application.applicant.phone ?? undefined,
       executorKind: application.role,
-      chatId: binding.chatId,
+      chatId: binding?.chatId ?? config.subscriptions.payment.driversChannelId,
       trialDays: DEFAULT_VERIFICATION_TRIAL_DAYS,
       currency: config.subscriptions.prices.currency,
     });
@@ -366,10 +385,16 @@ const activateVerificationTrial = async (
       lines.push(`Доступ действует до ${expiresLabel}.`);
     }
 
-    lines.push(`Нажмите кнопку ниже, чтобы получить ссылку на канал ${copy.genitive}.`);
+    if (inviteAvailable && binding) {
+      lines.push(`Нажмите кнопку ниже, чтобы получить ссылку на канал ${copy.genitive}.`);
+    } else {
+      lines.push(`Мы сообщим вам отдельно, когда ссылка на канал ${copy.genitive} будет готова.`);
+    }
     lines.push('Если потребуется помощь, напишите в поддержку.');
 
-    return { text: lines.join('\n'), keyboard: buildTrialApprovalKeyboard() };
+    const keyboard = inviteAvailable && binding ? buildTrialApprovalKeyboard() : undefined;
+
+    return { text: lines.join('\n'), keyboard };
   } catch (error) {
     if (error instanceof TrialSubscriptionUnavailableError) {
       logger.info(
@@ -389,6 +414,20 @@ const activateVerificationTrial = async (
 
     return null;
   }
+};
+
+export const __testing = {
+  activateVerificationTrial,
+  setTrialDependencies: (
+    overrides: Partial<VerificationTrialDependencies>,
+  ): void => {
+    verificationTrialDependencies.getChannelBinding =
+      overrides.getChannelBinding ?? defaultVerificationTrialDependencies.getChannelBinding;
+
+    verificationTrialDependencies.createTrialSubscription =
+      overrides.createTrialSubscription ??
+      defaultVerificationTrialDependencies.createTrialSubscription;
+  },
 };
 
 export const notifyVerificationApproval = async (
