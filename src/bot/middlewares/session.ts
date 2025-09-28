@@ -35,6 +35,7 @@ import {
   type UserVerifyStatus,
   type UserSubscriptionStatus,
 } from '../types';
+import { enterSafeMode } from '../services/cleanup';
 
 const createVerificationState = (): ExecutorVerificationState => {
   const verification = {} as ExecutorVerificationState;
@@ -378,6 +379,10 @@ const normaliseSessionState = (state: SessionState): SessionState => {
     working.safeMode = false;
   }
 
+  if (typeof (working as { degraded?: unknown }).degraded !== 'boolean') {
+    working.degraded = false;
+  }
+
   if (!working.ui) {
     working.ui = createUiState();
   }
@@ -400,6 +405,7 @@ const createDefaultState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   safeMode: false,
+  degraded: false,
   awaitingPhone: false,
   city: undefined,
   authSnapshot: createAuthSnapshot(),
@@ -415,6 +421,7 @@ const prepareFallbackSession = (
   const session = normaliseSessionState(state ?? createDefaultState());
   session.isAuthenticated = false;
   session.safeMode = true;
+  session.degraded = true;
   session.authSnapshot.status = 'safe_mode';
   session.authSnapshot.stale = true;
   return session;
@@ -544,6 +551,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     } catch (error) {
       const fallbackSession = prepareFallbackSession(cachedState);
       ctx.session = fallbackSession;
+      await enterSafeMode(ctx, { reason: 'session-db-connect-failed' });
       logger.warn({ err: error, key }, 'Failed to connect to database for session state');
 
       fallbackMode = true;
@@ -555,6 +563,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     if (!fallbackMode && !dbClient) {
       const fallbackSession = prepareFallbackSession(cachedState);
       ctx.session = fallbackSession;
+      await enterSafeMode(ctx, { reason: 'session-client-missing' });
       logger.warn({ key }, 'Database client was not initialised for session state');
 
       fallbackMode = true;
@@ -572,6 +581,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       } catch (error) {
         const fallbackSession = prepareFallbackSession(cachedState);
         ctx.session = fallbackSession;
+        await enterSafeMode(ctx, { reason: 'session-load-failed' });
         logger.warn({ err: error, key }, 'Failed to load session state, using default state');
 
         fallbackMode = true;
@@ -587,6 +597,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       }
 
       ctx.session = normaliseSessionState(state);
+      ctx.session.degraded = false;
 
       await invokeNext();
       finalState = ctx.session;
@@ -609,6 +620,7 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
     if (fallbackMode) {
       if (ctx.session) {
         ctx.session = prepareFallbackSession(ctx.session);
+        await enterSafeMode(ctx, { reason: 'session-fallback-mode' });
       }
       await invokeNext();
       finalState = ctx.session;

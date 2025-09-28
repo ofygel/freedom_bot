@@ -11,6 +11,8 @@ export interface SessionKey {
 
 interface SessionRow {
   state: SessionState | string | null;
+  safe_mode: boolean | null;
+  is_degraded: boolean | null;
 }
 
 type Queryable = Pick<PoolClient, 'query'>;
@@ -31,7 +33,7 @@ const parseJsonValue = <T>(value: T | string | null | undefined): T | null => {
   return null;
 };
 
-const parseSessionState = (value: SessionRow['state']): SessionState => {
+const parseSessionPayload = (value: SessionRow['state']): SessionState => {
   if (value === null || value === undefined) {
     throw new Error('Session payload is empty');
   }
@@ -47,6 +49,24 @@ const parseSessionState = (value: SessionRow['state']): SessionState => {
   throw new Error('Unsupported session payload type');
 };
 
+const parseSessionState = (row: SessionRow): SessionState => {
+  const state = parseSessionPayload(row.state);
+
+  if (typeof row.safe_mode === 'boolean') {
+    state.safeMode = row.safe_mode;
+  } else if (typeof (state as { safeMode?: unknown }).safeMode !== 'boolean') {
+    state.safeMode = false;
+  }
+
+  if (typeof row.is_degraded === 'boolean') {
+    state.degraded = row.is_degraded;
+  } else if (typeof (state as { degraded?: unknown }).degraded !== 'boolean') {
+    state.degraded = false;
+  }
+
+  return state;
+};
+
 export const loadSessionState = async (
   client: PoolClient,
   key: SessionKey,
@@ -55,7 +75,7 @@ export const loadSessionState = async (
   const lockClause = options.forUpdate ? ' FOR UPDATE' : '';
   const { rows } = await client.query<SessionRow>(
     `
-      SELECT state
+      SELECT state, safe_mode, is_degraded
       FROM sessions
       WHERE scope = $1 AND scope_id = $2${lockClause}
     `,
@@ -68,7 +88,7 @@ export const loadSessionState = async (
   }
 
   try {
-    return parseSessionState(row.state);
+    return parseSessionState(row);
   } catch (error) {
     const reason =
       error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error';
@@ -94,13 +114,15 @@ export const saveSessionState = async (
 
   await queryable.query(
     `
-      INSERT INTO sessions (scope, scope_id, state)
-      VALUES ($1, $2, $3::jsonb)
+      INSERT INTO sessions (scope, scope_id, state, safe_mode, is_degraded)
+      VALUES ($1, $2, $3::jsonb, $4, $5)
       ON CONFLICT (scope, scope_id) DO UPDATE
       SET state = EXCLUDED.state,
+          safe_mode = EXCLUDED.safe_mode,
+          is_degraded = EXCLUDED.is_degraded,
           updated_at = now()
     `,
-    [key.scope, key.scopeId, payload],
+    [key.scope, key.scopeId, payload, state.safeMode === true, state.degraded === true],
   );
 };
 
