@@ -8,6 +8,7 @@ import type { BotContext } from '../../types';
 import { resetClientOrderDraft } from '../../services/orders';
 import { ui } from '../../ui';
 import { copy } from '../../copy';
+import { ROLE_SELECTION_BACK_ACTION, EXECUTOR_ROLE_PENDING_CITY_ACTION } from '../executor/roleSelectionConstants';
 
 export const CITY_CONFIRM_STEP_ID = 'common:city:confirm';
 
@@ -28,6 +29,9 @@ const resolveHomeAction = (ctx: BotContext): string => {
   }
   if (pending === 'executorMenu') {
     return EXECUTOR_MENU_HOME_ACTION;
+  }
+  if (pending === EXECUTOR_ROLE_PENDING_CITY_ACTION) {
+    return ROLE_SELECTION_BACK_ACTION;
   }
 
   const role = ctx.auth?.user.role;
@@ -60,33 +64,42 @@ export const getCityFromContext = (ctx: BotContext): AppCity | undefined => {
   return ctx.chat?.type === 'private' ? ctx.session.city ?? undefined : undefined;
 };
 
+export interface AskCityOptions {
+  homeAction?: string;
+  homeLabel?: string;
+}
+
 export const askCity = async (
   ctx: BotContext,
   title = 'Выберите город, чтобы продолжить работу с ботом:',
+  options: AskCityOptions = {},
 ): Promise<void> => {
   if (!ctx.chat) {
     return;
   }
 
   const keyboard = buildCityKeyboard();
+  const homeAction = options.homeAction ?? resolveHomeAction(ctx);
   await ui.step(ctx, {
     id: CITY_CONFIRM_STEP_ID,
     text: title,
     keyboard,
-    homeAction: resolveHomeAction(ctx),
+    homeAction,
+    homeLabel: options.homeLabel,
   });
 };
 
 export const ensureCitySelected = async (
   ctx: BotContext,
   title?: string,
+  options?: AskCityOptions,
 ): Promise<AppCity | null> => {
   const city = getCityFromContext(ctx);
   if (city) {
     return city;
   }
 
-  await askCity(ctx, title);
+  await askCity(ctx, title, options);
   return null;
 };
 
@@ -166,6 +179,14 @@ export const registerCityAction = (bot: Telegraf<BotContext>): void => {
           // Ignore message errors, selection is already stored.
         }
       }
+    }
+
+    if (ctx.session.ui?.pendingCityAction === EXECUTOR_ROLE_PENDING_CITY_ACTION) {
+      ctx.session.ui.pendingCityAction = 'executorMenu';
+    }
+
+    if (ctx.session.executor?.roleSelectionStage === 'city') {
+      ctx.session.executor.roleSelectionStage = undefined;
     }
 
     if (typeof next === 'function') {
