@@ -355,7 +355,7 @@ export const loadConfig = (): AppConfig => {
       trialEnabled: parseBoolean(process.env.FEATURE_TRIAL_ENABLED, true),
       executorReplyKeyboard: parseBoolean(process.env.FEATURE_EXECUTOR_REPLY_KEYBOARD),
       reportsEnabled: parseBoolean(process.env.FEATURE_REPORTS_ENABLED),
-      nudgerEnabled: parseBoolean(process.env.FEATURE_NUDGER_ENABLED, true),
+      nudgerEnabled: parseBoolean(process.env.FEATURE_NUDGER_ENABLED),
     },
     webhook: {
       domain: getRequiredString('WEBHOOK_DOMAIN'),
