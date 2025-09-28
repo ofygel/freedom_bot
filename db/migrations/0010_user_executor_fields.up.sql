@@ -1,7 +1,20 @@
 BEGIN;
 
-ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'guest';
-ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'executor';
+ALTER TYPE user_role RENAME TO user_role_old;
+
+CREATE TYPE user_role AS ENUM (
+  'client',
+  'courier',
+  'driver',
+  'moderator',
+  'guest',
+  'executor'
+);
+
+ALTER TABLE users
+  ALTER COLUMN role DROP DEFAULT,
+  ALTER COLUMN role TYPE user_role USING (role::text)::user_role,
+  ALTER COLUMN role SET DEFAULT 'client';
 
 DO $$
 BEGIN
@@ -24,16 +37,18 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS trial_expires_at TIMESTAMPTZ;
 
 UPDATE users
-SET executor_kind = CASE role
+SET executor_kind = CASE role::text
   WHEN 'courier' THEN 'courier'::executor_kind
   WHEN 'driver' THEN 'driver'::executor_kind
   ELSE executor_kind
 END
-WHERE role IN ('courier', 'driver');
+WHERE role::text IN ('courier', 'driver');
 
 UPDATE users
 SET role = 'executor'
-WHERE role IN ('courier', 'driver');
+WHERE role::text IN ('courier', 'driver');
+
+DROP TYPE user_role_old;
 
 WITH latest AS (
   SELECT DISTINCT ON (user_id) user_id, status
@@ -41,7 +56,7 @@ WITH latest AS (
   ORDER BY user_id, updated_at DESC, id DESC
 )
 UPDATE users AS u
-SET verify_status = CASE
+SET verify_status = (CASE
   WHEN u.is_verified THEN 'active'
   WHEN latest.status IS NULL THEN 'none'
   WHEN latest.status = 'active' THEN 'active'
@@ -49,12 +64,12 @@ SET verify_status = CASE
   WHEN latest.status = 'rejected' THEN 'rejected'
   WHEN latest.status = 'expired' THEN 'expired'
   ELSE 'none'
-END
+END)::user_verify_status
 FROM latest
 WHERE u.tg_id = latest.user_id;
 
 UPDATE users
-SET verify_status = 'active'
+SET verify_status = 'active'::user_verify_status
 WHERE verify_status = 'none' AND is_verified IS TRUE;
 
 UPDATE users
