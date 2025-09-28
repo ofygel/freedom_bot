@@ -394,6 +394,22 @@ const normaliseSessionState = (state: SessionState): SessionState => {
     working.isDegraded = false;
   }
 
+  const safeModeReasonRaw = (working as { safeModeReason?: unknown }).safeModeReason;
+  if (typeof safeModeReasonRaw === 'string') {
+    const trimmed = safeModeReasonRaw.trim();
+    working.safeModeReason = trimmed.length > 0 ? trimmed : undefined;
+  } else if (safeModeReasonRaw !== undefined) {
+    working.safeModeReason = undefined;
+  }
+
+  const safeModePromptRaw = (working as { safeModePrompt?: unknown }).safeModePrompt;
+  if (typeof safeModePromptRaw === 'string') {
+    const trimmed = safeModePromptRaw.trim();
+    working.safeModePrompt = trimmed.length > 0 ? trimmed : undefined;
+  } else if (safeModePromptRaw !== undefined) {
+    working.safeModePrompt = undefined;
+  }
+
   if (!working.ui) {
     working.ui = createUiState();
   }
@@ -421,6 +437,8 @@ const createDefaultState = (): SessionState => ({
   isAuthenticated: false,
   safeMode: false,
   isDegraded: false,
+  safeModeReason: undefined,
+  safeModePrompt: undefined,
   awaitingPhone: false,
   city: undefined,
   authSnapshot: createAuthSnapshot(),
@@ -438,6 +456,8 @@ const prepareFallbackSession = (
   session.isAuthenticated = false;
   session.safeMode = true;
   session.isDegraded = true;
+  session.safeModeReason = undefined;
+  session.safeModePrompt = undefined;
   session.authSnapshot.status = 'safe_mode';
   session.authSnapshot.stale = true;
   return session;
@@ -614,9 +634,9 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
       ctx.session = normaliseSessionState(state);
       ctx.session.isDegraded = false;
-      if (ctx.session.safeMode) {
-        ctx.session.safeMode = false;
-      }
+      ctx.session.safeMode = false;
+      ctx.session.safeModeReason = undefined;
+      ctx.session.safeModePrompt = undefined;
 
       await invokeNext();
       finalState = ctx.session;

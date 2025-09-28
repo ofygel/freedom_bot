@@ -545,6 +545,10 @@ const applyAuthState = (
   ctx.session.isAuthenticated = options?.isAuthenticated ?? true;
   ctx.session.safeMode = options?.safeMode ?? false;
   ctx.session.isDegraded = options?.isDegraded ?? false;
+  if (!ctx.session.safeMode) {
+    ctx.session.safeModeReason = undefined;
+    ctx.session.safeModePrompt = undefined;
+  }
   ctx.session.user = {
     id: authState.user.telegramId,
     username: authState.user.username,
