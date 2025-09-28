@@ -382,8 +382,16 @@ const normaliseSessionState = (state: SessionState): SessionState => {
     working.safeMode = false;
   }
 
-  if (typeof (working as { degraded?: unknown }).degraded !== 'boolean') {
-    working.degraded = false;
+  const safeModeFlags = working as { isDegraded?: unknown; degraded?: unknown };
+  if (typeof safeModeFlags.isDegraded === 'boolean') {
+    if ('degraded' in safeModeFlags) {
+      delete safeModeFlags.degraded;
+    }
+  } else if (typeof safeModeFlags.degraded === 'boolean') {
+    working.isDegraded = safeModeFlags.degraded;
+    delete safeModeFlags.degraded;
+  } else {
+    working.isDegraded = false;
   }
 
   if (!working.ui) {
@@ -412,7 +420,7 @@ const createDefaultState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
   safeMode: false,
-  degraded: false,
+  isDegraded: false,
   awaitingPhone: false,
   city: undefined,
   authSnapshot: createAuthSnapshot(),
@@ -429,7 +437,7 @@ const prepareFallbackSession = (
   const session = normaliseSessionState(state ?? createDefaultState());
   session.isAuthenticated = false;
   session.safeMode = true;
-  session.degraded = true;
+  session.isDegraded = true;
   session.authSnapshot.status = 'safe_mode';
   session.authSnapshot.stale = true;
   return session;
@@ -605,7 +613,10 @@ export const session = (): MiddlewareFn<BotContext> => async (ctx, next) => {
       }
 
       ctx.session = normaliseSessionState(state);
-      ctx.session.degraded = false;
+      ctx.session.isDegraded = false;
+      if (ctx.session.safeMode) {
+        ctx.session.safeMode = false;
+      }
 
       await invokeNext();
       finalState = ctx.session;

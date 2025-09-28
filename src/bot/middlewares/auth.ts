@@ -538,13 +538,13 @@ const applyAuthState = (
     isAuthenticated?: boolean;
     isStale?: boolean;
     safeMode?: boolean;
-    degraded?: boolean;
+    isDegraded?: boolean;
   },
 ): void => {
   ctx.auth = authState;
   ctx.session.isAuthenticated = options?.isAuthenticated ?? true;
   ctx.session.safeMode = options?.safeMode ?? false;
-  ctx.session.degraded = options?.degraded ?? false;
+  ctx.session.isDegraded = options?.isDegraded ?? false;
   ctx.session.user = {
     id: authState.user.telegramId,
     username: authState.user.username,
@@ -654,7 +654,7 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
   try {
     const authState = await loadAuthState(ctx.from);
-    applyAuthState(ctx, authState, { isStale: false, degraded: false });
+    applyAuthState(ctx, authState, { isStale: false, isDegraded: false });
   } catch (error) {
     if (error instanceof AuthStateQueryError) {
       const cachedSnapshot = ctx.session.authSnapshot;
@@ -686,7 +686,7 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
           isAuthenticated: false,
           isStale: true,
           safeMode: true,
-          degraded: true,
+          isDegraded: true,
         });
       } else {
         const guestState = createGuestAuthState(ctx.from!);
@@ -695,7 +695,7 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
           isAuthenticated: false,
           isStale: true,
           safeMode: true,
-          degraded: true,
+          isDegraded: true,
         });
       }
 

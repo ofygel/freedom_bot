@@ -21,10 +21,10 @@ export const enterSafeMode = async (
     return;
   }
 
-  const alreadySafe = ctx.session.safeMode === true && ctx.session.degraded === true;
+  const alreadySafe = ctx.session.safeMode === true && ctx.session.isDegraded === true;
 
   ctx.session.safeMode = true;
-  ctx.session.degraded = true;
+  ctx.session.isDegraded = true;
   ctx.session.isAuthenticated = false;
   ctx.session.authSnapshot.status = 'safe_mode';
   ctx.session.authSnapshot.stale = true;
