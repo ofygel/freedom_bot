@@ -12,6 +12,7 @@ import { buildInlineKeyboard } from '../keyboards/common';
 import { ui } from '../ui';
 import {
   ROLE_SELECTION_BACK_ACTION,
+  ROLE_PICK_CLIENT_ACTION,
   ROLE_PICK_HELP_ACTION,
   ROLE_PICK_EXECUTOR_ACTION,
   EXECUTOR_KIND_BACK_ACTION,
@@ -22,8 +23,6 @@ import {
 
 const ROLE_PICK_STEP_ID = 'start:role:pick';
 const EXECUTOR_KIND_STEP_ID = 'start:role:executor-kind';
-const ROLE_CLIENT_ACTION = 'role:client';
-
 const ROLE_PICK_TITLE = 'Выбор роли';
 const ROLE_PICK_DESCRIPTION =
   'Freedom Bot помогает клиентам оформлять заказы и исполнителям брать их в работу. Выберите подходящую роль.';
@@ -38,19 +37,19 @@ const EXECUTOR_KIND_HINT = 'ℹ️ Курьеры занимаются дост�
 const buildRolePickKeyboard = () =>
   buildInlineKeyboard([
     [
-      { label: '🧑‍💼 Клиент', action: ROLE_CLIENT_ACTION },
-      { label: '🛠️ Исполнитель', action: ROLE_PICK_EXECUTOR_ACTION },
+      { label: 'Клиент', action: ROLE_PICK_CLIENT_ACTION },
+      { label: 'Исполнитель', action: ROLE_PICK_EXECUTOR_ACTION },
     ],
-    [{ label: '🆘 Помощь', action: ROLE_PICK_HELP_ACTION }],
+    [{ label: 'Помощь', action: ROLE_PICK_HELP_ACTION }],
   ]);
 
 const buildExecutorKindKeyboard = () =>
   buildInlineKeyboard([
     [
-      { label: '🚚 Курьер', action: EXECUTOR_KIND_COURIER_ACTION },
-      { label: '🚗 Водитель', action: EXECUTOR_KIND_DRIVER_ACTION },
+      { label: 'Курьер', action: EXECUTOR_KIND_COURIER_ACTION },
+      { label: 'Водитель', action: EXECUTOR_KIND_DRIVER_ACTION },
     ],
-    [{ label: '⬅️ Назад', action: EXECUTOR_KIND_BACK_ACTION }],
+    [{ label: 'Назад', action: EXECUTOR_KIND_BACK_ACTION }],
   ]);
 
 const resetCitySelectionTracking = (ctx: BotContext): void => {

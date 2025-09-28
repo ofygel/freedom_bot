@@ -6,7 +6,8 @@ import { setUserBlockedStatus } from '../../../db/users';
 import { reportUserRegistration, toUserIdentity } from '../../services/reports';
 import type { BotContext } from '../../types';
 
-export const PHONE_HELP_BUTTON_LABEL = '🆘 Помощь';
+export const PHONE_HELP_BUTTON_LABEL = 'Помощь';
+export const PHONE_STATUS_BUTTON_LABEL = 'Где я?';
 
 const rememberEphemeralMessage = (ctx: BotContext, messageId?: number): void => {
   if (!messageId) {
@@ -18,26 +19,32 @@ const rememberEphemeralMessage = (ctx: BotContext, messageId?: number): void => 
 
 const buildPhoneCollectKeyboard = () =>
   Markup.keyboard([
-    [Markup.button.contactRequest('📲 Поделиться контактом')],
+    [Markup.button.contactRequest('Поделиться контактом')],
     [Markup.button.text(PHONE_HELP_BUTTON_LABEL)],
+    [Markup.button.text(PHONE_STATUS_BUTTON_LABEL)],
   ])
-    .oneTime()
+    .oneTime(true)
     .resize();
 
 const buildPhoneRequestText = (): string =>
   [
     'Для работы с ботом нужен ваш номер телефона.',
-    'Нажмите «📲 Поделиться контактом» или отправьте его вручную.',
+    'Нужен он, чтобы подтверждать заказы и защищать аккаунт — мы не передаём номер третьим лицам и используем его только для связи по заказам.',
     '',
-    'Если возникли сложности, нажмите «🆘 Помощь» — подскажем, что делать.',
+    'Нажмите «Поделиться контактом», чтобы Telegram отправил номер автоматически, или пришлите его вручную в формате +79991234567.',
+    '',
+    'Если возникли сложности, нажмите «Помощь» — подскажем, что делать.',
+    'Запутались? Нажмите «Где я?» — напомню текущий шаг.',
   ].join('\n');
 
 const buildPhoneHelpText = (): string =>
   [
     'ℹ️ Подсказка по обмену номером:',
     '• Откройте этот чат на своём телефоне.',
-    '• Нажмите «📲 Поделиться контактом», чтобы Telegram отправил номер автоматически.',
+    '• Нажмите «Поделиться контактом», чтобы Telegram отправил номер автоматически.',
     '• Или пришлите номер вручную в формате +79991234567.',
+    '',
+    'Мы используем номер только для подтверждения заказов и связи с вами — его не увидят другие пользователи.',
   ].join('\n');
 
 const normalisePhone = (phone: string): string => {
@@ -208,6 +215,22 @@ export const respondToPhoneHelp: MiddlewareFn<BotContext> = async (ctx, next) =>
   }
 
   const message = await ctx.reply(buildPhoneHelpText(), buildPhoneCollectKeyboard());
+  ctx.session.awaitingPhone = true;
+  rememberEphemeralMessage(ctx, message?.message_id);
+};
+
+export const respondToPhoneStatus: MiddlewareFn<BotContext> = async (ctx, next) => {
+  if (ctx.chat?.type !== 'private') {
+    await next();
+    return;
+  }
+
+  if (!ctx.session.awaitingPhone) {
+    await next();
+    return;
+  }
+
+  const message = await ctx.reply(buildPhoneRequestText(), buildPhoneCollectKeyboard());
   ctx.session.awaitingPhone = true;
   rememberEphemeralMessage(ctx, message?.message_id);
 };

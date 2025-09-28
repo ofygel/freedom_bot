@@ -23,6 +23,7 @@ import { START_DELIVERY_ORDER_ACTION } from './deliveryOrderFlow';
 import { buildInlineKeyboard } from '../../keyboards/common';
 import { bindInlineKeyboardToUser } from '../../services/callbackTokens';
 import { copy } from '../../copy';
+import { ROLE_PICK_CLIENT_ACTION } from '../executor/roleSelectionConstants';
 
 const ROLE_CLIENT_ACTION = 'role:client';
 export const CLIENT_MENU_ACTION = 'client:menu:show';
@@ -209,26 +210,30 @@ export const showMenu = async (ctx: BotContext, prompt?: string): Promise<void> 
 };
 
 export const registerClientMenu = (bot: Telegraf<BotContext>): void => {
-  bot.action(ROLE_CLIENT_ACTION, async (ctx) => {
-    await applyClientRole(ctx);
+  const clientRoleActions = [ROLE_CLIENT_ACTION, ROLE_PICK_CLIENT_ACTION] as const;
 
-    if (!isClientChat(ctx, ctx.auth?.user.role)) {
-      await showMenu(ctx);
-      return;
-    }
+  for (const action of clientRoleActions) {
+    bot.action(action, async (ctx) => {
+      await applyClientRole(ctx);
 
-    await removeRoleSelectionMessage(ctx);
+      if (!isClientChat(ctx, ctx.auth?.user.role)) {
+        await showMenu(ctx);
+        return;
+      }
 
-    await applyClientCommands(ctx);
+      await removeRoleSelectionMessage(ctx);
 
-    try {
-      await ctx.answerCbQuery();
-    } catch (error) {
-      logger.debug({ err: error }, 'Failed to answer client role callback');
-    }
+      await applyClientCommands(ctx);
 
-    await showMenu(ctx, 'Добро пожаловать! Чем можем помочь?');
-  });
+      try {
+        await ctx.answerCbQuery();
+      } catch (error) {
+        logger.debug({ err: error }, 'Failed to answer client role callback');
+      }
+
+      await showMenu(ctx, 'Добро пожаловать! Чем можем помочь?');
+    });
+  }
 
   bot.action(CLIENT_MENU_ACTION, async (ctx) => {
     if (!isClientChat(ctx, ctx.auth?.user.role)) {

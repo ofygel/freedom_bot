@@ -23,6 +23,10 @@ const buildCityKeyboard = (): InlineKeyboardMarkup =>
   ).reply_markup as InlineKeyboardMarkup;
 
 const resolveHomeAction = (ctx: BotContext): string => {
+  if (ctx.session.executor?.roleSelectionStage === 'city') {
+    return ROLE_SELECTION_BACK_ACTION;
+  }
+
   const pending = ctx.session.ui?.pendingCityAction;
   if (pending === 'clientMenu') {
     return CLIENT_MENU_HOME_ACTION;
@@ -81,6 +85,14 @@ export const askCity = async (
 
   const keyboard = buildCityKeyboard();
   const homeAction = options.homeAction ?? resolveHomeAction(ctx);
+
+  if (homeAction === ROLE_SELECTION_BACK_ACTION && ctx.session.executor) {
+    ctx.session.executor.awaitingRoleSelection = true;
+    if (ctx.session.executor.roleSelectionStage === undefined) {
+      ctx.session.executor.roleSelectionStage = 'city';
+    }
+  }
+
   await ui.step(ctx, {
     id: CITY_CONFIRM_STEP_ID,
     text: title,
@@ -188,6 +200,7 @@ export const registerCityAction = (bot: Telegraf<BotContext>): void => {
 
     if (ctx.session.executor?.roleSelectionStage === 'city') {
       ctx.session.executor.roleSelectionStage = undefined;
+      ctx.session.executor.awaitingRoleSelection = false;
     }
 
     if (typeof next === 'function') {
