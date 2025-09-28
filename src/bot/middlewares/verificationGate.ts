@@ -12,7 +12,12 @@ import {
   EXECUTOR_VERIFICATION_ACTION,
   isExecutorMenuTextCommand,
 } from '../flows/executor/menu';
-import { startExecutorVerification } from '../flows/executor/verification';
+import {
+  EXECUTOR_ROLE_SWITCH_ACTION,
+  EXECUTOR_VERIFICATION_GUIDE_ACTION,
+  showExecutorVerificationPrompt,
+  startExecutorVerification,
+} from '../flows/executor/verification';
 import { EXECUTOR_ROLES, type BotContext, type ExecutorRole } from '../types';
 
 const COLLECTING_SAFE_COMMANDS = new Set(['/start', '/menu', '/help']);
@@ -24,6 +29,8 @@ const COLLECTING_SAFE_CALLBACKS = new Set([
   EXECUTOR_SUBSCRIPTION_ACTION,
   EXECUTOR_SUPPORT_ACTION,
   EXECUTOR_VERIFICATION_ACTION,
+  EXECUTOR_ROLE_SWITCH_ACTION,
+  EXECUTOR_VERIFICATION_GUIDE_ACTION,
 ]);
 const VERIFICATION_REMINDER_INTERVAL_MS = 60_000;
 
@@ -121,7 +128,7 @@ export const ensureVerifiedExecutor: MiddlewareFn<BotContext> = async (ctx, next
 
     if (now - lastReminderAt >= VERIFICATION_REMINDER_INTERVAL_MS) {
       try {
-        await ctx.reply('Жду две фотографии документов, чтобы продолжить.');
+        await showExecutorVerificationPrompt(ctx, executorRole);
       } catch (error) {
         logger.debug({ err: error }, 'Failed to send verification reminder');
       }

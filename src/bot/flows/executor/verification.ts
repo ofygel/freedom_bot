@@ -14,6 +14,7 @@ import { persistVerificationSubmission } from '../../../db/verifications';
 import {
   EXECUTOR_MENU_ACTION,
   EXECUTOR_MENU_TEXT_LABELS,
+  EXECUTOR_SUPPORT_ACTION,
   EXECUTOR_SUBSCRIPTION_ACTION,
   EXECUTOR_VERIFICATION_ACTION,
   ensureExecutorState,
@@ -31,16 +32,14 @@ import { reportVerificationSubmitted, type UserIdentity } from '../../services/r
 import { setChatCommands } from '../../services/commands';
 import { CLIENT_COMMANDS } from '../../commands/sets';
 
-const ROLE_PROMPTS: Record<ExecutorRole, string[]> = {
+const ROLE_DOCUMENT_REQUIREMENTS: Record<ExecutorRole, string[]> = {
   courier: [
-    `Для доступа к заказам курьера отправьте ${EXECUTOR_VERIFICATION_PHOTO_COUNT} фотографии документов:`,
-    '1. Фото удостоверения личности (лицевая сторона).',
-    '2. Фото удостоверения личности (оборотная сторона).',
+    'Фото удостоверения личности (лицевая сторона).',
+    'Фото удостоверения личности (оборотная сторона).',
   ],
   driver: [
-    `Для доступа к заказам водителя отправьте ${EXECUTOR_VERIFICATION_PHOTO_COUNT} фотографии документов:`,
-    '1. Фото водительского удостоверения (лицевая сторона).',
-    '2. Селфи с водительским удостоверением в руках.',
+    'Фото водительского удостоверения (лицевая сторона).',
+    'Селфи с водительским удостоверением в руках.',
   ],
 };
 
@@ -80,8 +79,19 @@ export const getVerificationRoleGuidance = (
   ROLE_VERIFICATION_GUIDANCE[role] ?? ROLE_VERIFICATION_GUIDANCE.courier;
 
 const buildVerificationPrompt = (role: ExecutorRole): string => {
-  const lines = ROLE_PROMPTS[role] ?? ROLE_PROMPTS.courier;
-  return [...lines, '', VERIFICATION_ALBUM_HINT].join('\n');
+  const copy = getExecutorRoleCopy(role);
+  const requirements = ROLE_DOCUMENT_REQUIREMENTS[role] ?? ROLE_DOCUMENT_REQUIREMENTS.courier;
+  const requiredPhotos = requirements.length || EXECUTOR_VERIFICATION_PHOTO_COUNT;
+  const requirementLines = requirements.map((item, index) => `${index + 1}. ${item}`);
+
+  return [
+    '🛡️ Проверка документов.',
+    '',
+    `Чтобы получить доступ к заказам ${copy.genitive}, пришлите ${requiredPhotos} фото:`,
+    ...requirementLines,
+    '',
+    `ℹ️ ${VERIFICATION_ALBUM_HINT}`,
+  ].join('\n');
 };
 
 const VERIFICATION_CHANNEL_MISSING_STEP_ID = 'executor:verification:channel-missing';
@@ -101,10 +111,48 @@ const buildSubscriptionShortcutKeyboard = () =>
     [Markup.button.callback('📨 Получить ссылку на канал', EXECUTOR_SUBSCRIPTION_ACTION)],
   ]).reply_markup;
 
+export const EXECUTOR_VERIFICATION_GUIDE_ACTION = 'executor:verification:guide';
+
 const buildVerificationPromptKeyboard = () =>
   Markup.inlineKeyboard([
+    [Markup.button.callback('Что подходит?', EXECUTOR_VERIFICATION_GUIDE_ACTION)],
+    [
+      Markup.button.callback('Назад/Где я?', EXECUTOR_MENU_ACTION),
+      Markup.button.callback('Помощь', EXECUTOR_SUPPORT_ACTION),
+    ],
     [Markup.button.callback('↩️ Сменить роль', EXECUTOR_ROLE_SWITCH_ACTION)],
   ]).reply_markup;
+
+const buildVerificationGuidanceText = (role: ExecutorRole): string => {
+  const guidance = getVerificationRoleGuidance(role);
+
+  return [
+    'ℹ️ Что подходит?',
+    '',
+    guidance.nextStepsPrompt,
+    '',
+    '⚠️ Фото должны быть чёткими, без бликов и закрытых данных.',
+    '',
+    `ℹ️ ${VERIFICATION_ALBUM_HINT}`,
+  ].join('\n');
+};
+
+const VERIFICATION_GUIDANCE_STEP_ID = 'executor:verification:guidance';
+
+export const showExecutorVerificationPrompt = async (
+  ctx: BotContext,
+  role: ExecutorRole,
+): Promise<void> => {
+  const promptText = buildVerificationPrompt(role);
+
+  await ui.step(ctx, {
+    id: VERIFICATION_PROMPT_STEP_ID,
+    text: promptText,
+    keyboard: buildVerificationPromptKeyboard(),
+    cleanup: true,
+    homeAction: EXECUTOR_MENU_ACTION,
+  });
+};
 
 const buildVerificationApprovedText = (
   copy: ReturnType<typeof getExecutorRoleCopy>,
@@ -396,14 +444,7 @@ export const startExecutorVerification = async (
   resetVerificationState(state);
   state.verification[role].status = 'collecting';
 
-  const promptText = buildVerificationPrompt(role);
-  await ui.step(ctx, {
-    id: VERIFICATION_PROMPT_STEP_ID,
-    text: promptText,
-    keyboard: buildVerificationPromptKeyboard(),
-    cleanup: true,
-    homeAction: EXECUTOR_MENU_ACTION,
-  });
+  await showExecutorVerificationPrompt(ctx, role);
 
   await showExecutorMenu(ctx, { skipAccessCheck: true });
 };
@@ -476,14 +517,7 @@ const handleIncomingPhoto = async (
     verification = state.verification[role];
     verification.status = 'collecting';
 
-    const promptText = buildVerificationPrompt(role);
-    await ui.step(ctx, {
-      id: VERIFICATION_PROMPT_STEP_ID,
-      text: promptText,
-      keyboard: buildVerificationPromptKeyboard(),
-      cleanup: true,
-      homeAction: EXECUTOR_MENU_ACTION,
-    });
+    await showExecutorVerificationPrompt(ctx, role);
   } else if (verification.status !== 'collecting') {
     await ui.step(ctx, {
       id: VERIFICATION_START_REMINDER_STEP_ID,
@@ -612,6 +646,29 @@ export const registerExecutorVerification = (bot: Telegraf<BotContext>): void =>
 
     await ctx.answerCbQuery();
     await startExecutorVerification(ctx);
+  });
+
+  bot.action(EXECUTOR_VERIFICATION_GUIDE_ACTION, async (ctx) => {
+    if (ctx.chat?.type !== 'private') {
+      await ctx.answerCbQuery('Доступно только в личных сообщениях.');
+      return;
+    }
+
+    await ctx.answerCbQuery();
+
+    const state = ensureExecutorState(ctx);
+    const role = state.role;
+    if (!role) {
+      return;
+    }
+
+    await ui.step(ctx, {
+      id: VERIFICATION_GUIDANCE_STEP_ID,
+      text: buildVerificationGuidanceText(role),
+      keyboard: buildVerificationPromptKeyboard(),
+      cleanup: true,
+      homeAction: EXECUTOR_MENU_ACTION,
+    });
   });
 
   bot.action(EXECUTOR_ROLE_SWITCH_ACTION, async (ctx) => {
