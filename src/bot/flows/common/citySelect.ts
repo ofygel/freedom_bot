@@ -48,6 +48,23 @@ const resolveHomeAction = (ctx: BotContext): string => {
   return EXECUTOR_MENU_HOME_ACTION;
 };
 
+const hasActiveOrder = (ctx: BotContext): boolean => {
+  if (ctx.auth.user.hasActiveOrder) {
+    return true;
+  }
+
+  const executorJobs = ctx.session.executor?.jobs;
+  if (executorJobs?.stage === 'inProgress') {
+    return true;
+  }
+
+  if (typeof executorJobs?.activeOrderId === 'number') {
+    return true;
+  }
+
+  return false;
+};
+
 const applyCitySelection = (ctx: BotContext, city: AppCity): void => {
   const previousCity = ctx.auth.user.citySelected;
   ctx.auth.user.citySelected = city;
@@ -95,9 +112,14 @@ export const askCity = async (
   }
 
   const showBackTip = homeAction === ROLE_SELECTION_BACK_ACTION && Boolean(homeLabel);
+  const restrictionNotice = hasActiveOrder(ctx)
+    ? 'Сменить город можно после завершения активного заказа.'
+    : undefined;
+
+  const baseText = restrictionNotice ? `${title}\n\n${restrictionNotice}` : title;
   const stepText = showBackTip && homeLabel
-    ? `${title}\n\nЕсли хотите вернуться, нажмите «${homeLabel}».`
-    : title;
+    ? `${baseText}\n\nЕсли хотите вернуться, нажмите «${homeLabel}».`
+    : baseText;
 
   await ui.step(ctx, {
     id: CITY_CONFIRM_STEP_ID,
@@ -135,6 +157,13 @@ export const registerCityAction = (bot: Telegraf<BotContext>): void => {
     const telegramId = ctx.from?.id;
     if (!telegramId) {
       await ctx.answerCbQuery('Не удалось определить пользователя.');
+      return;
+    }
+
+    if (hasActiveOrder(ctx)) {
+      await ctx.answerCbQuery('Сменить город можно после завершения активного заказа.', {
+        show_alert: true,
+      });
       return;
     }
 
