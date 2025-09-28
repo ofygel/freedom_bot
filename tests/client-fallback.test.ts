@@ -49,6 +49,7 @@ const createSessionState = () => ({
   },
   ui: { steps: {}, homeActions: [] },
   support: { status: 'idle' } as SupportSessionState,
+  authSnapshot: { stale: false },
 });
 
 const captureFallbackHandler = () => {

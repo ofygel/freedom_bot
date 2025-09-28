@@ -175,6 +175,11 @@ const normaliseSubscriptionState = (
   lastReminderAt: normaliseReminderTimestamp(value?.lastReminderAt),
 });
 
+<<<<<<< HEAD
+export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
+  const authRole = ctx.auth.user.role;
+  if (authRole === 'courier' || authRole === 'driver') {
+=======
 const isExecutorRole = (role: AuthUser['role'] | ExecutorRole | undefined): role is ExecutorRole =>
   role === 'courier' || role === 'driver';
 
@@ -199,12 +204,18 @@ const getCachedExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
 export const userLooksLikeExecutor = (ctx: BotContext): boolean => {
   const authRole = ctx.auth.user.role;
   if (isExecutorRole(authRole)) {
+>>>>>>> origin/main
     return true;
   }
 
   if (ctx.session.isAuthenticated === false && authRole === 'guest') {
+<<<<<<< HEAD
+    const sessionRole = ctx.session.executor?.role;
+    return sessionRole === 'courier' || sessionRole === 'driver';
+=======
     const sessionRole = getSessionExecutorRole(ctx);
     return isExecutorRole(sessionRole);
+>>>>>>> origin/main
   }
 
   return false;
@@ -217,9 +228,15 @@ const deriveAuthExecutorRole = (ctx: BotContext): ExecutorRole | undefined => {
   }
 
   if (ctx.session.isAuthenticated === false && authRole === 'guest') {
+<<<<<<< HEAD
+    const sessionRole = ctx.session.executor?.role;
+    if (sessionRole === 'courier' || sessionRole === 'driver') {
+      return sessionRole;
+=======
     const cachedRole = getCachedExecutorRole(ctx);
     if (isExecutorRole(cachedRole)) {
       return cachedRole;
+>>>>>>> origin/main
     }
   }
 
@@ -660,9 +677,16 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     const pendingCityAction = ctx.session.ui?.pendingCityAction;
+<<<<<<< HEAD
+    const looksLikeExecutor = userLooksLikeExecutor(ctx);
+
+    const shouldShowExecutorMenu =
+      pendingCityAction === EXECUTOR_MENU_CITY_ACTION || (!pendingCityAction && looksLikeExecutor);
+=======
     const shouldShowExecutorMenu =
       pendingCityAction === EXECUTOR_MENU_CITY_ACTION ||
       (!pendingCityAction && userLooksLikeExecutor(ctx));
+>>>>>>> origin/main
 
     if (!shouldShowExecutorMenu) {
       return;
@@ -679,8 +703,12 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
     }
 
     if (!userLooksLikeExecutor(ctx)) {
+<<<<<<< HEAD
+      await ctx.answerCbQuery('Доступно только для исполнителей.');
+=======
       await ctx.answerCbQuery();
       await showMenu(ctx);
+>>>>>>> origin/main
       return;
     }
 
@@ -694,6 +722,9 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
       return;
     }
 
+<<<<<<< HEAD
+    if (!userLooksLikeExecutor(ctx)) {
+=======
     const looksLikeExecutor = userLooksLikeExecutor(ctx);
     const cachedExecutorRole =
       !looksLikeExecutor &&
@@ -703,6 +734,7 @@ export const registerExecutorMenu = (bot: Telegraf<BotContext>): void => {
         : undefined;
 
     if (!looksLikeExecutor && !cachedExecutorRole) {
+>>>>>>> origin/main
       await showMenu(ctx);
       return;
     }

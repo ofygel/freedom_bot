@@ -224,6 +224,7 @@ describe('resolveInviteLink with trial subscriptions', () => {
         },
         ui: { steps: {}, homeActions: [] },
         support: { status: 'idle' as const },
+        authSnapshot: { stale: false },
       },
       auth: {
         user: {

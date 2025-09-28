@@ -54,6 +54,7 @@ const createSessionState = () => ({
   },
   ui: { steps: {}, homeActions: [], pendingCityAction: undefined as string | undefined },
   support: { status: 'idle' as const },
+  authSnapshot: { stale: false },
 });
 
 const createAuthState = (): BotContext['auth'] => ({

@@ -78,6 +78,7 @@ const createSessionState = (): SessionState => ({
   },
   ui: { steps: {}, homeActions: [], pendingCityAction: undefined },
   support: { status: 'idle' },
+  authSnapshot: { stale: false },
 });
 
 const createBot = () => {

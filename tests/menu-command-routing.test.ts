@@ -84,6 +84,7 @@ const createSessionState = (): SessionState => ({
   },
   ui: { steps: {}, homeActions: [] },
   support: { status: 'idle' },
+  authSnapshot: { stale: false },
 });
 
 const createAuthState = (role: BotContext['auth']['user']['role']): BotContext['auth'] => ({
@@ -412,7 +413,11 @@ describe("/menu command routing", () => {
     }
   });
 
+<<<<<<< HEAD
+  it('shows the executor menu when auth falls back to guest but the session retains executor role', async () => {
+=======
   it('uses cached executor snapshot when auth query fails', async () => {
+>>>>>>> origin/main
     const showExecutorMenuMock = mock.method(
       executorMenuModule,
       'showExecutorMenu',
@@ -426,6 +431,21 @@ describe("/menu command routing", () => {
     const handler = getCommand('menu');
     assert.ok(handler, 'menu command should be registered');
 
+<<<<<<< HEAD
+    try {
+      const ctx = createContext('courier');
+      ctx.auth.user.role = 'guest';
+      ctx.session.isAuthenticated = false;
+      ctx.session.executor.role = 'courier';
+      ctx.session.authSnapshot = {
+        stale: false,
+        executor: {
+          verifiedRoles: { courier: false, driver: false },
+          hasActiveSubscription: false,
+          isVerified: false,
+        },
+      };
+=======
     const session = createSessionState();
     session.isAuthenticated = true;
     session.user = {
@@ -508,12 +528,15 @@ describe("/menu command routing", () => {
       assert.equal(ctx.auth.executor.verifiedRoles.courier, true);
       assert.equal(ctx.auth.executor.hasActiveSubscription, true);
       assert.equal(ctx.auth.executor.isVerified, true);
+>>>>>>> origin/main
 
       await handler(ctx);
 
       assert.equal(showExecutorMenuMock.mock.callCount(), 1);
       assert.equal(showClientMenuMock.mock.callCount(), 0);
     } finally {
+<<<<<<< HEAD
+=======
       queryMock.mock.restore();
       showExecutorMenuMock.mock.restore();
       showClientMenuMock.mock.restore();
@@ -642,6 +665,7 @@ describe("/menu command routing", () => {
       assert.equal(showExecutorMenuMock.mock.callCount(), 0);
       assert.equal(showClientMenuMock.mock.callCount(), 1);
     } finally {
+>>>>>>> origin/main
       showExecutorMenuMock.mock.restore();
       showClientMenuMock.mock.restore();
     }
