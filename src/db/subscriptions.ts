@@ -108,7 +108,7 @@ export class TrialSubscriptionUnavailableError extends Error {
 }
 
 export interface CreateTrialSubscriptionParams extends TelegramUserDetails {
-  chatId: number;
+  chatId?: number;
   trialDays: number;
   currency: string;
   now?: Date;
@@ -554,10 +554,11 @@ export const createTrialSubscription = async (
   const trialDays = Math.max(1, Math.floor(params.trialDays));
   const now = params.now ?? new Date();
   const nextBillingAt = new Date(now.getTime() + trialDays * DAY_IN_MS);
+  const targetChatId = params.chatId ?? params.telegramId;
 
   return withTx(async (client) => {
     const telegramId = await upsertTelegramUser(client, params);
-    const existing = await fetchSubscriptionForUpdate(client, telegramId, params.chatId);
+    const existing = await fetchSubscriptionForUpdate(client, telegramId, targetChatId);
 
     if (existing && hasUsedTrial(existing.metadata)) {
       throw new TrialSubscriptionUnavailableError('already_used', 'Trial period already used');
@@ -673,7 +674,14 @@ export const createTrialSubscription = async (
         )
         RETURNING id
       `,
-      [telegramId, params.chatId, params.currency, trialDays, nextBillingAt, JSON.stringify(metadata)],
+      [
+        telegramId,
+        targetChatId,
+        params.currency,
+        trialDays,
+        nextBillingAt,
+        JSON.stringify(metadata),
+      ],
     );
 
     const [row] = rows;
