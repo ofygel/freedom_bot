@@ -9,11 +9,6 @@ import {
   type AuthExecutorState,
   type AuthState,
   type AuthStateSnapshot,
-<<<<<<< HEAD
-  type AuthStateSnapshotExecutor,
-  type AuthStateSnapshotUser,
-=======
->>>>>>> origin/main
   type BotContext,
   type ExecutorRole,
   type UserRole,
@@ -434,85 +429,6 @@ const applyAuthState = (
   } satisfies AuthStateSnapshot;
 };
 
-const toTimestamp = (value: Date | undefined): number | undefined =>
-  value ? value.valueOf() : undefined;
-
-const serialiseAuthSnapshot = (authState: AuthState): AuthStateSnapshot => ({
-  user: {
-    telegramId: authState.user.telegramId,
-    username: authState.user.username,
-    firstName: authState.user.firstName,
-    lastName: authState.user.lastName,
-    phone: authState.user.phone,
-    phoneVerified: authState.user.phoneVerified,
-    role: authState.user.role,
-    status: authState.user.status,
-    isVerified: authState.user.isVerified,
-    isBlocked: authState.user.isBlocked,
-    citySelected: authState.user.citySelected,
-    verifiedAt: toTimestamp(authState.user.verifiedAt),
-    trialEndsAt: toTimestamp(authState.user.trialEndsAt),
-    lastMenuRole: authState.user.lastMenuRole,
-    keyboardNonce: authState.user.keyboardNonce,
-  } satisfies AuthStateSnapshotUser,
-  executor: {
-    verifiedRoles: { ...authState.executor.verifiedRoles },
-    hasActiveSubscription: authState.executor.hasActiveSubscription,
-    isVerified: authState.executor.isVerified,
-  } satisfies AuthStateSnapshotExecutor,
-  isModerator: authState.isModerator,
-  stale: false,
-});
-
-const restoreTimestamp = (value: number | undefined): Date | undefined =>
-  typeof value === 'number' ? new Date(value) : undefined;
-
-const restoreAuthStateFromSnapshot = (
-  snapshot: AuthStateSnapshot,
-  from: NonNullable<BotContext['from']>,
-): AuthState => {
-  const userSnapshot = snapshot.user;
-  const executorSnapshot = snapshot.executor;
-
-  const user = {
-    telegramId: userSnapshot?.telegramId ?? from.id,
-    username: userSnapshot?.username ?? from.username ?? undefined,
-    firstName: userSnapshot?.firstName ?? from.first_name ?? undefined,
-    lastName: userSnapshot?.lastName ?? from.last_name ?? undefined,
-    phone: userSnapshot?.phone,
-    phoneVerified: userSnapshot?.phoneVerified ?? false,
-    role: userSnapshot?.role ?? 'guest',
-    status: userSnapshot?.status ?? 'guest',
-    isVerified: userSnapshot?.isVerified ?? false,
-    isBlocked: userSnapshot?.isBlocked ?? false,
-    citySelected: userSnapshot?.citySelected,
-    verifiedAt: restoreTimestamp(userSnapshot?.verifiedAt),
-    trialEndsAt: restoreTimestamp(userSnapshot?.trialEndsAt),
-    lastMenuRole: userSnapshot?.lastMenuRole,
-    keyboardNonce: userSnapshot?.keyboardNonce,
-  } satisfies AuthState['user'];
-
-  const executor: AuthExecutorState = executorSnapshot
-    ? {
-        verifiedRoles: { ...executorSnapshot.verifiedRoles },
-        hasActiveSubscription: executorSnapshot.hasActiveSubscription,
-        isVerified: executorSnapshot.isVerified,
-      }
-    : {
-        verifiedRoles: { courier: false, driver: false },
-        hasActiveSubscription: false,
-        isVerified: false,
-      };
-
-  const isModerator = snapshot.isModerator ?? user.role === 'moderator';
-
-  return {
-    user,
-    executor,
-    isModerator,
-  } satisfies AuthState;
-};
-
 type ChatWithType = Nullable<{ type?: string }>;
 
 const isChannelChat = (chat: ChatWithType): boolean => chat?.type === 'channel';
@@ -589,24 +505,6 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
 
   try {
     const authState = await loadAuthState(ctx.from);
-<<<<<<< HEAD
-    applyAuthState(ctx, authState);
-    ctx.session.authSnapshot = serialiseAuthSnapshot(authState);
-  } catch (error) {
-    if (error instanceof AuthStateQueryError) {
-      const snapshot = ctx.session.authSnapshot;
-      if (snapshot && (snapshot.user || snapshot.executor)) {
-        const restoredAuth = restoreAuthStateFromSnapshot(snapshot, ctx.from);
-        applyAuthState(ctx, restoredAuth, { isAuthenticated: false });
-        ctx.session.authSnapshot = { ...snapshot, stale: true } satisfies AuthStateSnapshot;
-      } else {
-        const authState = createGuestAuthState(ctx.from);
-        applyAuthState(ctx, authState, { isAuthenticated: false });
-        ctx.session.authSnapshot = serialiseAuthSnapshot(authState);
-        ctx.session.authSnapshot.stale = true;
-      }
-      logger.warn({ err: error.cause ?? error, update: ctx.update }, 'Failed to load auth state, using guest context');
-=======
     applyAuthState(ctx, authState, { isStale: false });
   } catch (error) {
     if (error instanceof AuthStateQueryError) {
@@ -629,7 +527,6 @@ export const auth = (): MiddlewareFn<BotContext> => async (ctx, next) => {
         { err: error.cause ?? error, update: ctx.update },
         'Failed to load auth state, using cached snapshot',
       );
->>>>>>> origin/main
       await next();
       return;
     }

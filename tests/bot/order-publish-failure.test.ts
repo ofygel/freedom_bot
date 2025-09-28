@@ -95,8 +95,7 @@ const createBaseContext = () => {
     },
     ui: { steps: {}, homeActions: [] },
     support: { status: 'idle' },
-    authSnapshot: { stale: false },
-  };
+    };
 
   const ctx = {
     chat: { id: 1001, type: 'private' as const },

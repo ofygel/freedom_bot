@@ -64,8 +64,7 @@ describe('city selection flow', () => {
         },
         ui: { steps: {}, homeActions: [] },
         support: { status: 'idle' },
-        authSnapshot: { stale: false },
-      },
+            },
       auth: {
         user: {
           telegramId: 222,
