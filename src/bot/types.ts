@@ -27,6 +27,7 @@ export type UserStatus =
   | 'awaiting_phone'
   | 'active_client'
   | 'active_executor'
+  | 'safe_mode'
   | 'trial_expired'
   | 'suspended'
   | 'banned';
@@ -188,6 +189,7 @@ export interface SupportSessionState {
 export interface SessionState {
   ephemeralMessages: number[];
   isAuthenticated: boolean;
+  safeMode: boolean;
   awaitingPhone: boolean;
   phoneNumber?: string;
   user?: SessionUser;

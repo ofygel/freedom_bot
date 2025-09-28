@@ -94,7 +94,7 @@ const applyClientRole = async (ctx: BotContext): Promise<void> => {
   const shouldEnsureRole = authUser.role !== 'client';
   const shouldUpdatePhone = Boolean(phone && authPhone !== phone);
 
-  const restrictedStatuses = new Set(['suspended', 'banned']);
+  const restrictedStatuses = new Set(['suspended', 'banned', 'safe_mode']);
   const shouldPreserveStatus = restrictedStatuses.has(authUser.status);
 
   const nextStatus = shouldPreserveStatus ? authUser.status : 'active_client';

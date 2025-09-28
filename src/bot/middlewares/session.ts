@@ -86,6 +86,7 @@ const USER_STATUSES: readonly UserStatus[] = [
   'awaiting_phone',
   'active_client',
   'active_executor',
+  'safe_mode',
   'trial_expired',
   'suspended',
   'banned',
@@ -336,6 +337,10 @@ const normaliseSessionState = (state: SessionState): SessionState => {
     working.city = undefined;
   }
 
+  if (typeof (working as { safeMode?: unknown }).safeMode !== 'boolean') {
+    working.safeMode = false;
+  }
+
   if (!working.ui) {
     working.ui = createUiState();
   }
@@ -357,6 +362,7 @@ const normaliseSessionState = (state: SessionState): SessionState => {
 const createDefaultState = (): SessionState => ({
   ephemeralMessages: [],
   isAuthenticated: false,
+  safeMode: false,
   awaitingPhone: false,
   city: undefined,
   authSnapshot: createAuthSnapshot(),
@@ -371,6 +377,8 @@ const prepareFallbackSession = (
 ): SessionState => {
   const session = normaliseSessionState(state ?? createDefaultState());
   session.isAuthenticated = false;
+  session.safeMode = true;
+  session.authSnapshot.status = 'safe_mode';
   session.authSnapshot.stale = true;
   return session;
 };

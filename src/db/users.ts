@@ -13,7 +13,7 @@ export interface UpdateUserRoleParams {
   telegramId: number;
   role: 'guest' | 'client' | 'executor';
   executorKind?: ExecutorRole | null;
-  status?: 'active_client' | 'active_executor';
+  status?: 'active_client' | 'active_executor' | 'safe_mode';
   menuRole?: 'client' | 'courier';
 }
 
