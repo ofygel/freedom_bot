@@ -26,9 +26,17 @@ interface FlowRecoveryShape {
   payload?: unknown;
 }
 
+interface FlowStepPayload {
+  id?: string;
+  title?: string;
+  text?: string;
+  actions?: string[];
+}
+
 interface FlowPayloadShape {
   homeAction?: string | null;
   recovery?: FlowRecoveryShape;
+  step?: FlowStepPayload;
 }
 
 const secret = config.bot.callbackSignSecret ?? config.bot.token;
@@ -88,10 +96,51 @@ const parseFlowPayload = (value: unknown): FlowPayloadShape => {
     }
   }
 
+  let step: FlowStepPayload | undefined;
+  const stepCandidate = candidate.step;
+  if (stepCandidate && typeof stepCandidate === 'object') {
+    const stepObject = stepCandidate as Record<string, unknown>;
+    const id = typeof stepObject.id === 'string' ? stepObject.id : undefined;
+    const title = typeof stepObject.title === 'string' ? stepObject.title : undefined;
+    const text = typeof stepObject.text === 'string' ? stepObject.text : undefined;
+    const actionsCandidate = stepObject.actions;
+    const actions = Array.isArray(actionsCandidate)
+      ? actionsCandidate.filter((item): item is string => typeof item === 'string')
+      : undefined;
+
+    step = {
+      id,
+      title,
+      text,
+      actions,
+    };
+  }
+
   return {
     homeAction: homeAction ?? undefined,
     recovery,
+    step,
   };
+};
+
+const buildNudgeText = (payload: FlowPayloadShape): string => {
+  const segments: string[] = [copy.inactivityNudge];
+
+  const step = payload.step;
+  if (step?.title || step?.text) {
+    const details: string[] = [];
+    if (step.title) {
+      details.push(`• ${step.title}`);
+    }
+    if (step.text) {
+      details.push(step.text);
+    }
+    if (details.length > 0) {
+      segments.push(details.join('\n'));
+    }
+  }
+
+  return segments.join('\n\n');
 };
 
 const bindAction = (
@@ -189,7 +238,7 @@ const deliverNudge = async (bot: Telegraf<BotContext>, row: PendingSessionRow): 
   }
 
   try {
-    await bot.telegram.sendMessage(sessionKey.scopeId, copy.inactivityNudge, {
+    await bot.telegram.sendMessage(sessionKey.scopeId, buildNudgeText(payload), {
       reply_markup: keyboard,
       disable_notification: true,
     });

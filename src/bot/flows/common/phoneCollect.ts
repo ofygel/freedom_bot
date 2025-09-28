@@ -5,9 +5,27 @@ import { pool } from '../../../db';
 import { setUserBlockedStatus } from '../../../db/users';
 import { reportUserRegistration, toUserIdentity } from '../../services/reports';
 import type { BotContext } from '../../types';
+import { ui } from '../../ui';
 
 export const PHONE_HELP_BUTTON_LABEL = 'Помощь';
 export const PHONE_STATUS_BUTTON_LABEL = 'Где я?';
+export const PHONE_COLLECT_STEP_ID = 'common:phone:collect';
+
+const PHONE_COLLECT_TITLE = 'Поделитесь номером телефона';
+const PHONE_COLLECT_TEXT = [
+  'Freedom Bot использует ваш номер, чтобы подтверждать заказы и защищать аккаунт.',
+  'Telegram передаёт контакт напрямую и шифрует его, а мы храним номер в зашифрованном виде и используем только для связи по заказам.',
+  'Нажмите «Поделиться контактом», если нужна помощь — кнопка «Помощь» расскажет, что делать.',
+].join('\n\n');
+
+const PHONE_FOREIGN_CONTACT_TITLE = 'Номер не подошёл';
+const PHONE_FOREIGN_CONTACT_TEXT = [
+  'Не удалось принять контакт.',
+  'Можно отправить только свой номер — Telegram прикрепит его автоматически.',
+  'Нажмите «Поделиться контактом», чтобы попробовать ещё раз.',
+].join('\n\n');
+
+const PHONE_STEP_ACTIONS = ['📲 Поделиться контактом', PHONE_HELP_BUTTON_LABEL, PHONE_STATUS_BUTTON_LABEL];
 
 const rememberEphemeralMessage = (ctx: BotContext, messageId?: number): void => {
   if (!messageId) {
@@ -17,7 +35,7 @@ const rememberEphemeralMessage = (ctx: BotContext, messageId?: number): void => 
   ctx.session.ephemeralMessages.push(messageId);
 };
 
-const buildPhoneCollectKeyboard = () =>
+export const buildPhoneCollectKeyboard = () =>
   Markup.keyboard([
     [Markup.button.contactRequest('📲 Поделиться контактом')],
     [Markup.button.text(PHONE_HELP_BUTTON_LABEL)],
@@ -26,25 +44,43 @@ const buildPhoneCollectKeyboard = () =>
     .oneTime(true)
     .resize();
 
-const buildPhoneRequestText = (): string =>
-  [
-    'Для работы с ботом нужен ваш номер телефона.',
-    'Нужен он, чтобы подтверждать заказы и защищать аккаунт — мы не передаём номер третьим лицам и используем его только для связи по заказам.',
-    'Telegram отправляет контакт напрямую и шифрует передачу, а мы храним номер в зашифрованном виде и ограничиваем к нему доступ внутри команды.',
-    'Кнопка «Поделиться контактом» безопасно передаёт номер через Telegram — никто посторонний его не увидит.',
-    '',
-    'Нажмите «Поделиться контактом», чтобы Telegram отправил номер автоматически, или пришлите его вручную в формате +79991234567.',
-    '',
-    'Если возникли сложности, нажмите «Помощь» — подскажем, что делать.',
-    'Запутались? Нажмите «Где я?» — напомню текущий шаг.',
-  ].join('\n');
+interface PhoneStepOverrides {
+  title?: string;
+  text?: string;
+}
+
+const buildPhoneStepPayload = (overrides?: PhoneStepOverrides) => ({
+  step: {
+    id: PHONE_COLLECT_STEP_ID,
+    title: overrides?.title ?? PHONE_COLLECT_TITLE,
+    text: overrides?.text ?? PHONE_COLLECT_TEXT,
+    actions: PHONE_STEP_ACTIONS,
+  },
+});
+
+const renderPhoneCollectStep = async (
+  ctx: BotContext,
+  overrides?: PhoneStepOverrides,
+): Promise<void> => {
+  const text = overrides?.text ?? PHONE_COLLECT_TEXT;
+  const step = await ui.step(ctx, {
+    id: PHONE_COLLECT_STEP_ID,
+    text,
+    keyboard: buildPhoneCollectKeyboard(),
+    payload: buildPhoneStepPayload(overrides),
+  });
+
+  ctx.session.awaitingPhone = true;
+  if (step?.sent) {
+    rememberEphemeralMessage(ctx, step.messageId);
+  }
+};
 
 const buildPhoneHelpText = (): string =>
   [
     'ℹ️ Подсказка по обмену номером:',
     '• Откройте этот чат на своём телефоне.',
-    '• Нажмите «Поделиться контактом», чтобы Telegram отправил номер автоматически.',
-    '• Или пришлите номер вручную в формате +79991234567.',
+    '• Нажмите «Поделиться контактом» — Telegram отправит ваш номер автоматически.',
     '',
     'Мы используем номер только для подтверждения заказов и связи с вами — его не увидят другие пользователи.',
     'Передача контакта проходит по защищённому каналу Telegram, а у нас номер хранится в зашифрованном виде.',
@@ -90,10 +126,7 @@ export const askPhone = async (ctx: BotContext): Promise<void> => {
   }
 
   try {
-    const message = await ctx.reply(buildPhoneRequestText(), buildPhoneCollectKeyboard());
-
-    ctx.session.awaitingPhone = true;
-    rememberEphemeralMessage(ctx, message?.message_id);
+    await renderPhoneCollectStep(ctx);
   } catch (error) {
     if (!isBlockedByUserError(error)) {
       throw error;
@@ -140,6 +173,25 @@ export const savePhone: MiddlewareFn<BotContext> = async (ctx, next) => {
 
   if (contact.user_id !== undefined && contact.user_id !== fromId) {
     logger.warn({ fromId, contactUserId: contact.user_id }, 'Ignoring contact shared by another user');
+
+    try {
+      await renderPhoneCollectStep(ctx, {
+        title: PHONE_FOREIGN_CONTACT_TITLE,
+        text: PHONE_FOREIGN_CONTACT_TEXT,
+      });
+    } catch (error) {
+      if (isBlockedByUserError(error)) {
+        logger.debug(
+          { err: error, telegramId: fromId },
+          'User blocked bot while delivering foreign contact warning',
+        );
+      } else {
+        logger.error(
+          { err: error, telegramId: fromId },
+          'Failed to deliver foreign contact warning',
+        );
+      }
+    }
     return;
   }
 
@@ -233,9 +285,7 @@ export const respondToPhoneStatus: MiddlewareFn<BotContext> = async (ctx, next) 
     return;
   }
 
-  const message = await ctx.reply(buildPhoneRequestText(), buildPhoneCollectKeyboard());
-  ctx.session.awaitingPhone = true;
-  rememberEphemeralMessage(ctx, message?.message_id);
+  await renderPhoneCollectStep(ctx);
 };
 
 export const ensurePhone: MiddlewareFn<BotContext> = async (ctx, next) => {
