@@ -27,7 +27,7 @@ const ROLE_PICK_STEP_ID = 'start:role:pick';
 const EXECUTOR_KIND_STEP_ID = 'start:role:executor-kind';
 const ROLE_PICK_TITLE = 'Выбор роли';
 const ROLE_PICK_DESCRIPTION =
-  'Freedom Bot помогает клиентам оформлять заказы и исполнителям брать их в работу. Выберите подходящую роль.';
+  'Бот помогает клиентам оформлять заказы и исполнителям брать их в работу. Выберите подходящую роль.';
 const ROLE_PICK_HINT =
   'ℹ️ Подсказка: выберите «Клиент», если хотите оформлять заказы. Нажмите «Исполнитель», чтобы брать заказы в работу.';
 
