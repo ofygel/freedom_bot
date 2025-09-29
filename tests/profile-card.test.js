@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -17,7 +18,11 @@ ensureEnv('KASPI_PHONE', '+70000000000');
 ensureEnv('WEBHOOK_DOMAIN', 'example.com');
 ensureEnv('WEBHOOK_SECRET', 'secret');
 
-const { buildProfileCardText, __testing__ } = require('../src/bot/flows/common/profileCard');
+const {
+  buildProfileCardText,
+  __testing__,
+} = require('../src/bot/flows/common/profileCard');
+const { tryDecodeCallbackData } = require('../src/bot/services/callbackTokens');
 
 const createContext = (userOverrides = {}) => {
   const baseUser = {
@@ -36,6 +41,7 @@ const createContext = (userOverrides = {}) => {
     isBlocked: false,
     citySelected: 'almaty',
     hasActiveOrder: false,
+    keyboardNonce: 'test-nonce-value',
   };
 
   const user = { ...baseUser, ...userOverrides };
@@ -96,8 +102,17 @@ test('buildProfileCardText enriches client profile with statuses and metrics', (
     ['⬅ Назад', '🏠 Главное меню'],
   ]);
 
-  assert.equal(keyboard.inline_keyboard[0][0].callback_data, 'client:menu:city');
-  assert.equal(keyboard.inline_keyboard[2][0].callback_data, 'client:menu:support');
+  const cityButton = keyboard.inline_keyboard[0][0];
+  const cityDecoded = tryDecodeCallbackData(cityButton.callback_data);
+  assert.equal(cityDecoded.ok, true);
+  assert.equal(cityDecoded.wrapped.raw, 'client:menu:city');
+  assert.ok(cityDecoded.wrapped.nonce);
+
+  const supportButtonClient = keyboard.inline_keyboard[2][0];
+  const supportDecodedClient = tryDecodeCallbackData(supportButtonClient.callback_data);
+  assert.equal(supportDecodedClient.ok, true);
+  assert.equal(supportDecodedClient.wrapped.raw, 'client:menu:support');
+  assert.ok(supportDecodedClient.wrapped.nonce);
 });
 
 test('buildProfileCardText surfaces executor metrics and navigation', () => {
@@ -144,6 +159,42 @@ test('buildProfileCardText surfaces executor metrics and navigation', () => {
     ['⬅ Назад', '🏠 Главное меню'],
   ]);
 
-  assert.equal(keyboard.inline_keyboard[1][0].callback_data, 'executor:subscription:link');
-  assert.equal(keyboard.inline_keyboard[2][0].callback_data, 'support:contact');
+  const subscriptionButton = keyboard.inline_keyboard[1][0];
+  const subscriptionDecoded = tryDecodeCallbackData(subscriptionButton.callback_data);
+  assert.equal(subscriptionDecoded.ok, true);
+  assert.equal(subscriptionDecoded.wrapped.raw, 'executor:subscription:link');
+  assert.ok(subscriptionDecoded.wrapped.nonce);
+
+  const supportButtonExecutor = keyboard.inline_keyboard[2][0];
+  const supportDecodedExecutor = tryDecodeCallbackData(supportButtonExecutor.callback_data);
+  assert.equal(supportDecodedExecutor.ok, true);
+  assert.equal(supportDecodedExecutor.wrapped.raw, 'support:contact');
+  assert.ok(supportDecodedExecutor.wrapped.nonce);
+});
+
+test('buildProfileCardKeyboard wraps actions even without persisted nonce', () => {
+  const ctx = createContext({ keyboardNonce: undefined });
+
+  const keyboard = __testing__.buildProfileCardKeyboard(ctx, {
+    backAction: 'client:menu:back',
+    homeAction: 'client:menu:home',
+    changeCityAction: 'client:menu:city',
+    subscriptionAction: undefined,
+    supportAction: undefined,
+  });
+
+  const cityButton = keyboard?.inline_keyboard?.[0]?.[0];
+  assert.ok(cityButton);
+
+  const decoded = tryDecodeCallbackData(cityButton.callback_data);
+  assert.equal(decoded.ok, true);
+  assert.equal(decoded.wrapped.raw, 'client:menu:city');
+
+  const expectedFallback = crypto
+    .createHash('sha256')
+    .update(`kb:${ctx.auth.user.telegramId}`)
+    .digest('base64url')
+    .slice(0, 10);
+
+  assert.equal(decoded.wrapped.nonce, expectedFallback);
 });
