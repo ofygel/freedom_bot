@@ -3,6 +3,8 @@ import crypto from 'crypto';
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
 import { config, logger } from '../../config';
+import { upsertCallbackMapRecord } from '../../db/callbackMap';
+import { createShortCallbackId } from '../../utils/ids';
 import type { BotContext } from '../types';
 
 const CURRENT_VERSION = '2';
@@ -11,6 +13,13 @@ const SEP_MAIN = '#';
 const SEP_FIELDS = '|';
 const SEP_KV = '=';
 const MAX_CALLBACK_DATA_LENGTH = 64;
+export const CALLBACK_SURROGATE_TOKEN_PREFIX = 'cb';
+export const CALLBACK_SURROGATE_ACTION = 'callback.surrogate';
+
+export interface CallbackSurrogatePayload {
+  raw: string;
+  data: string;
+}
 
 const safeBase36 = (value: string | number): string => {
   const digitsOnly = String(value).replace(/\D+/g, '');
@@ -76,6 +85,21 @@ export interface WrapCallbackOutcome {
   reason?: 'oversize' | 'raw-too-long';
 }
 
+const persistSurrogateToken = (
+  token: string,
+  payload: CallbackSurrogatePayload,
+  expiresAt: Date,
+): void => {
+  void upsertCallbackMapRecord<CallbackSurrogatePayload>({
+    token,
+    action: CALLBACK_SURROGATE_ACTION,
+    payload,
+    expiresAt,
+  }).catch((error) => {
+    logger.error({ err: error, token }, 'Failed to persist callback surrogate payload');
+  });
+};
+
 export const wrapCallbackData = (raw: string, options: WrapCallbackOptions): string => {
   const ttlSeconds = Math.max(1, Math.floor(options.ttlSeconds ?? config.bot.callbackTtlSeconds));
   const issuedAtRaw = options.issuedAt ?? Date.now();
@@ -84,6 +108,7 @@ export const wrapCallbackData = (raw: string, options: WrapCallbackOptions): str
   const expiresAtSeconds = issuedAtSeconds + ttlSeconds;
   const encodedExpiry = encodeExpiry(expiresAtSeconds);
   const includeBinding = Boolean(options.bindToUser && options.userId && options.keyboardNonce);
+  const expiresAtDate = new Date(expiresAtSeconds * 1000);
 
   const attemptWrap = (withBinding: boolean): { data: string; encodedUser: string; encodedNonce: string } => {
     const parts: string[] = [CURRENT_VERSION];
@@ -130,8 +155,9 @@ export const wrapCallbackData = (raw: string, options: WrapCallbackOptions): str
     return primary.data;
   }
 
+  let fallback: ReturnType<typeof attemptWrap> | undefined;
   if (includeBinding) {
-    const fallback = attemptWrap(false);
+    fallback = attemptWrap(false);
     if (fallback.data.length <= MAX_CALLBACK_DATA_LENGTH) {
       report({
         status: 'wrapped',
@@ -144,16 +170,34 @@ export const wrapCallbackData = (raw: string, options: WrapCallbackOptions): str
     }
   }
 
-  const finalData = raw.length <= MAX_CALLBACK_DATA_LENGTH ? raw : raw.slice(0, MAX_CALLBACK_DATA_LENGTH);
+  if (raw.length <= MAX_CALLBACK_DATA_LENGTH) {
+    report({
+      status: 'skipped',
+      bound: false,
+      length: raw.length,
+      rawLength: raw.length,
+      reason: 'oversize',
+    });
+    return raw;
+  }
+
+  const surrogateToken = createShortCallbackId(CALLBACK_SURROGATE_TOKEN_PREFIX);
+  const payload: CallbackSurrogatePayload = {
+    raw,
+    data: includeBinding ? primary.data : fallback?.data ?? primary.data,
+  };
+
+  persistSurrogateToken(surrogateToken, payload, expiresAtDate);
+
   report({
-    status: 'skipped',
-    bound: false,
-    length: finalData.length,
+    status: 'wrapped',
+    bound: includeBinding,
+    length: surrogateToken.length,
     rawLength: raw.length,
-    reason: raw.length <= MAX_CALLBACK_DATA_LENGTH ? 'oversize' : 'raw-too-long',
+    reason: 'raw-too-long',
   });
 
-  return finalData;
+  return surrogateToken;
 };
 
 export type DecodeResult =
