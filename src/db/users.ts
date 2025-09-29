@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 import { pool } from './client';
 import type { PoolClient } from './client';
 import type { ExecutorRole, UserStatus, UserSubscriptionStatus } from '../bot/types';
@@ -44,6 +46,8 @@ export const ensureClientRole = async ({
   lastName,
   phone,
 }: EnsureClientRoleParams): Promise<void> => {
+  const keyboardNonce = generateKeyboardNonce();
+
   await pool.query(
     `
       INSERT INTO users (
@@ -56,9 +60,10 @@ export const ensureClientRole = async ({
         role,
         status,
         last_menu_role,
+        keyboard_nonce,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
       ON CONFLICT (tg_id) DO UPDATE
       SET
         username = COALESCE(EXCLUDED.username, users.username),
@@ -82,6 +87,7 @@ export const ensureClientRole = async ({
           ELSE NULL
         END,
         last_menu_role = 'client',
+        keyboard_nonce = COALESCE(users.keyboard_nonce, EXCLUDED.keyboard_nonce),
         updated_at = now()
     `,
     [
@@ -94,6 +100,7 @@ export const ensureClientRole = async ({
       'client',
       'active_client',
       'client',
+      keyboardNonce,
     ],
   );
 };
@@ -103,10 +110,14 @@ export interface UpdateUserPhoneParams {
   phone: string;
 }
 
+const generateKeyboardNonce = (): string => crypto.randomBytes(12).toString('base64url');
+
 export const updateUserPhone = async ({
   telegramId,
   phone,
 }: UpdateUserPhoneParams): Promise<void> => {
+  const keyboardNonce = generateKeyboardNonce();
+
   await pool.query(
     `
       UPDATE users
@@ -117,10 +128,11 @@ export const updateUserPhone = async ({
           WHEN status IN ('suspended', 'banned', 'safe_mode') THEN status
           ELSE 'active_client'
         END,
+        keyboard_nonce = COALESCE(keyboard_nonce, $3),
         updated_at = now()
       WHERE tg_id = $1
     `,
-    [telegramId, phone],
+    [telegramId, phone, keyboardNonce],
   );
 };
 

@@ -45,6 +45,8 @@ const decodeExpiry = (value: string | undefined): number | undefined => {
   }
 };
 
+type AuthUser = BotContext['auth'] extends { user: infer U } ? U : never;
+
 export interface WrappedCallbackData {
   version: string;
   raw: string;
@@ -163,6 +165,30 @@ const buildSignaturePayload = (wrapped: WrappedCallbackData): string => {
 const isExpired = (wrapped: WrappedCallbackData, referenceSeconds: number): boolean =>
   typeof wrapped.expiresAt === 'number' && wrapped.expiresAt < referenceSeconds;
 
+const deriveFallbackKeyboardNonce = (telegramId: number | undefined): string | undefined => {
+  if (typeof telegramId !== 'number' || !Number.isFinite(telegramId)) {
+    return undefined;
+  }
+
+  const hash = crypto.createHash('sha256').update(`kb:${telegramId}`).digest('base64url');
+  return hash.slice(0, 16);
+};
+
+const resolveKeyboardNonce = (user: AuthUser | undefined): string | undefined => {
+  if (!user) {
+    return undefined;
+  }
+
+  if (user.keyboardNonce) {
+    return user.keyboardNonce;
+  }
+
+  return deriveFallbackKeyboardNonce(user.telegramId);
+};
+
+const sanitiseKeyboardNonce = (nonce: string | undefined): string =>
+  String(nonce ?? '').replace(/-/g, '').slice(0, 10);
+
 export const verifyCallbackData = (wrapped: WrappedCallbackData, secret: string): boolean => {
   const payload = buildSignaturePayload(wrapped);
   const expected = createHmac(payload, secret);
@@ -201,7 +227,7 @@ export const verifyCallbackForUser = (
   }
 
   const encodedUser = safeBase36(user.telegramId);
-  const encodedNonce = String(user.keyboardNonce ?? '').replace(/-/g, '').slice(0, 10);
+  const encodedNonce = sanitiseKeyboardNonce(resolveKeyboardNonce(user));
 
   return wrapped.user === encodedUser && wrapped.nonce === encodedNonce;
 };
@@ -220,12 +246,17 @@ export const bindInlineKeyboardToUser = (
   }
 
   const user = ctx.auth?.user;
-  if (!user?.telegramId || !user.keyboardNonce) {
+  if (!user?.telegramId) {
     return keyboard;
   }
 
   const secret = config.bot.callbackSignSecret ?? config.bot.token;
   if (!secret) {
+    return keyboard;
+  }
+
+  const keyboardNonce = resolveKeyboardNonce(user);
+  if (!keyboardNonce) {
     return keyboard;
   }
 
@@ -246,7 +277,7 @@ export const bindInlineKeyboardToUser = (
         callback_data: wrapCallbackData(button.callback_data, {
           secret,
           userId: user.telegramId,
-          keyboardNonce: user.keyboardNonce,
+          keyboardNonce,
           bindToUser: true,
           ttlSeconds: config.bot.callbackTtlSeconds,
         }),
