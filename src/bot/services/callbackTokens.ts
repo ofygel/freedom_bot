@@ -2,7 +2,7 @@ import crypto from 'crypto';
 
 import type { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 
-import { config } from '../../config';
+import { config, logger } from '../../config';
 import type { BotContext } from '../types';
 
 const CURRENT_VERSION = '2';
@@ -10,6 +10,7 @@ const LEGACY_VERSION = '1';
 const SEP_MAIN = '#';
 const SEP_FIELDS = '|';
 const SEP_KV = '=';
+const MAX_CALLBACK_DATA_LENGTH = 64;
 
 const safeBase36 = (value: string | number): string => {
   const digitsOnly = String(value).replace(/\D+/g, '');
@@ -64,38 +65,95 @@ export interface WrapCallbackOptions {
   bindToUser?: boolean;
   ttlSeconds?: number;
   issuedAt?: number;
+  onResult?: (outcome: WrapCallbackOutcome) => void;
+}
+
+export interface WrapCallbackOutcome {
+  status: 'wrapped' | 'skipped';
+  bound: boolean;
+  length: number;
+  rawLength: number;
+  reason?: 'oversize' | 'raw-too-long';
 }
 
 export const wrapCallbackData = (raw: string, options: WrapCallbackOptions): string => {
-  const parts: string[] = [CURRENT_VERSION];
-  let encodedUser = '';
-  let encodedNonce = '';
-
-  if (options.bindToUser && options.userId && options.keyboardNonce) {
-    encodedUser = safeBase36(options.userId);
-    encodedNonce = String(options.keyboardNonce).replace(/-/g, '').slice(0, 10);
-
-    if (encodedUser) {
-      parts.push(`u${SEP_KV}${encodedUser}`);
-    }
-    if (encodedNonce) {
-      parts.push(`n${SEP_KV}${encodedNonce}`);
-    }
-  }
-
   const ttlSeconds = Math.max(1, Math.floor(options.ttlSeconds ?? config.bot.callbackTtlSeconds));
   const issuedAtRaw = options.issuedAt ?? Date.now();
   const issuedAtSeconds =
     issuedAtRaw > 1_000_000_000_000 ? Math.floor(issuedAtRaw / 1000) : Math.floor(issuedAtRaw);
   const expiresAtSeconds = issuedAtSeconds + ttlSeconds;
   const encodedExpiry = encodeExpiry(expiresAtSeconds);
-  parts.push(`e${SEP_KV}${encodedExpiry}`);
+  const includeBinding = Boolean(options.bindToUser && options.userId && options.keyboardNonce);
 
-  const signatureBase = [raw, encodedUser, encodedNonce, encodedExpiry].join('|');
-  const signature = createHmac(signatureBase, options.secret);
-  parts.push(`s${SEP_KV}${signature}`);
+  const attemptWrap = (withBinding: boolean): { data: string; encodedUser: string; encodedNonce: string } => {
+    const parts: string[] = [CURRENT_VERSION];
+    let encodedUser = '';
+    let encodedNonce = '';
 
-  return `${raw}${SEP_MAIN}${parts.join(SEP_FIELDS)}`;
+    if (withBinding && options.userId && options.keyboardNonce) {
+      encodedUser = safeBase36(options.userId);
+      encodedNonce = String(options.keyboardNonce).replace(/-/g, '').slice(0, 10);
+
+      if (encodedUser) {
+        parts.push(`u${SEP_KV}${encodedUser}`);
+      }
+      if (encodedNonce) {
+        parts.push(`n${SEP_KV}${encodedNonce}`);
+      }
+    }
+
+    parts.push(`e${SEP_KV}${encodedExpiry}`);
+
+    const signatureBase = [raw, encodedUser, encodedNonce, encodedExpiry].join('|');
+    const signature = createHmac(signatureBase, options.secret);
+    parts.push(`s${SEP_KV}${signature}`);
+
+    return {
+      data: `${raw}${SEP_MAIN}${parts.join(SEP_FIELDS)}`,
+      encodedUser,
+      encodedNonce,
+    };
+  };
+
+  const report = (outcome: WrapCallbackOutcome): void => {
+    options.onResult?.(outcome);
+  };
+
+  const primary = attemptWrap(includeBinding);
+  if (primary.data.length <= MAX_CALLBACK_DATA_LENGTH) {
+    report({
+      status: 'wrapped',
+      bound: includeBinding,
+      length: primary.data.length,
+      rawLength: raw.length,
+    });
+    return primary.data;
+  }
+
+  if (includeBinding) {
+    const fallback = attemptWrap(false);
+    if (fallback.data.length <= MAX_CALLBACK_DATA_LENGTH) {
+      report({
+        status: 'wrapped',
+        bound: false,
+        length: fallback.data.length,
+        rawLength: raw.length,
+        reason: 'oversize',
+      });
+      return fallback.data;
+    }
+  }
+
+  const finalData = raw.length <= MAX_CALLBACK_DATA_LENGTH ? raw : raw.slice(0, MAX_CALLBACK_DATA_LENGTH);
+  report({
+    status: 'skipped',
+    bound: false,
+    length: finalData.length,
+    rawLength: raw.length,
+    reason: raw.length <= MAX_CALLBACK_DATA_LENGTH ? 'oversize' : 'raw-too-long',
+  });
+
+  return finalData;
 };
 
 export type DecodeResult =
@@ -271,16 +329,39 @@ export const bindInlineKeyboardToUser = (
         return button;
       }
 
+      let outcome: WrapCallbackOutcome | undefined;
+      const wrapped = wrapCallbackData(button.callback_data, {
+        secret,
+        userId: user.telegramId,
+        keyboardNonce,
+        bindToUser: true,
+        ttlSeconds: config.bot.callbackTtlSeconds,
+        onResult: (result) => {
+          outcome = result;
+        },
+      });
+
+      if (outcome && (outcome.status !== 'wrapped' || !outcome.bound)) {
+        logger.warn(
+          {
+            action: button.callback_data,
+            status: outcome.status,
+            reason: outcome.reason,
+            length: outcome.length,
+            rawLength: outcome.rawLength,
+          },
+          'Failed to bind callback data to user due to length constraints',
+        );
+      }
+
+      if (wrapped === button.callback_data) {
+        return button;
+      }
+
       changed = true;
       return {
         ...button,
-        callback_data: wrapCallbackData(button.callback_data, {
-          secret,
-          userId: user.telegramId,
-          keyboardNonce,
-          bindToUser: true,
-          ttlSeconds: config.bot.callbackTtlSeconds,
-        }),
+        callback_data: wrapped,
       };
     }),
   );
